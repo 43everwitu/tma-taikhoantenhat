@@ -26,7 +26,7 @@ export default function CartPage() {
         <ul className="space-y-2 mb-4">
           {cart.items.map((it) => (
             <li key={it.id} className="rounded-2xl p-3 flex gap-3 items-center" style={{ background: 'var(--tg-bg-2)' }}>
-              <div className="w-16 h-16 rounded-xl overflow-hidden relative shrink-0" style={{ background: 'var(--brand-gold-soft)' }}>
+              <div className="w-16 h-16 rounded-xl overflow-hidden shrink-0" style={{ position: 'relative', background: 'var(--brand-gold-soft)' }}>
                 {it.imageUrl
                   ? <Image src={it.imageUrl} alt={it.name} fill sizes="64px" style={{ objectFit: 'cover' }} />
                   : <div className="absolute inset-0 grid place-items-center text-2xl">{it.emoji || '📦'}</div>}

@@ -19,7 +19,7 @@ export function ProductCard({ p }: { p: ProductSummary }) {
   const inStock = p.stock > 0
   return (
     <Link href={`/san-pham/${p.slug}`} className="miniapp-product-card">
-      <div className="miniapp-product-img">
+      <div className="miniapp-product-img" style={{ position: 'relative' }}>
         {p.promotion && <span className="miniapp-product-badge">{p.promotion}</span>}
         {p.imageUrl ? (
           <Image

@@ -43,7 +43,7 @@ export default function ProductDetailPage() {
   return (
     <MiniAppShell title={p.name} hasBottombar>
       <div className="rounded-2xl overflow-hidden mb-4" style={{ background: 'var(--brand-gold-soft)' }}>
-        <div className="aspect-square relative">
+        <div className="aspect-square" style={{ position: 'relative' }}>
           {p.promotion && <span className="miniapp-product-badge" style={{ top: 12, left: 12 }}>{p.promotion}</span>}
           {p.imageUrl
             ? <Image src={p.imageUrl} alt={p.name} fill sizes="100vw" style={{ objectFit: 'cover' }} />
