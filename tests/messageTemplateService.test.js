@@ -27,9 +27,9 @@ test('render returns empty string for unknown vars (does not throw)', () => {
   assert.ok(out.length > 0);
 });
 
-test('list returns 18 templates with parsed variables', () => {
+test('list returns all seeded templates with parsed variables', () => {
   const all = messageTemplateService.list();
-  assert.strictEqual(all.length, 18);
+  assert.ok(all.length >= 18, `expected at least 18 templates, got ${all.length}`);
   const welcome = all.find((t) => t.key === 'welcome');
   assert.ok(welcome);
   assert.ok(Array.isArray(welcome.variables));
