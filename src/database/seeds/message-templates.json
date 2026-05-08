@@ -3,7 +3,7 @@
     "channel": "bot",
     "label": "Chào mừng (/start)",
     "variables": ["name", "username", "balance"],
-    "body": "Yahallo onii-chan {{name}}~ ✨\n\nAuto-chan ở đây để phục vụ onii-chan!\nSố dư ví hiện tại: <b>{{balance}}đ</b>\n\nGõ /menu để xem sản phẩm, /info để xem tài khoản, /nap để nạp ví."
+    "body": "Xin chào {{name}}!\n\nChào mừng đến với Taikhoantenhat.\nSố dư hiện tại: {{balance}} ₫\n\nBấm nút \"Mở cửa hàng\" bên dưới để bắt đầu."
   },
   "order_created": {
     "channel": "bot",
