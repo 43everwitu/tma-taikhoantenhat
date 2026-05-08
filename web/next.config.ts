@@ -13,9 +13,20 @@ const dir = path.dirname(fileURLToPath(import.meta.url))
 // resolve `localhost:3000` to their own loopback (no server there).
 const API_BACKEND = process.env.API_BACKEND_URL || 'http://localhost:3000'
 
+// Dev tunnel hosts. DEV_TUNNEL_HOST env can pin a specific quick-tunnel
+// hostname; the wildcards cover Cloudflare Tunnel and ngrok defaults.
+const tunnelHost = process.env.DEV_TUNNEL_HOST
+
 const nextConfig: NextConfig = {
   turbopack: { root: dir },
   outputFileTracingRoot: dir,
+  allowedDevOrigins: [
+    '*.trycloudflare.com',
+    '*.ngrok-free.app',
+    '*.ngrok.app',
+    '*.ngrok.io',
+    ...(tunnelHost ? [tunnelHost] : []),
+  ],
   async rewrites() {
     return [
       { source: '/api/:path*', destination: `${API_BACKEND}/api/:path*` },
