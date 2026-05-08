@@ -33,3 +33,6 @@ data/db.sqlite.fresh
 **/__pycache__/
 **/*.pyc
 *.tsbuildinfo
+
+# Local Claude state
+.claude/
