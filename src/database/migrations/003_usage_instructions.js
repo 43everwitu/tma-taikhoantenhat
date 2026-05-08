@@ -13,9 +13,6 @@ function up(db) {
     db.exec(`ALTER TABLE products ADD COLUMN usage_instructions TEXT`);
   }
 
-  // Ensure sqlite_sequence exists (only auto-created after first AUTOINCREMENT insert)
-  db.exec(`CREATE TABLE IF NOT EXISTS sqlite_sequence (name TEXT, seq INTEGER)`);
-
   // Reseed orders id to start from 100000 if currently lower
   const row = db.prepare(`SELECT seq FROM sqlite_sequence WHERE name = 'orders'`).get();
   const current = row ? row.seq : 0;
