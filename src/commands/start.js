@@ -1,15 +1,29 @@
 const userService = require('../services/userService');
-const messages = require('../utils/messages');
-const { mainMenuKeyboard } = require('../utils/keyboard');
+const messageTemplateService = require('../services/messageTemplateService');
 
 module.exports = (bot) => {
-    bot.start((ctx) => {
+    bot.start(async (ctx) => {
+        // Preserve user-row creation on first contact — needed downstream
+        // for balance, orders, and any future profile lookups.
         const user = userService.findOrCreate(ctx.from);
-        const text = messages.welcome({
-            name: user.full_name,
-            username: user.username,
-            balance: user.balance,
+
+        const name = user.full_name || ctx.from?.first_name || ctx.from?.username || 'bạn';
+        const username = user.username || ctx.from?.username || '';
+        const balance = user.balance ?? 0;
+
+        const text = messageTemplateService.render('welcome', {
+            name,
+            username,
+            balance: String(balance),
         });
-        ctx.replyWithHTML(text, mainMenuKeyboard());
+
+        await ctx.reply(text, {
+            parse_mode: 'HTML',
+            reply_markup: {
+                inline_keyboard: [[
+                    { text: 'Mở cửa hàng', web_app: { url: process.env.MINIAPP_URL } },
+                ]],
+            },
+        });
     });
 };
