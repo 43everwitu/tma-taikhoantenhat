@@ -172,8 +172,8 @@ function up(db) {
   const insertSetting = db.prepare(
     'INSERT OR IGNORE INTO settings (key, value) VALUES (?, ?)'
   );
-  insertSetting.run('shop_name', 'Starizzi Shop');
-  insertSetting.run('support_contact', '@starizzi_support');
+  insertSetting.run('shop_name', 'Taikhoantenhat');
+  insertSetting.run('support_contact', '@taikhoantenhat_support');
   insertSetting.run('payment_timeout_minutes', '5');
   insertSetting.run('auto_payment_enabled', '1');
   insertSetting.run('payment_poll_interval_seconds', '15');
