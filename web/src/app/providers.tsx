@@ -16,7 +16,13 @@ export function Providers({ children }: { children: React.ReactNode }) {
   }))
 
   const pathname = usePathname()
-  const showBar = !pathname?.startsWith('/admin')
+  const showBar = !pathname?.startsWith('/admin') &&
+                  !pathname?.startsWith('/danh-muc') &&
+                  !pathname?.startsWith('/san-pham') &&
+                  !pathname?.startsWith('/gio-hang') &&
+                  !pathname?.startsWith('/dat-hang') &&
+                  !pathname?.startsWith('/don-hang') &&
+                  pathname !== '/'
 
   return (
     <QueryClientProvider client={queryClient}>
