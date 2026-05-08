@@ -21,3 +21,15 @@ Thumbs.db
 *.log
 npm-debug.log*
 logs/*.log
+
+# Fork-specific additions
+data/*.sqlite
+data/*.sqlite-shm
+data/*.sqlite-wal
+data/db.sqlite.fresh
+.env
+.env.local
+.env.production
+**/__pycache__/
+**/*.pyc
+*.tsbuildinfo
