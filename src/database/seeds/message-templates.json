@@ -9,7 +9,7 @@
     "channel": "bot",
     "label": "Đơn hàng vừa tạo",
     "variables": ["orderCode", "productName", "quantity", "total", "expiryMinutes"],
-    "body": "Onii-chan đã đặt thành công đơn <b>{{orderCode}}</b>~\n\n📦 {{productName}} × {{quantity}}\n💰 Tổng: <b>{{total}}đ</b>\n\nAuto-chan sẽ giữ chỗ trong {{expiryMinutes}} phút. Onii-chan thanh toán nhé!"
+    "body": "Bạn đã đặt thành công đơn <b>{{orderCode}}</b>.\n\n📦 {{productName}} × {{quantity}}\n💰 Tổng: <b>{{total}}đ</b>\n\nShop sẽ giữ chỗ trong {{expiryMinutes}} phút. Bạn thanh toán nhé!"
   },
   "payment_pending": {
     "channel": "bot",
@@ -21,13 +21,13 @@
     "channel": "bot",
     "label": "Thanh toán thành công",
     "variables": ["orderCode", "productName", "quantity", "total"],
-    "body": "Yatta! 🎉 Auto-chan nhận được tiền từ onii-chan rồi!\n\n✅ Đơn <b>{{orderCode}}</b>\n📦 {{productName}} × {{quantity}}\n💰 {{total}}đ\n\nĐang gửi sản phẩm cho onii-chan~"
+    "body": "🎉 Shop đã nhận được tiền của bạn!\n\n✅ Đơn <b>{{orderCode}}</b>\n📦 {{productName}} × {{quantity}}\n💰 {{total}}đ\n\nĐang gửi sản phẩm cho bạn."
   },
   "payment_short": {
     "channel": "bot",
     "label": "Thanh toán thiếu",
     "variables": ["orderCode", "total", "received", "memo"],
-    "body": "Onii-chan ơi~ Auto-chan thấy onii-chan chuyển <b>{{received}}đ</b> cho đơn <b>{{orderCode}}</b> nhưng cần <b>{{total}}đ</b>. Onii-chan chuyển bù phần còn lại với nội dung <code>{{memo}}</code> nha!"
+    "body": "Shop nhận được <b>{{received}}đ</b> cho đơn <b>{{orderCode}}</b> nhưng cần <b>{{total}}đ</b>. Bạn chuyển bù phần còn lại với nội dung <code>{{memo}}</code> nhé!"
   },
   "payment_failed": {
     "channel": "bot",
@@ -39,7 +39,7 @@
     "channel": "bot",
     "label": "Đơn hết hạn",
     "variables": ["orderCode", "productName"],
-    "body": "Đơn <b>{{orderCode}}</b> ({{productName}}) hết hạn rồi onii-chan~ Auto-chan đã trả lại stock. Onii-chan đặt lại nha!"
+    "body": "Đơn <b>{{orderCode}}</b> ({{productName}}) đã hết hạn. Shop đã trả lại stock. Bạn đặt lại nhé!"
   },
   "delivery_keys": {
     "channel": "bot",
@@ -57,13 +57,13 @@
     "channel": "bot",
     "label": "Hoàn tiền",
     "variables": ["orderCode", "amount", "reason", "newBalance"],
-    "body": "Auto-chan đã hoàn <b>{{amount}}đ</b> cho đơn <b>{{orderCode}}</b> vào ví của onii-chan~\n\nLý do: {{reason}}\nSố dư mới: <b>{{newBalance}}đ</b>\n\nGomen ne onii-chan!"
+    "body": "Shop đã hoàn <b>{{amount}}đ</b> cho đơn <b>{{orderCode}}</b> vào ví của bạn.\n\nLý do: {{reason}}\nSố dư mới: <b>{{newBalance}}đ</b>\n\nXin lỗi vì sự bất tiện!"
   },
   "topup_success": {
     "channel": "bot",
     "label": "Nạp ví thành công",
     "variables": ["amount", "newBalance", "memo"],
-    "body": "Yatta! 🎉 Auto-chan đã cộng <b>{{amount}}đ</b> vào ví onii-chan (mã: <code>{{memo}}</code>).\n\nSố dư mới: <b>{{newBalance}}đ</b>\n\nArigathank onii-chan đã nạp!"
+    "body": "🎉 Shop đã cộng <b>{{amount}}đ</b> vào ví của bạn (mã: <code>{{memo}}</code>).\n\nSố dư mới: <b>{{newBalance}}đ</b>\n\nCảm ơn bạn đã nạp!"
   },
   "balance_low": {
     "channel": "bot",
@@ -75,13 +75,13 @@
     "channel": "bot",
     "label": "Hủy đơn",
     "variables": ["orderCode", "productName", "reason"],
-    "body": "Đơn <b>{{orderCode}}</b> ({{productName}}) đã bị hủy. Lý do: {{reason}}. Auto-chan đã trả lại stock và hoàn ví (nếu có) cho onii-chan~"
+    "body": "Đơn <b>{{orderCode}}</b> ({{productName}}) đã bị hủy. Lý do: {{reason}}. Shop đã trả lại stock và hoàn ví (nếu có) cho bạn."
   },
   "web.new_stock": {
     "channel": "web",
     "label": "Web — sản phẩm mới có hàng",
     "variables": ["productName", "quantity", "productUrl"],
-    "body": "{{productName}} vừa được Auto-chan bổ sung {{quantity}} suất! Onii-chan ghé xem nha~"
+    "body": "{{productName}} vừa được bổ sung {{quantity}} suất! Bạn ghé xem nhé."
   },
   "web.restock_email": {
     "channel": "web",
@@ -93,7 +93,7 @@
     "channel": "web",
     "label": "Web — trang thanh toán thành công",
     "variables": ["orderCode", "productName", "total"],
-    "body": "Yatta! Đơn {{orderCode}} ({{productName}} — {{total}}đ) thanh toán thành công. Auto-chan đang gửi sản phẩm vào Telegram của onii-chan~"
+    "body": "Đơn {{orderCode}} ({{productName}} — {{total}}đ) thanh toán thành công. Shop đang gửi sản phẩm vào Telegram của bạn."
   },
   "web.payment_failed": {
     "channel": "web",
@@ -105,6 +105,6 @@
     "channel": "web",
     "label": "Web — đơn hết hạn",
     "variables": ["orderCode"],
-    "body": "Đơn {{orderCode}} đã hết hạn rồi onii-chan~ Auto-chan đã trả lại stock. Onii-chan đặt lại nha!"
+    "body": "Đơn {{orderCode}} đã hết hạn. Shop đã trả lại stock. Bạn đặt lại nhé!"
   }
 }

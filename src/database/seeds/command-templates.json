@@ -3,7 +3,7 @@
     "channel": "bot",
     "label": "/balance — số dư ví",
     "variables": ["balance"],
-    "body": "💼 <b>Ví của onii-chan</b>\n\n💰 Hiện có: <b>{{balance}}đ</b>\n\n<i>Nạp nhanh — chạm để copy rồi gửi cho Auto-chan~</i>\n<code>/nap 50000</code>\n<code>/nap 100000</code>\n<code>/nap 200000</code>"
+    "body": "💼 <b>Ví của bạn</b>\n\n💰 Hiện có: <b>{{balance}}đ</b>\n\n<i>Nạp nhanh — chạm để copy rồi gửi lệnh.</i>\n<code>/nap 50000</code>\n<code>/nap 100000</code>\n<code>/nap 200000</code>"
   },
   "cmd_account_info": {
     "channel": "bot",
@@ -21,13 +21,13 @@
     "channel": "bot",
     "label": "/support — hỗ trợ",
     "variables": ["contact"],
-    "body": "🆘 <b>Auto-chan hỗ trợ onii-chan</b>\n\nNếu onii-chan gặp vấn đề, liên hệ:\n👉 {{contact}}\n\n⏰ Auto-chan hỗ trợ 24/7~"
+    "body": "🆘 <b>Hỗ trợ khách hàng</b>\n\nNếu bạn gặp vấn đề, liên hệ:\n👉 {{contact}}\n\n⏰ Hỗ trợ 24/7."
   },
   "cmd_website": {
     "channel": "bot",
     "label": "/website — link mua hàng",
     "variables": ["description", "url", "cleanUrl"],
-    "body": "🌐 <b>Website của Auto-chan</b>\n\n<i>{{description}}</i>\n\n🔗 <a href=\"{{url}}\">{{cleanUrl}}</a>\n\nOnii-chan có thể đăng nhập bằng email + mật khẩu hoặc liên kết Telegram để mua hàng trên web nha~"
+    "body": "🌐 <b>Website</b>\n\n<i>{{description}}</i>\n\n🔗 <a href=\"{{url}}\">{{cleanUrl}}</a>\n\nBạn có thể đăng nhập bằng email + mật khẩu hoặc liên kết Telegram để mua hàng trên web."
   },
   "cmd_products_header": {
     "channel": "bot",
@@ -39,7 +39,7 @@
     "channel": "bot",
     "label": "/menu — không có sản phẩm",
     "variables": [],
-    "body": "❌ Auto-chan hết hàng rồi onii-chan~ Quay lại sau nhé!"
+    "body": "❌ Shop hết hàng rồi. Bạn quay lại sau nhé!"
   },
   "cmd_orders_header": {
     "channel": "bot",

@@ -93,7 +93,7 @@ export default function PaymentPage() {
         <div className="max-w-6xl mx-auto px-4 sm:px-6 py-5 flex items-center justify-between">
           <Link href="/" className="text-2xl clay-display flex items-center gap-2">
             <MascotBadge size={32} />
-            Auto-chan
+            Taikhoantenhat
           </Link>
           <Link href="/san-pham" className="clay-btn">Sản phẩm</Link>
         </div>

@@ -138,7 +138,7 @@ module.exports = (bot) => {
                 FROM orders o JOIN products p ON o.product_id = p.id
                 WHERE o.id = ?
             `).get(id);
-            if (!order) return ctx.reply('❌ Auto-chan tìm hông ra đơn này onii-chan~');
+            if (!order) return ctx.reply('❌ Không tìm thấy đơn này.');
             if (order.user_id !== ctx.from.id) return ctx.reply('⛔ Onii-chan ơi, đơn này không phải của onii-chan~');
             const { text, keyboard } = renderDetail(order);
             return ctx.replyWithHTML(text, keyboard);

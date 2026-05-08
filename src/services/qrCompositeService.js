@@ -141,7 +141,7 @@ async function composite(qrUrl) {
   const res = await fetch(qrUrl, {
     signal: AbortSignal.timeout(6_000),
     redirect: 'follow',
-    headers: { 'user-agent': 'auto-chan-bot/1.0' },
+    headers: { 'user-agent': 'taikhoantenhat-bot/1.0' },
   });
   if (!res.ok) throw new Error(`HTTP ${res.status} fetching ${qrUrl}`);
   const qrBuffer = Buffer.from(await res.arrayBuffer());

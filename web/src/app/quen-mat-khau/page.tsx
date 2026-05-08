@@ -55,7 +55,7 @@ export default function ForgotPasswordPage() {
         <div className="max-w-6xl mx-auto px-4 sm:px-6 py-3 sm:py-5 flex items-center justify-between">
           <Link href="/" className="text-2xl clay-display flex items-center gap-2">
             <MascotBadge size={32} />
-            Auto-chan
+            Taikhoantenhat
           </Link>
           <Link href="/dang-nhap" className="clay-btn flex items-center gap-1.5"><ArrowLeft size={14} />Đăng nhập</Link>
         </div>

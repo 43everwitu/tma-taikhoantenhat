@@ -75,7 +75,7 @@ export default function ProductCatalogPage() {
         <div className="max-w-6xl mx-auto px-4 sm:px-6 py-3 sm:py-5 flex items-center justify-between">
           <Link href="/" className="text-xl sm:text-2xl clay-display flex items-center gap-2">
             <MascotBadge size={32} />
-            Auto-chan
+            Taikhoantenhat
           </Link>
           <nav className="flex gap-3">
             <Link href="/san-pham" className="clay-btn clay-btn--ink flex items-center gap-1.5"><ShoppingCart size={16} /><span className="hidden sm:inline">Sản phẩm</span></Link>
@@ -186,7 +186,7 @@ export default function ProductCatalogPage() {
       </main>
 
       <footer className="border-t border-clay-oat py-8 text-center text-clay-charcoal text-sm">
-        <p>© 2026 Auto-chan · Hỗ trợ: <a href="https://t.me/peanut1010" className="underline">@peanut1010</a></p>
+        <p>© 2026 Taikhoantenhat · Hỗ trợ: <a href="https://t.me/peanut1010" className="underline">@peanut1010</a></p>
       </footer>
     </>
   )

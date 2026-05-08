@@ -51,7 +51,7 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
           <Menu size={18} />
         </button>
         <div className="clay-display text-lg">
-          <span className="flex items-center gap-2"><MascotBadge size={28} />Auto-chan <span style={{ color: 'var(--color-ube-800)' }}>Admin</span></span>
+          <span className="flex items-center gap-2"><MascotBadge size={28} />Taikhoantenhat <span style={{ color: 'var(--color-ube-800)' }}>Admin</span></span>
         </div>
         <div className="w-10" aria-hidden /> {/* spacer to balance the menu button */}
       </header>

@@ -13,7 +13,7 @@ export function MascotBadge({ size = 32, className = '' }: MascotBadgeProps) {
     >
       <Image
         src="/qr-template.png"
-        alt="Auto-chan"
+        alt="Taikhoantenhat"
         width={size * 4}
         height={size * 4}
         className="object-cover"

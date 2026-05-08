@@ -32,7 +32,7 @@ const GROUPS: Group[] = [
     fields: [
       { key: 'shop_name', label: 'Tên shop', type: 'text',
         description: 'Tên hiển thị trong tin nhắn chào và menu của bot.',
-        placeholder: 'Auto-chan' },
+        placeholder: 'Taikhoantenhat' },
       { key: 'support_contact', label: 'Liên hệ hỗ trợ', type: 'text',
         description: 'Username hoặc link Telegram (vd: @peanut1010). Hiển thị khi user gõ /support.',
         placeholder: '@peanut1010' },

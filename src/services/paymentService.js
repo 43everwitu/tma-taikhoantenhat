@@ -38,7 +38,7 @@ const paymentService = {
   },
   /**
    * Bare QR (no surrounding chrome — just the QR pattern). Used for
-   * compositing into the Auto-chan mascot template.
+   * compositing into the QR template.
    */
   generateBareQRUrl(amount, content, bank = null) {
     const b = bank || config.BANK;
@@ -64,7 +64,7 @@ const paymentService = {
     });
   },
   /**
-   * Telegram-ready QR media. Tries the local Auto-chan composite first;
+   * Telegram-ready QR media. Tries the local composite first;
    * if it throws (sharp error, qrcode error, anything), falls back to the
    * chrome VietQR URL so the customer still gets a payable QR.
    * Returns either { source: Buffer } or a string URL — both are accepted
