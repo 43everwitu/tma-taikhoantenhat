@@ -8,6 +8,14 @@ const { createBot } = require('./bot');
 // 1. Express API Server
 // ============================================================
 const app = express();
+
+// Trust the first hop in front of us (Next.js dev rewrite proxy in dev,
+// Cloudflare Tunnel / nginx in prod). Required so express-rate-limit can
+// read the real client IP from X-Forwarded-For instead of throwing
+// ERR_ERL_UNEXPECTED_X_FORWARDED_FOR. Tighten to specific IP ranges in
+// production once the front-end IP set is known.
+app.set('trust proxy', 1);
+
 app.use(express.json());
 
 // Health check
