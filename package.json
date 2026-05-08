@@ -1,0 +1,35 @@
+{
+    "name": "starizzi-shop-bot",
+    "version": "1.0.0",
+    "description": "Telegram Shop Bot - Starizzi Shop",
+    "main": "src/index.js",
+    "scripts": {
+        "start": "node src/index.js",
+        "dev": "node --watch src/index.js",
+        "bot-only": "node src/bot-legacy.js",
+        "dev:web": "cd web && npm run dev",
+        "dev:mbbank": "cd mbbank-api && python -m uvicorn app.main:app --port 8000",
+        "dev:all": "./scripts/dev-all.sh"
+    },
+    "engines": {
+        "node": ">=20.9.0"
+    },
+    "dependencies": {
+        "bcrypt": "^6.0.0",
+        "better-sqlite3": "^11.10.0",
+        "cors": "^2.8.6",
+        "dotenv": "^16.4.7",
+        "express": "^4.21.1",
+        "express-rate-limit": "^8.4.0",
+        "jose": "^6.2.2",
+        "nanoid": "^3.3.8",
+        "qrcode": "^1.5.4",
+        "sanitize-html": "^2.17.3",
+        "sharp": "^0.33.5",
+        "telegraf": "^4.16.3",
+        "zod": "^4.3.6"
+    },
+    "devDependencies": {
+        "concurrently": "^9.2.1"
+    }
+}

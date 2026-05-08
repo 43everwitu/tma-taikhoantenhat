@@ -1,0 +1,56 @@
+{
+  "cmd_balance": {
+    "channel": "bot",
+    "label": "/balance — số dư ví",
+    "variables": ["balance"],
+    "body": "💼 <b>Ví của onii-chan</b>\n\n💰 Hiện có: <b>{{balance}}đ</b>\n\n<i>Nạp nhanh — chạm để copy rồi gửi cho Auto-chan~</i>\n<code>/nap 50000</code>\n<code>/nap 100000</code>\n<code>/nap 200000</code>"
+  },
+  "cmd_account_info": {
+    "channel": "bot",
+    "label": "/info — thông tin tài khoản",
+    "variables": ["id", "name", "balance", "joinedAt"],
+    "body": "👤 <b>Thông tin onii-chan</b>\n\n🆔 ID: <code>{{id}}</code>\n👤 Tên: {{name}}\n💰 Số dư: <b>{{balance}}đ</b>\n📅 Tham gia: {{joinedAt}}\n\n💰 Nạp thêm: <code>/nap &lt;số tiền&gt;</code>\n📦 Xem sản phẩm: /menu"
+  },
+  "cmd_myid": {
+    "channel": "bot",
+    "label": "/myid — Telegram ID",
+    "variables": ["id"],
+    "body": "🆔 <b>Telegram ID của onii-chan:</b>\n<code>{{id}}</code>"
+  },
+  "cmd_support": {
+    "channel": "bot",
+    "label": "/support — hỗ trợ",
+    "variables": ["contact"],
+    "body": "🆘 <b>Auto-chan hỗ trợ onii-chan</b>\n\nNếu onii-chan gặp vấn đề, liên hệ:\n👉 {{contact}}\n\n⏰ Auto-chan hỗ trợ 24/7~"
+  },
+  "cmd_website": {
+    "channel": "bot",
+    "label": "/website — link mua hàng",
+    "variables": ["description", "url", "cleanUrl"],
+    "body": "🌐 <b>Website của Auto-chan</b>\n\n<i>{{description}}</i>\n\n🔗 <a href=\"{{url}}\">{{cleanUrl}}</a>\n\nOnii-chan có thể đăng nhập bằng email + mật khẩu hoặc liên kết Telegram để mua hàng trên web nha~"
+  },
+  "cmd_products_header": {
+    "channel": "bot",
+    "label": "/menu — header danh sách sản phẩm",
+    "variables": [],
+    "body": "👇 👇 👇  Onii-chan chọn sản phẩm bên dưới nha~"
+  },
+  "cmd_products_empty": {
+    "channel": "bot",
+    "label": "/menu — không có sản phẩm",
+    "variables": [],
+    "body": "❌ Auto-chan hết hàng rồi onii-chan~ Quay lại sau nhé!"
+  },
+  "cmd_orders_header": {
+    "channel": "bot",
+    "label": "/orders — header danh sách",
+    "variables": ["filterLabel", "total", "page", "totalPages"],
+    "body": "📋 <b>ĐƠN HÀNG — {{filterLabel}}</b>  <i>({{total}} đơn · trang {{page}}/{{totalPages}})</i>"
+  },
+  "cmd_orders_empty": {
+    "channel": "bot",
+    "label": "/orders — không có đơn",
+    "variables": ["filterLabel"],
+    "body": "📋 <b>ĐƠN HÀNG ({{filterLabel}})</b>\n\nOnii-chan chưa có đơn nào~"
+  }
+}

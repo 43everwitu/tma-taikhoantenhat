@@ -1,0 +1,198 @@
+@import "tailwindcss";
+
+@theme inline {
+  /* Clay swatches */
+  --color-clay-cream: #faf9f7;
+  --color-clay-oat: #dad4c8;
+  --color-clay-oat-light: #eee9df;
+  --color-clay-charcoal: #55534e;
+  --color-clay-silver: #9f9b93;
+  --color-clay-ink: #000000;
+
+  --color-matcha-300: #84e7a5;
+  --color-matcha-600: #078a52;
+  --color-matcha-800: #02492a;
+
+  --color-slushie-500: #3bd3fd;
+  --color-slushie-800: #0089ad;
+
+  --color-lemon-100: #fff8d4;
+  --color-lemon-400: #f8cc65;
+  --color-lemon-500: #fbbd41;
+  --color-lemon-700: #d08a11;
+
+  --color-ube-300: #c1b0ff;
+  --color-ube-600: #6a30c2;
+  --color-ube-800: #43089f;
+
+  --color-pomegranate-100: #ffe4e6;
+  --color-pomegranate-400: #fc7981;
+  --color-pomegranate-700: #9f1239;
+  --color-blueberry-800: #01418d;
+  --color-dragonfruit: #ff3ea5;
+
+  --font-sans: 'Inter', 'Roobert', system-ui, -apple-system, sans-serif;
+  --font-mono: 'JetBrains Mono', 'Space Mono', ui-monospace, monospace;
+
+  /* Clay shadow stack */
+  --shadow-clay: 0 1px 1px rgba(0,0,0,0.10), 0 -1px 1px rgba(0,0,0,0.04) inset, 0 -0.5px 1px rgba(0,0,0,0.05);
+  --shadow-clay-hover: -7px 7px 0 rgba(0,0,0,1);
+
+  --radius-clay: 24px;
+  --radius-clay-lg: 40px;
+  --radius-clay-pill: 9999px;
+
+  --color-sakura-100: #fdecf2;
+  --color-sakura-300: #f7b6cf;
+  --color-sakura-500: #ec4f86;
+  --color-violet-100: #ece5fb;
+  --color-violet-300: #b8a4f1;
+  --color-violet-500: #6d4ad9;
+}
+
+:root {
+  --background: var(--color-clay-cream);
+  --foreground: var(--color-clay-ink);
+}
+
+body {
+  background: var(--background);
+  color: var(--foreground);
+  font-family: var(--font-sans);
+  font-feature-settings: "ss03", "ss10", "ss11", "ss12";
+  letter-spacing: -0.01em;
+}
+
+/* === Clay primitive utilities === */
+@layer components {
+  .clay-card {
+    background: #fff;
+    border: 1px solid var(--color-clay-oat);
+    border-radius: var(--radius-clay);
+    box-shadow: var(--shadow-clay);
+    transition: transform .25s ease, box-shadow .25s ease;
+  }
+  .clay-card-dashed {
+    background: #fff;
+    border: 1px dashed var(--color-clay-oat);
+    border-radius: var(--radius-clay);
+  }
+  .clay-btn {
+    display: inline-flex; align-items: center; justify-content: center; gap: .5rem;
+    padding: .75rem 1.25rem;
+    border-radius: var(--radius-clay-pill);
+    border: 1px solid var(--color-clay-oat);
+    background: #fff;
+    font-weight: 500;
+    box-shadow: var(--shadow-clay);
+    transition: transform .25s cubic-bezier(.34,1.56,.64,1), box-shadow .25s ease, background .2s;
+    cursor: pointer;
+  }
+  .clay-btn:hover {
+    transform: rotateZ(-2deg) translateY(-2px);
+    box-shadow: var(--shadow-clay-hover);
+  }
+  .clay-btn--matcha { background: var(--color-matcha-300); }
+  .clay-btn--lemon  { background: var(--color-lemon-400); }
+  .clay-btn--ube    { background: var(--color-ube-300); color: var(--color-ube-800); }
+  .clay-btn--slushie{ background: var(--color-slushie-500); }
+  .clay-btn--pomegranate { background: var(--color-pomegranate-400); color: #fff; }
+  .clay-btn--ink    { background: var(--color-clay-ink); color: #fff; border-color: var(--color-clay-ink); }
+  .clay-pill {
+    display: inline-flex; align-items: center; gap: .375rem;
+    padding: .25rem .75rem;
+    border-radius: var(--radius-clay-pill);
+    border: 1px solid var(--color-clay-oat);
+    background: var(--color-clay-oat-light);
+    font-size: .75rem; font-weight: 500; color: var(--color-clay-charcoal);
+  }
+  .clay-input {
+    background: #fff;
+    border: 1px solid var(--color-clay-oat);
+    border-radius: 16px;
+    padding: .625rem .875rem;
+    box-shadow: var(--shadow-clay);
+    transition: border-color .15s ease, box-shadow .15s ease;
+  }
+  .clay-input:focus { outline: none; border-color: var(--color-clay-ink); box-shadow: 0 0 0 2px rgba(20,110,245,.25); }
+  .clay-display {
+    font-weight: 600; line-height: 1; letter-spacing: -0.04em;
+  }
+  /* Clay signature kicker — uppercase label per DESIGN.md §3 */
+  .clay-kicker {
+    font-size: 12px; font-weight: 600;
+    text-transform: uppercase; letter-spacing: 0.09em;
+    color: var(--color-clay-charcoal);
+    font-feature-settings: "ss03","ss10","ss11","ss12";
+  }
+  /* Swatch card — full-bleed colored card with Clay hover (rotation + hard shadow) */
+  .clay-swatch-card {
+    position: relative;
+    border: 1px solid var(--color-clay-oat);
+    border-radius: var(--radius-clay);
+    box-shadow: var(--shadow-clay);
+    transition: transform .35s cubic-bezier(.34,1.56,.64,1), box-shadow .35s ease;
+    will-change: transform;
+  }
+  .clay-swatch-card:hover {
+    transform: rotateZ(-2deg) translate(2px,-6px);
+    box-shadow: var(--shadow-clay-hover);
+  }
+  /* Inset white card placed inside a swatch section (DESIGN.md §4) */
+  .clay-inset-card {
+    background: #fff;
+    border: 1px dashed var(--color-clay-oat);
+    border-radius: 16px;
+  }
+
+  /* Mobile sidebar drawer — slides in from left on <lg, becomes static on lg+ */
+  .clay-drawer-backdrop {
+    position: fixed; inset: 0; z-index: 40;
+    background: rgba(0,0,0,0.4);
+    backdrop-filter: blur(2px);
+  }
+  .clay-drawer-panel {
+    position: fixed; top: 0; bottom: 0; left: 0; z-index: 50;
+    width: 16rem; max-width: 85vw;
+    background: #fff;
+    border-right: 1px solid var(--color-clay-oat);
+    transform: translateX(-100%);
+    transition: transform 250ms cubic-bezier(.34,1.56,.64,1);
+    overflow-y: auto;
+  }
+  .clay-drawer-panel.open { transform: translateX(0); }
+  @media (min-width: 1024px) {
+    .clay-drawer-backdrop { display: none; }
+    .clay-drawer-panel { position: static; transform: none; max-width: none; z-index: auto; }
+  }
+
+  /* Mobile alternative to data tables — stacked card list */
+  .clay-card-list { display: flex; flex-direction: column; gap: .75rem; }
+  .clay-card-list-item {
+    background: #fff;
+    border: 1px solid var(--color-clay-oat);
+    border-radius: 16px;
+    padding: 1rem;
+  }
+  .clay-row-label {
+    display: inline-block; min-width: 6.5rem;
+    font-size: 12px; text-transform: uppercase; letter-spacing: 0.05em;
+    color: var(--color-clay-charcoal);
+  }
+
+  .rich-text { white-space: pre-wrap; line-height: 1.55; }
+  .rich-text a { text-decoration: underline; color: var(--color-clay-ink); }
+  .rich-text code { background: var(--color-clay-oat-light); padding: 0 .25rem; border-radius: 4px; font-family: var(--font-mono); font-size: .9em; }
+  .rich-text pre { background: var(--color-clay-oat-light); padding: .75rem; border-radius: 8px; font-family: var(--font-mono); font-size: .85em; overflow-x: auto; }
+  .rich-text tg-spoiler { background: var(--color-clay-charcoal); color: var(--color-clay-charcoal); border-radius: 4px; cursor: pointer; transition: color .2s; }
+  .rich-text tg-spoiler:hover, .rich-text tg-spoiler.revealed { color: #fff; }
+
+  .clay-pill--sakura {
+    background: var(--color-sakura-100);
+    color: var(--color-sakura-500);
+    border-color: var(--color-sakura-300);
+  }
+  .clay-mascot-glow {
+    box-shadow: 0 4px 14px color-mix(in srgb, var(--color-sakura-300) 60%, transparent);
+  }
+}

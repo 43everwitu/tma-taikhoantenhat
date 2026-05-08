@@ -1,0 +1,1003 @@
+/**
+ * Modern UI/UX styles for MBBank payment gateway
+ * 
+ * IMPORTANT: All styles are namespaced with #mbbank-gateway to avoid conflicts
+ * with WordPress core, WooCommerce, and other plugin styles.
+ * 
+ * This ensures the payment gateway UI remains consistent across different
+ * WordPress themes and plugin combinations.
+ */
+
+/* ===== FONTS ===== */
+/* Preconnect for better performance */
+@import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600&display=swap');
+
+/* ===== CSS RESET FOR WORDPRESS/WOOCOMMERCE COMPATIBILITY ===== */
+#mbbank-gateway * {
+    box-sizing: border-box;
+}
+
+#mbbank-gateway table,
+#mbbank-gateway table th,
+#mbbank-gateway table td {
+    border: none !important;
+    background: transparent !important;
+    padding: 0 !important;
+    margin: 0 !important;
+    font-size: inherit !important;
+    font-weight: inherit !important;
+    line-height: inherit !important;
+    text-align: inherit !important;
+    vertical-align: inherit !important;
+}
+
+#mbbank-gateway table {
+    border-collapse: collapse !important;
+    border-spacing: 0 !important;
+}
+
+/* ===== MAIN CONTAINER ===== */
+#mbbank-gateway {
+    max-width: 720px;
+    margin: 20px auto;
+    font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', 'Roboto', 'Oxygen', 'Ubuntu', 'Cantarell', sans-serif;
+    padding: 0;
+    position: relative;
+    z-index: 1;
+    -webkit-font-smoothing: antialiased;
+    -moz-osx-font-smoothing: grayscale;
+}
+
+/* ===== ORDER SUMMARY SECTION ===== */
+.mbbank-payment-header {
+    background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+    color: white;
+    padding: 20px;
+    border-radius: 12px 12px 0 0;
+    margin-bottom: 0;
+}
+
+.mbbank-order-summary {
+    background: white;
+    border: 2px solid #e9ecef;
+    border-radius: 12px;
+    padding: 20px;
+    margin-bottom: 24px;
+    box-shadow: 0 2px 8px rgba(0, 0, 0, 0.1);
+}
+
+.mbbank-order-summary-grid {
+    display: grid;
+    grid-template-columns: repeat(4, 1fr);
+    gap: 20px;
+    margin-bottom: 16px;
+}
+
+.mbbank-summary-item {
+    text-align: center;
+}
+
+.mbbank-summary-label {
+    font-size: 12px;
+    color: #6c757d;
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+    margin-bottom: 4px;
+    font-weight: 500;
+}
+
+.mbbank-summary-value {
+    font-size: 16px;
+    font-weight: 500;
+    color: #212529;
+}
+
+.mbbank-payment-method-label {
+    background: #e6f3ff;
+    color: #0064e0;
+    padding: 8px 16px;
+    border-radius: 20px;
+    font-size: 14px;
+    font-weight: 600;
+    text-align: center;
+    margin-top: 16px;
+}
+
+/* ===== MAIN PAYMENT LAYOUT ===== */
+#payment-info {
+    display: grid;
+    grid-template-columns: 0.7fr 1fr;
+    gap: 12px;
+    align-items: stretch;
+}
+
+#left-col, #right-col {
+    background: white;
+    border: 1px solid #e9ecef;
+    border-radius: 8px;
+    display: flex;
+    flex-direction: column;
+    min-height: 100%;
+    box-shadow: 0 1px 3px rgba(0, 0, 0, 0.05);
+}
+
+#left-col {
+    padding: 16px;
+}
+
+#right-col {
+    padding: 20px;
+}
+
+/* ===== LEFT COLUMN - STEPS & QR ===== */
+.mbbank-step-item {
+    display: flex;
+    align-items: center;
+    margin-bottom: 8px;
+    padding: 8px;
+    background: #f8f9fa;
+    border-radius: 6px;
+    border-left: 4px solid #0064e0;
+}
+
+.mbbank-step-number {
+    background: #0064e0;
+    color: white;
+    width: 20px;
+    height: 20px;
+    border-radius: 50%;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 11px;
+    font-weight: bold;
+    margin-right: 8px;
+    flex-shrink: 0;
+}
+
+.mbbank-step-text {
+    flex: 1;
+    font-size: 13px;
+    font-weight: 500;
+    line-height: 1.3;
+}
+
+.mbbank-qr-section {
+    text-align: center;
+    margin: 12px 0;
+    display: flex;
+    flex-direction: column;
+    justify-content: center;
+    align-items: center;
+    flex-grow: 1;
+}
+
+.mbbank-qr-image {
+    max-width: 240px;
+    width: 100%;
+    height: auto;
+    border: 2px solid #e9ecef;
+    border-radius: 10px;
+    box-shadow: 0 3px 8px rgba(0, 0, 0, 0.1);
+    background: white;
+    padding: 10px;
+    display: block;
+    image-rendering: crisp-edges;
+    -webkit-user-select: none;
+    user-select: none;
+}
+
+.mbbank-download-btn {
+    display: inline-flex;
+    align-items: center;
+    gap: 5px;
+    margin-top: 35px !important;
+    padding: 8px 16px;
+    background: linear-gradient(135deg, #0064e0, #0056c4);
+    color: white;
+    border-radius: 18px;
+    cursor: pointer;
+    font-size: 13px;
+    font-weight: 600;
+    border: none;
+    box-shadow: 0 2px 6px rgba(0, 100, 224, 0.3);
+    transition: all 0.3s ease;
+    will-change: transform;
+    -webkit-tap-highlight-color: transparent;
+    min-height: 44px;
+}
+
+.mbbank-download-btn:hover {
+    transform: translateY(-2px);
+    box-shadow: 0 4px 12px rgba(0, 100, 224, 0.4);
+}
+
+.mbbank-download-btn:active {
+    transform: translateY(0);
+}
+
+/* ===== RIGHT COLUMN - ACCOUNT INFO ===== */
+.mbbank-account-info {
+    background: white;
+    border-radius: 12px;
+    overflow: hidden;
+    flex-grow: 1;
+    display: flex;
+    flex-direction: column;
+}
+
+.mbbank-account-header {
+    padding: 12px 8px;
+    border-bottom: 1px solid #dee2e6;
+}
+
+.mbbank-account-title {
+    font-size: 16px;
+    font-weight: 600;
+    color: #212529;
+    margin: 0;
+    text-align: center;
+}
+
+.mbbank-bank-subtitle {
+    text-align: center;
+    font-size: 13px;
+    color: #6c757d;
+    margin-top: 4px;
+    line-height: 1.3;
+}
+
+.mbbank-account-details {
+    padding: 0;
+    flex-grow: 1;
+    display: flex;
+    flex-direction: column;
+}
+
+/* ===== TABLE STYLING - MBBank Specific with High Specificity ===== */
+#mbbank-gateway table {
+    width: 100% !important;
+    border-collapse: collapse !important;
+    margin: 0 !important;
+    border: none !important;
+    background: transparent !important;
+    table-layout: auto !important;
+}
+
+#mbbank-gateway table tbody tr {
+    border-bottom: 1px solid #f1f3f4 !important;
+    background: transparent !important;
+    display: table-row !important;
+}
+
+#mbbank-gateway table tbody tr:last-child {
+    border-bottom: none !important;
+}
+
+#mbbank-gateway table th {
+    text-align: left !important;
+    padding: 8px 12px !important;
+    font-weight: 600 !important;
+    font-size: 16px !important;
+    color: #495057 !important;
+    background: transparent !important;
+    border: none !important;
+    vertical-align: middle !important;
+    display: table-cell !important;
+}
+
+#mbbank-gateway table th:first-child {
+    width: 35% !important;
+    color: #6c757d !important;
+    font-weight: 500 !important;
+}
+
+#mbbank-gateway table th:last-child {
+    display: flex !important;
+    align-items: center !important;
+    justify-content: space-between !important;
+}
+
+#mbbank-gateway table th img {
+    height: 28px !important;
+    width: auto !important;
+    max-width: none !important;
+}
+
+#mbbank-gateway table td {
+    padding: 8px 12px !important;
+    border: none !important;
+    background: transparent !important;
+    vertical-align: middle !important;
+    display: table-cell !important;
+}
+
+/* ===== INTERACTIVE ELEMENTS - MBBank Specific ===== */
+#mbbank-gateway .mbbank-copy-btn {
+    background: #6366f1;
+    border: none;
+    border-radius: 12px;
+    cursor: pointer;
+    padding: 10px;
+    margin-left: 12px;
+    transition: all 0.2s ease;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    will-change: transform;
+    -webkit-tap-highlight-color: transparent;
+    min-width: 40px;
+    min-height: 40px;
+    box-shadow: 0 2px 8px rgba(99, 102, 241, 0.2);
+}
+
+#mbbank-gateway .mbbank-copy-btn:hover {
+    background: #4f46e5;
+    transform: scale(1.05);
+    box-shadow: 0 4px 12px rgba(99, 102, 241, 0.3);
+}
+
+#mbbank-gateway .mbbank-copy-btn:active {
+    transform: scale(0.95);
+    box-shadow: 0 2px 6px rgba(99, 102, 241, 0.2);
+}
+
+#mbbank-gateway .mbbank-copy-btn svg {
+    width: 18px;
+    height: 18px;
+    pointer-events: none;
+    color: #ffffff;
+    transition: transform 0.2s ease;
+}
+
+#mbbank-gateway .mbbank-copy-btn:hover svg {
+    transform: scale(1.1);
+}
+
+/* ===== VALUE STYLING - MBBank Specific ===== */
+#mbbank-gateway .mbbank-amount-value {
+    font-size: 16px;
+    font-weight: 600;
+}
+
+#mbbank-gateway .mbbank-content-copy {
+    color: red;
+    font-weight: bold;
+    border: 1px solid red;
+    padding: 1px 10px;
+    border-radius: 3px;
+}
+
+/* ===== WARNING & LOADING - MBBank Specific ===== */
+#mbbank-gateway .mbbank-payment-warning {
+    background: #f8f9fa;
+    border-radius: 8px;
+    padding: 12px;
+    font-size: 16px;
+    line-height: 1.4;
+}
+
+#mbbank-gateway .mbbank-payment-warning strong {
+    color: red;
+}
+
+#mbbank-gateway .mbbank-loading-container {
+    text-align: center;
+}
+
+#mbbank-gateway .mbbank-loading-icon {
+    width: 40px;
+    height: 40px;
+    animation: mbbank-spin 1s linear infinite;
+    will-change: transform;
+}
+
+@keyframes mbbank-spin {
+    0% {
+        transform: rotate(0deg);
+    }
+
+    100% {
+        transform: rotate(360deg);
+    }
+}
+
+/* Reduce motion for accessibility */
+@media (prefers-reduced-motion: reduce) {
+    #mbbank-gateway .mbbank-loading-icon {
+        animation: mbbank-spin 2s linear infinite;
+    }
+
+    .mbbank-toast {
+        animation: none;
+        transition: opacity 0.3s ease;
+    }
+
+    .mbbank-toast.show {
+        opacity: 1;
+    }
+
+    .mbbank-toast.hide {
+        opacity: 0;
+    }
+
+    #mbbank-gateway .mbbank-copy-btn:hover,
+    .mbbank-download-btn:hover {
+        transform: none;
+    }
+}
+
+/* ===== SUCCESS ANIMATION (SweetAlert2 Style) - MBBank Specific ===== */
+#mbbank-gateway .mbbank-gateway-result {
+    text-align: center;
+    padding: 20px 20px;
+    background: white;
+    margin: 20px auto;
+}
+
+/* Use SweetAlert2 success icon styling */
+#mbbank-gateway .mbbank-gateway-result .swal2-icon {
+    width: 5em;
+    height: 5em;
+    border: 0.25em solid transparent;
+    border-radius: 50%;
+    box-sizing: content-box;
+    position: relative;
+    justify-content: center;
+    margin: 0 auto 1.25em;
+}
+
+#mbbank-gateway .mbbank-gateway-result .swal2-icon.swal2-success {
+    border-color: #a5dc86;
+    color: #a5dc86;
+}
+
+/* Success animation elements - ensure all SweetAlert2 animations work */
+#mbbank-gateway .mbbank-gateway-result .swal2-icon.swal2-success.swal2-icon-show .swal2-success-line-tip {
+    animation: swal2-animate-success-line-tip 0.75s;
+}
+
+#mbbank-gateway .mbbank-gateway-result .swal2-icon.swal2-success.swal2-icon-show .swal2-success-line-long {
+    animation: swal2-animate-success-line-long 0.75s;
+}
+
+#mbbank-gateway .mbbank-gateway-result .swal2-icon.swal2-success.swal2-icon-show .swal2-success-circular-line-right {
+    animation: swal2-rotate-success-circular-line 4.25s ease-in;
+}
+
+/* Ensure the success icon scales properly on load */
+#mbbank-gateway .mbbank-gateway-result .swal2-icon.swal2-success {
+    animation: swal2-show 0.3s;
+}
+
+/* Make text more prominent */
+#mbbank-gateway .mbbank-gateway-result .text-center {
+    font-size: 14px;
+    color: #333;
+    margin-top: 20px;
+}
+
+/* ===== RESPONSIVE DESIGN ===== */
+
+/* Tablet (768px - 1024px) */
+@media (max-width: 1024px) and (min-width: 769px) {
+    #mbbank-gateway {
+        margin: 15px auto;
+        max-width: 680px;
+    }
+}
+
+/* Tablet and Mobile (≤768px) */
+@media (max-width: 768px) {
+    #mbbank-gateway {
+        margin: 10px;
+        padding: 0;
+    }
+
+    #mbbank-gateway .mbbank-order-summary-grid {
+        grid-template-columns: repeat(2, 1fr);
+        gap: 15px;
+    }
+
+    #mbbank-gateway #payment-info {
+        grid-template-columns: 1fr;
+        gap: 16px;
+        align-items: stretch;
+    }
+
+    #mbbank-gateway #left-col,
+    #mbbank-gateway #right-col {
+        padding: 16px;
+        min-height: auto;
+        display: flex;
+        flex-direction: column;
+    }
+
+    #mbbank-gateway .mbbank-qr-image {
+        max-width: 220px;
+        width: 100%;
+    }
+
+    #mbbank-gateway .mbbank-summary-value {
+        font-size: 14px;
+    }
+
+    #mbbank-gateway .mbbank-step-text {
+        font-size: 12px;
+    }
+
+    #mbbank-gateway table th {
+        font-size: 14px !important;
+        padding: 10px 8px !important;
+    }
+
+    #mbbank-gateway .mbbank-account-title {
+        font-size: 15px;
+    }
+
+    #mbbank-gateway .mbbank-bank-subtitle {
+        font-size: 12px;
+    }
+
+    #mbbank-gateway .mbbank-payment-warning {
+        font-size: 13px;
+        padding: 12px;
+    }
+
+    /* Make copy buttons more touch-friendly */
+    #mbbank-gateway .mbbank-copy-btn {
+        min-width: 40px;
+        min-height: 40px;
+        padding: 10px;
+        border-radius: 11px;
+    }
+
+    #mbbank-gateway .mbbank-copy-btn svg {
+        width: 17px;
+        height: 17px;
+    }
+}
+
+/* Mobile (≤480px) */
+@media (max-width: 480px) {
+    #mbbank-gateway {
+        margin: 8px;
+    }
+
+    #mbbank-gateway .mbbank-order-summary-grid {
+        grid-template-columns: 1fr;
+        gap: 10px;
+    }
+
+    #mbbank-gateway .mbbank-summary-item {
+        padding: 10px;
+        background: #f8f9fa;
+        border-radius: 6px;
+    }
+
+    #mbbank-gateway .mbbank-summary-label {
+        font-size: 11px;
+    }
+
+    #mbbank-gateway .mbbank-summary-value {
+        font-size: 13px;
+    }
+
+    #mbbank-gateway #left-col,
+    #mbbank-gateway #right-col {
+        padding: 12px;
+    }
+
+    #mbbank-gateway .mbbank-qr-image {
+        max-width: 200px;
+        width: 100%;
+    }
+
+    #mbbank-gateway .mbbank-amount-value {
+        font-size: 14px;
+        font-weight: 600;
+    }
+
+    #mbbank-gateway .mbbank-download-btn {
+        font-size: 12px;
+        padding: 10px 20px;
+        min-height: 44px;
+        margin-top: 20px !important;
+    }
+
+    #mbbank-gateway table th {
+        font-size: 13px !important;
+        padding: 8px 6px !important;
+    }
+
+    #mbbank-gateway table th:first-child {
+        width: 40% !important;
+    }
+
+    #mbbank-gateway .mbbank-account-title {
+        font-size: 14px;
+    }
+
+    #mbbank-gateway .mbbank-bank-subtitle {
+        font-size: 11px;
+        line-height: 1.4;
+    }
+
+    #mbbank-gateway .mbbank-content-copy {
+        font-size: 13px;
+        padding: 2px 8px;
+    }
+
+    #mbbank-gateway .mbbank-payment-warning {
+        font-size: 12px;
+        padding: 10px;
+        line-height: 1.5;
+    }
+
+    /* Touch-friendly buttons */
+    #mbbank-gateway .mbbank-copy-btn {
+        min-width: 44px;
+        min-height: 44px;
+        padding: 12px;
+        margin-left: 8px;
+        border-radius: 12px;
+        box-shadow: 0 2px 8px rgba(99, 102, 241, 0.2);
+    }
+
+    #mbbank-gateway .mbbank-copy-btn:active {
+        transform: scale(0.95);
+        box-shadow: 0 1px 4px rgba(99, 102, 241, 0.2);
+    }
+
+    #mbbank-gateway .mbbank-copy-btn svg {
+        width: 18px;
+        height: 18px;
+    }
+
+    #mbbank-gateway .mbbank-step-item {
+        padding: 10px 8px;
+    }
+
+    #mbbank-gateway .mbbank-step-number {
+        width: 24px;
+        height: 24px;
+        font-size: 12px;
+    }
+
+    #mbbank-gateway .mbbank-step-text {
+        font-size: 11px;
+    }
+}
+
+/* Very Small Mobile (≤360px) */
+@media (max-width: 360px) {
+    #mbbank-gateway {
+        margin: 5px;
+    }
+
+    #mbbank-gateway #left-col,
+    #mbbank-gateway #right-col {
+        padding: 10px;
+    }
+
+    #mbbank-gateway .mbbank-qr-image {
+        max-width: 180px;
+    }
+
+    #mbbank-gateway .mbbank-download-btn {
+        font-size: 11px;
+        padding: 8px 16px;
+    }
+
+    #mbbank-gateway table th {
+        font-size: 12px !important;
+        padding: 6px 4px !important;
+    }
+
+    #mbbank-gateway .mbbank-account-title {
+        font-size: 13px;
+    }
+}
+
+/* ===== TOAST NOTIFICATIONS ===== */
+#mbbank-toast-container {
+    position: fixed;
+    top: 20px;
+    right: 20px;
+    z-index: 99999;
+    pointer-events: none;
+}
+
+.mbbank-toast {
+    background: #ffffff;
+    border-radius: 12px;
+    padding: 18px 20px;
+    margin-bottom: 12px;
+    min-width: 340px;
+    max-width: 420px;
+    box-shadow: 0 4px 20px rgba(0, 0, 0, 0.08), 0 1px 4px rgba(0, 0, 0, 0.04);
+    border: 1px solid rgba(0, 0, 0, 0.06);
+    display: flex;
+    align-items: center;
+    gap: 14px;
+    pointer-events: auto;
+    transform: translateX(450px);
+    opacity: 0;
+    transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+    animation: mbbank-toast-bounce-in 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+    will-change: transform, opacity;
+    position: relative;
+}
+
+.mbbank-toast.show {
+    transform: translateX(0);
+    opacity: 1;
+}
+
+.mbbank-toast.hide {
+    transform: translateX(450px);
+    opacity: 0;
+    animation: mbbank-toast-slide-out 0.3s ease-out;
+}
+
+.mbbank-toast:hover {
+    box-shadow: 0 8px 24px rgba(0, 0, 0, 0.12), 0 2px 8px rgba(0, 0, 0, 0.06);
+}
+
+.mbbank-toast-icon {
+    width: 44px;
+    height: 44px;
+    border-radius: 50%;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    flex-shrink: 0;
+    font-size: 22px;
+    font-weight: bold;
+}
+
+/* Success Toast - Green */
+.mbbank-toast-success {
+    background: #ffffff;
+    border-left: 4px solid #10b981;
+}
+
+.mbbank-toast-success .mbbank-toast-icon {
+    background: #10b981;
+    color: #ffffff;
+}
+
+/* Error Toast - Red */
+.mbbank-toast-error {
+    background: #ffffff;
+    border-left: 4px solid #ef4444;
+}
+
+.mbbank-toast-error .mbbank-toast-icon {
+    background: #ef4444;
+    color: #ffffff;
+}
+
+/* Info Toast - Blue */
+.mbbank-toast-info {
+    background: #ffffff;
+    border-left: 4px solid #3b82f6;
+}
+
+.mbbank-toast-info .mbbank-toast-icon {
+    background: #3b82f6;
+    color: #ffffff;
+}
+
+/* Warning Toast - Orange */
+.mbbank-toast-warning {
+    background: #ffffff;
+    border-left: 4px solid #f97316;
+}
+
+.mbbank-toast-warning .mbbank-toast-icon {
+    background: #f97316;
+    color: #ffffff;
+}
+
+.mbbank-toast-content {
+    flex: 1;
+    min-width: 0;
+}
+
+.mbbank-toast-title {
+    font-weight: 600;
+    font-size: 15px;
+    color: #1f2937;
+    margin-bottom: 4px;
+    line-height: 1.3;
+}
+
+.mbbank-toast-message {
+    font-size: 13px;
+    color: #6b7280;
+    line-height: 1.4;
+}
+
+.mbbank-toast-close {
+    width: 24px;
+    height: 24px;
+    border-radius: 6px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    cursor: pointer;
+    color: #9ca3af;
+    transition: all 0.2s ease;
+    flex-shrink: 0;
+    background: transparent;
+    border: none;
+    font-size: 18px;
+    line-height: 1;
+}
+
+.mbbank-toast-close:hover {
+    background: rgba(0, 0, 0, 0.08);
+    color: #4b5563;
+}
+
+/* Progress bar for auto-dismiss */
+.mbbank-toast-progress {
+    position: absolute;
+    bottom: 0;
+    left: 0;
+    height: 3px;
+    border-radius: 0 0 0 12px;
+    transition: width linear;
+    opacity: 0.4;
+}
+
+.mbbank-toast-success .mbbank-toast-progress {
+    background: #10b981;
+}
+
+.mbbank-toast-error .mbbank-toast-progress {
+    background: #ef4444;
+}
+
+.mbbank-toast-info .mbbank-toast-progress {
+    background: #3b82f6;
+}
+
+.mbbank-toast-warning .mbbank-toast-progress {
+    background: #f97316;
+}
+
+/* Toast Animations */
+@keyframes mbbank-toast-bounce-in {
+    0% {
+        transform: translateX(450px);
+        opacity: 0;
+    }
+
+    100% {
+        transform: translateX(0);
+        opacity: 1;
+    }
+}
+
+@keyframes mbbank-toast-slide-out {
+    0% {
+        transform: translateX(0);
+        opacity: 1;
+    }
+
+    100% {
+        transform: translateX(450px);
+        opacity: 0;
+    }
+}
+
+/* Toast Mobile adjustments */
+@media (max-width: 768px) {
+    #mbbank-toast-container {
+        top: 10px;
+        right: 10px;
+        left: 10px;
+        z-index: 999999;
+    }
+
+    .mbbank-toast {
+        min-width: auto;
+        max-width: none;
+        padding: 16px;
+        border-radius: 10px;
+        transform: translateY(-100px);
+        animation: mbbank-toast-bounce-in-mobile 0.3s ease-out;
+    }
+
+    .mbbank-toast-title {
+        font-size: 14px;
+    }
+
+    .mbbank-toast-message {
+        font-size: 12px;
+    }
+
+    .mbbank-toast-icon {
+        width: 40px;
+        height: 40px;
+        font-size: 20px;
+    }
+
+    .mbbank-toast.show {
+        transform: translateY(0);
+    }
+
+    .mbbank-toast.hide {
+        transform: translateY(-100px);
+        animation: mbbank-toast-slide-out-mobile 0.3s ease-out;
+    }
+
+    .mbbank-toast:hover {
+        box-shadow: 0 8px 24px rgba(0, 0, 0, 0.12), 0 2px 8px rgba(0, 0, 0, 0.06);
+    }
+
+    .mbbank-toast-close {
+        width: 24px;
+        height: 24px;
+        font-size: 16px;
+    }
+}
+
+@media (max-width: 360px) {
+    .mbbank-toast {
+        padding: 14px;
+        gap: 12px;
+        border-radius: 10px;
+    }
+
+    .mbbank-toast-title {
+        font-size: 13px;
+    }
+
+    .mbbank-toast-message {
+        font-size: 11px;
+    }
+
+    .mbbank-toast-icon {
+        width: 36px;
+        height: 36px;
+        font-size: 18px;
+    }
+
+    .mbbank-toast-close {
+        width: 22px;
+        height: 22px;
+        font-size: 16px;
+    }
+}
+
+@keyframes mbbank-toast-bounce-in-mobile {
+    0% {
+        transform: translateY(-100px);
+        opacity: 0;
+    }
+
+    100% {
+        transform: translateY(0);
+        opacity: 1;
+    }
+}
+
+@keyframes mbbank-toast-slide-out-mobile {
+    0% {
+        transform: translateY(0);
+        opacity: 1;
+    }
+
+    100% {
+        transform: translateY(-100px);
+        opacity: 0;
+    }
+}
+
+/* ===== UTILITY CLASSES ===== */
+.anPc, .anMoblie {
+    display: none;
+}

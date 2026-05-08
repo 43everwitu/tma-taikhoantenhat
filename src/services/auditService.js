@@ -1,0 +1,52 @@
+const db = require('../database');
+
+const insertAudit = db.prepare(`
+  INSERT INTO audit_log (admin_id, action, entity_type, entity_id, details, ip_address)
+  VALUES (?, ?, ?, ?, ?, ?)
+`);
+
+const auditService = {
+  log(adminId, action, entityType = null, entityId = null, details = null, ipAddress = null) {
+    insertAudit.run(
+      adminId,
+      action,
+      entityType,
+      entityId,
+      details ? JSON.stringify(details) : null,
+      ipAddress
+    );
+  },
+
+  getRecent(limit = 50, offset = 0, filters = {}) {
+    let where = '1=1';
+    const params = [];
+
+    if (filters.adminId) {
+      where += ' AND admin_id = ?';
+      params.push(filters.adminId);
+    }
+    if (filters.action) {
+      where += ' AND action LIKE ?';
+      params.push(`%${filters.action}%`);
+    }
+    if (filters.entityType) {
+      where += ' AND entity_type = ?';
+      params.push(filters.entityType);
+    }
+
+    const rows = db.prepare(`
+      SELECT al.*, a.display_name as admin_name
+      FROM audit_log al
+      LEFT JOIN admins a ON al.admin_id = a.id
+      WHERE ${where}
+      ORDER BY al.created_at DESC
+      LIMIT ? OFFSET ?
+    `).all(...params, limit, offset);
+
+    const total = db.prepare(`SELECT COUNT(*) as c FROM audit_log WHERE ${where}`).all(...params)[0].c;
+
+    return { rows, total };
+  },
+};
+
+module.exports = auditService;
