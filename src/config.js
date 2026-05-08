@@ -44,9 +44,9 @@ module.exports = {
     SEPAY_API_KEY: process.env.SEPAY_API_KEY || '',
 
     // Shop
-    SHOP_NAME: process.env.SHOP_NAME || 'Starizzi Shop',
-    SUPPORT_CONTACT: process.env.SUPPORT_CONTACT || '@starizzi_support',
-    BRAND_NAME: 'Auto-chan',
+    SHOP_NAME: process.env.SHOP_NAME || 'Taikhoantenhat',
+    SUPPORT_CONTACT: process.env.SUPPORT_CONTACT || '@taikhoantenhat_support',
+    BRAND_NAME: 'Taikhoantenhat',
     BRAND_TAGLINE: 'Bán hàng tự động cho các onii-chan',
 
     // Google Sheet
