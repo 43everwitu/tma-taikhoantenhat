@@ -1,7 +1,12 @@
 const path = require('node:path');
+const fs = require('node:fs');
 
-const PARENT_REPO = '/Users/peanut/Users/peanut/Project Local/telegram-shop-bot';
-const BACKUP_ROOT = path.join(PARENT_REPO, 'taikhoantenhat.com__2026-05-06T15_42_06+0700');
+// Resolve backup root: prefer in-fork copy, fall back to parent repo.
+// Override with WP_BACKUP_ROOT env var for non-default layouts.
+const FORK_BACKUP = path.resolve(__dirname, '../../taikhoantenhat.com__2026-05-06T15_42_06+0700');
+const PARENT_BACKUP = '/Users/peanut/Users/peanut/Project Local/telegram-shop-bot/taikhoantenhat.com__2026-05-06T15_42_06+0700';
+const BACKUP_ROOT = process.env.WP_BACKUP_ROOT
+  || (fs.existsSync(FORK_BACKUP) ? FORK_BACKUP : PARENT_BACKUP);
 
 module.exports = {
   WP_TABLE_PREFIX: 'AGJiSNzCU_',

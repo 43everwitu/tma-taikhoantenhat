@@ -1,6 +1,7 @@
 const config = require('./config');
 const db = require('./database');
 const express = require('express');
+const path = require('node:path');
 const { createBot } = require('./bot');
 
 // ============================================================
@@ -13,6 +14,13 @@ app.use(express.json());
 app.get('/health', (req, res) => {
   res.json({ status: 'ok', timestamp: new Date().toISOString() });
 });
+
+// Static uploads (product images, etc.) served with long-lived cache.
+app.use('/uploads', express.static(path.resolve(__dirname, '..', 'data', 'uploads'), {
+  maxAge: '30d',
+  immutable: true,
+  fallthrough: false,
+}));
 
 // API routes
 const { createApiRouter } = require('./api/server');

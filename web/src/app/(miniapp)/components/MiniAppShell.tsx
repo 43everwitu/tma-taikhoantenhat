@@ -2,30 +2,56 @@
 
 import Link from 'next/link'
 import { ReactNode } from 'react'
+import { usePathname } from 'next/navigation'
 import { t } from '@/i18n/vi'
 
-export function MiniAppShell({ children, title }: { children: ReactNode; title?: string }) {
+export function MiniAppShell({
+  children,
+  title,
+  subtitle,
+  showHeader = true,
+  hasBottombar = false,
+}: {
+  children: ReactNode
+  title?: string
+  subtitle?: string
+  showHeader?: boolean
+  hasBottombar?: boolean
+}) {
+  const pathname = usePathname()
+  const navItems: { href: string; label: string; icon: string; match: (p: string) => boolean }[] = [
+    { href: '/',         label: t.nav.home,    icon: '🏠', match: (p) => p === '/' },
+    { href: '/gio-hang', label: t.nav.cart,    icon: '🛒', match: (p) => p.startsWith('/gio-hang') },
+    { href: '/don-hang', label: t.nav.orders,  icon: '📋', match: (p) => p.startsWith('/don-hang') },
+  ]
   return (
-    <div
-      className="min-h-screen pb-20"
-      style={{ background: 'var(--tg-bg, #fff)', color: 'var(--tg-text, #000)' }}
-    >
-      {title && (
-        <header
-          className="sticky top-0 z-10 px-4 py-3 text-base font-semibold"
-          style={{ background: 'var(--tg-bg-2, #f4f4f4)' }}
-        >
-          {title}
+    <div className="miniapp-root">
+      {showHeader && (
+        <header className="miniapp-header px-4 py-3">
+          <div className="flex items-center justify-between">
+            <Link href="/" className="miniapp-brand">
+              <span className="miniapp-brand-mark">T</span>
+              <span>{title ?? t.appName}</span>
+            </Link>
+            <Link href="/gio-hang" className="text-xl" aria-label={t.nav.cart}>🛒</Link>
+          </div>
+          {subtitle && (
+            <p className="text-xs opacity-60 mt-0.5 ml-10">{subtitle}</p>
+          )}
         </header>
       )}
-      <main className="px-4 py-3">{children}</main>
-      <nav
-        className="fixed bottom-0 left-0 right-0 grid grid-cols-3 border-t text-sm"
-        style={{ background: 'var(--tg-bg-2, #f4f4f4)' }}
-      >
-        <Link href="/" className="py-3 text-center">{t.nav.home}</Link>
-        <Link href="/gio-hang" className="py-3 text-center">{t.nav.cart}</Link>
-        <Link href="/don-hang" className="py-3 text-center">{t.nav.orders}</Link>
+      <main className={`px-4 pt-3 ${hasBottombar ? 'pb-32' : 'pb-24'}`}>{children}</main>
+      <nav className="miniapp-bottomnav">
+        {navItems.map((it) => (
+          <Link
+            key={it.href}
+            href={it.href}
+            aria-current={it.match(pathname) ? 'page' : undefined}
+          >
+            <span className="miniapp-bottomnav-icon">{it.icon}</span>
+            {it.label}
+          </Link>
+        ))}
       </nav>
     </div>
   )

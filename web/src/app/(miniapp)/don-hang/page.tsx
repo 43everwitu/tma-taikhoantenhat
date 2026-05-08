@@ -7,24 +7,73 @@ import { MiniAppShell } from '../components/MiniAppShell'
 import { formatPrice } from '@/lib/utils'
 import { t } from '@/i18n/vi'
 
-interface OrderRow { id: number; status: string; total_price: number; created_at: string; product_name?: string }
+type OrderStatus = 'pending' | 'paid' | 'delivered' | 'cancelled' | 'expired'
+interface OrderRow {
+  id: number
+  status: OrderStatus
+  total_price: number
+  created_at: string
+  product_name?: string
+  quantity?: number
+}
+
+const STATUS_LABEL: Record<OrderStatus, string> = {
+  pending: t.order.waiting, paid: t.order.paid, delivered: t.order.delivered,
+  cancelled: t.order.cancelled, expired: t.order.expired,
+}
+
+function formatDate(iso: string) {
+  try {
+    return new Intl.DateTimeFormat('vi-VN', {
+      day: '2-digit', month: '2-digit', year: 'numeric',
+      hour: '2-digit', minute: '2-digit',
+    }).format(new Date(iso))
+  } catch {
+    return iso
+  }
+}
 
 export default function MyOrdersPage() {
-  const { data } = useQuery({
+  const { data, isLoading } = useQuery({
     queryKey: ['orders', 'my'],
     queryFn: () => apiFetch<OrderRow[]>('/orders/my'),
   })
+
   return (
     <MiniAppShell title={t.nav.orders}>
-      {!data && <p className="opacity-60">…</p>}
-      {data && data.length === 0 && <p className="opacity-60">Chưa có đơn hàng.</p>}
+      {isLoading && <p className="opacity-60 text-sm">Đang tải…</p>}
+      {data && data.length === 0 && (
+        <div className="text-center py-16">
+          <div className="text-6xl mb-3">📋</div>
+          <p className="opacity-60 text-sm mb-4">Chưa có đơn hàng nào.</p>
+          <Link href="/" className="miniapp-btn miniapp-btn--primary inline-flex" style={{ width: 'auto', padding: '.625rem 1.25rem' }}>
+            Bắt đầu mua sắm
+          </Link>
+        </div>
+      )}
       {data && data.length > 0 && (
         <ul className="space-y-2">
           {data.map((o) => (
             <li key={o.id}>
-              <Link href={`/don-hang/${o.id}`} className="block rounded-lg p-3" style={{ background: 'var(--tg-bg-2)' }}>
-                <p className="text-sm">#{o.id} — {o.product_name || ''}</p>
-                <p className="text-xs opacity-70">{formatPrice(o.total_price)} · {o.status}</p>
+              <Link
+                href={`/don-hang/${o.id}`}
+                className="block rounded-2xl p-3.5"
+                style={{ background: 'var(--tg-bg-2)' }}
+              >
+                <div className="flex items-start justify-between gap-2 mb-1">
+                  <p className="text-sm font-semibold line-clamp-1 flex-1">
+                    {o.product_name || `Đơn #${o.id}`}
+                  </p>
+                  <span className={`miniapp-status miniapp-status--${o.status}`}>
+                    {STATUS_LABEL[o.status]}
+                  </span>
+                </div>
+                <div className="flex items-center justify-between text-xs opacity-70">
+                  <span>#{o.id} · {formatDate(o.created_at)}</span>
+                  <span className="font-semibold" style={{ color: 'var(--brand-ink)' }}>
+                    {formatPrice(o.total_price)}
+                  </span>
+                </div>
               </Link>
             </li>
           ))}

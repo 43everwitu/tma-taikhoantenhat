@@ -30,7 +30,15 @@ const nextConfig: NextConfig = {
   async rewrites() {
     return [
       { source: '/api/:path*', destination: `${API_BACKEND}/api/:path*` },
+      { source: '/uploads/:path*', destination: `${API_BACKEND}/uploads/:path*` },
     ]
+  },
+  images: {
+    remotePatterns: [
+      { protocol: 'http', hostname: 'localhost' },
+      { protocol: 'https', hostname: '**.trycloudflare.com' },
+      { protocol: 'https', hostname: '**.ngrok-free.app' },
+    ],
   },
 }
 

@@ -1,6 +1,7 @@
 'use client'
 
 import Link from 'next/link'
+import Image from 'next/image'
 import { useCart } from '@/lib/cart'
 import { MiniAppShell } from '../components/MiniAppShell'
 import { formatPrice } from '@/lib/utils'
@@ -8,41 +9,67 @@ import { t } from '@/i18n/vi'
 
 export default function CartPage() {
   const cart = useCart()
+  const empty = cart.items.length === 0
 
   return (
-    <MiniAppShell title={t.cart.title}>
-      {cart.items.length === 0 && <p className="opacity-60">{t.cart.empty}</p>}
-      {cart.items.length > 0 && (
-        <>
-          <ul className="space-y-2 mb-4">
-            {cart.items.map((it) => (
-              <li key={it.id} className="rounded-lg p-3 flex gap-3 items-center" style={{ background: 'var(--tg-bg-2)' }}>
-                <div className="text-3xl">{it.emoji || '📦'}</div>
-                <div className="flex-1">
-                  <p className="text-sm font-medium">{it.name}</p>
-                  <p className="text-xs opacity-70">{formatPrice(it.price)}</p>
-                  <div className="mt-1 flex items-center gap-2">
-                    <button onClick={() => cart.setQuantity(it.id, it.quantity - 1)} className="px-2 rounded" style={{ background: 'var(--tg-bg)' }}>−</button>
-                    <span className="w-8 text-center">{it.quantity}</span>
-                    <button onClick={() => cart.setQuantity(it.id, it.quantity + 1)} className="px-2 rounded" style={{ background: 'var(--tg-bg)' }}>+</button>
-                    <button onClick={() => cart.remove(it.id)} className="ml-auto text-xs opacity-70">{t.cart.remove}</button>
-                  </div>
-                </div>
-              </li>
-            ))}
-          </ul>
-          <div className="flex items-center justify-between mb-3">
-            <span className="opacity-70">{t.cart.total}</span>
-            <span className="text-lg font-semibold">{formatPrice(cart.total)}</span>
-          </div>
-          <Link
-            href="/dat-hang"
-            className="block text-center rounded-lg py-3 font-medium"
-            style={{ background: 'var(--tg-button)', color: 'var(--tg-button-text)' }}
-          >
-            {t.cart.checkout}
+    <MiniAppShell title={t.cart.title} hasBottombar={!empty}>
+      {empty && (
+        <div className="text-center py-16">
+          <div className="text-6xl mb-3">🛒</div>
+          <p className="opacity-60 text-sm mb-4">{t.cart.empty}</p>
+          <Link href="/" className="miniapp-btn miniapp-btn--primary inline-flex" style={{ width: 'auto', padding: '.625rem 1.25rem' }}>
+            Tiếp tục mua sắm
           </Link>
-        </>
+        </div>
+      )}
+      {!empty && (
+        <ul className="space-y-2 mb-4">
+          {cart.items.map((it) => (
+            <li key={it.id} className="rounded-2xl p-3 flex gap-3 items-center" style={{ background: 'var(--tg-bg-2)' }}>
+              <div className="w-16 h-16 rounded-xl overflow-hidden relative shrink-0" style={{ background: 'var(--brand-gold-soft)' }}>
+                {it.imageUrl
+                  ? <Image src={it.imageUrl} alt={it.name} fill sizes="64px" style={{ objectFit: 'cover' }} />
+                  : <div className="absolute inset-0 grid place-items-center text-2xl">{it.emoji || '📦'}</div>}
+              </div>
+              <div className="flex-1 min-w-0">
+                <p className="text-sm font-medium line-clamp-2">{it.name}</p>
+                <p className="text-sm font-bold mt-0.5">{formatPrice(it.price * it.quantity)}</p>
+                <div className="mt-2 flex items-center gap-1">
+                  <button
+                    onClick={() => cart.setQuantity(it.id, it.quantity - 1)}
+                    className="w-7 h-7 grid place-items-center rounded-full text-base"
+                    style={{ background: 'var(--tg-bg)' }}
+                    aria-label={t.cart.decrease}
+                  >−</button>
+                  <span className="w-7 text-center text-sm font-semibold">{it.quantity}</span>
+                  <button
+                    onClick={() => cart.setQuantity(it.id, it.quantity + 1)}
+                    className="w-7 h-7 grid place-items-center rounded-full text-base"
+                    style={{ background: 'var(--tg-bg)' }}
+                    aria-label={t.cart.increase}
+                  >+</button>
+                  <button
+                    onClick={() => cart.remove(it.id)}
+                    className="ml-auto text-xs opacity-60 px-2"
+                    aria-label={t.cart.remove}
+                  >{t.cart.remove}</button>
+                </div>
+              </div>
+            </li>
+          ))}
+        </ul>
+      )}
+
+      {!empty && (
+        <div className="miniapp-bottombar" style={{ gridTemplateColumns: '1fr 1.4fr' }}>
+          <div className="self-center">
+            <div className="text-xs opacity-60">{t.cart.total}</div>
+            <div className="text-lg font-bold leading-tight">{formatPrice(cart.total)}</div>
+          </div>
+          <Link href="/dat-hang" className="miniapp-btn miniapp-btn--primary">
+            {t.cart.checkout} →
+          </Link>
+        </div>
       )}
     </MiniAppShell>
   )

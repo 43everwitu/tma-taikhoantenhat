@@ -39,32 +39,56 @@ export default function CheckoutPage() {
     }
   }
 
+  const empty = cart.items.length === 0
+
   return (
-    <MiniAppShell title={t.checkout.title}>
-      {cart.items.length === 0 && <p className="opacity-60">{t.cart.empty}</p>}
-      {cart.items.length > 0 && (
+    <MiniAppShell title={t.checkout.title} hasBottombar={!empty}>
+      {empty && (
+        <div className="text-center py-16">
+          <div className="text-6xl mb-3">🧾</div>
+          <p className="opacity-60 text-sm">{t.cart.empty}</p>
+        </div>
+      )}
+      {!empty && (
         <>
+          <p className="text-xs uppercase tracking-wider opacity-60 mb-2">Đơn hàng của bạn</p>
           <ul className="space-y-2 mb-4">
             {cart.items.map((it) => (
-              <li key={it.id} className="rounded-lg p-3 flex justify-between" style={{ background: 'var(--tg-bg-2)' }}>
-                <span>{it.name} × {it.quantity}</span>
-                <span>{formatPrice(it.price * it.quantity)}</span>
+              <li key={it.id} className="rounded-2xl p-3 flex justify-between gap-2" style={{ background: 'var(--tg-bg-2)' }}>
+                <div className="min-w-0">
+                  <p className="text-sm font-medium truncate">{it.name}</p>
+                  <p className="text-xs opacity-60">{formatPrice(it.price)} × {it.quantity}</p>
+                </div>
+                <span className="text-sm font-semibold whitespace-nowrap">{formatPrice(it.price * it.quantity)}</span>
               </li>
             ))}
           </ul>
-          <div className="flex items-center justify-between mb-3">
-            <span className="opacity-70">{t.cart.total}</span>
-            <span className="text-lg font-semibold">{formatPrice(cart.total)}</span>
+
+          <div className="rounded-2xl p-3 mb-4 text-sm" style={{ background: 'var(--brand-gold-soft)', color: 'var(--brand-ink)' }}>
+            <p className="font-medium mb-1">💡 Thanh toán bằng VietQR</p>
+            <p className="opacity-80 leading-relaxed">Quét mã QR ở trang sau, chuyển đúng số tiền và nội dung để hệ thống tự động giao key.</p>
           </div>
-          {err && <p className="text-red-500 text-sm mb-2">{err}</p>}
-          <button
-            onClick={placeOrder}
-            disabled={busy}
-            className="w-full rounded-lg py-3 font-medium"
-            style={{ background: 'var(--tg-button)', color: 'var(--tg-button-text)' }}
-          >
-            {busy ? t.checkout.creating : t.checkout.confirm}
-          </button>
+
+          {err && (
+            <div className="rounded-xl p-3 mb-3 text-sm" style={{ background: '#fee2e2', color: '#991b1b' }}>
+              {err}
+            </div>
+          )}
+
+          <div className="miniapp-bottombar" style={{ gridTemplateColumns: '1fr 1.4fr' }}>
+            <div className="self-center">
+              <div className="text-xs opacity-60">{t.cart.total}</div>
+              <div className="text-lg font-bold leading-tight">{formatPrice(cart.total)}</div>
+            </div>
+            <button
+              type="button"
+              onClick={placeOrder}
+              disabled={busy}
+              className="miniapp-btn miniapp-btn--primary"
+            >
+              {busy ? t.checkout.creating : `${t.checkout.confirm} →`}
+            </button>
+          </div>
         </>
       )}
     </MiniAppShell>

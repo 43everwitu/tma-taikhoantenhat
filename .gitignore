@@ -41,3 +41,8 @@ data/db.sqlite.fresh
 data/wp-imports/
 data/uploads/products/
 scripts/wp-migration/.cache/
+taikhoantenhat.com__*/
+taikho35_taikhoan_wp_lmbr8.sql
+
+# Python venv
+mbbank-api/.venv/

@@ -9,7 +9,7 @@ PROJECT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 osascript <<EOF
 tell application "Terminal"
     activate
-    do script "cd '$PROJECT_DIR/mbbank-api' && python -m uvicorn app.main:app --port 8000"
+    do script "cd '$PROJECT_DIR/mbbank-api' && python3 -m uvicorn app.main:app --port 8000"
     delay 0.5
     do script "cd '$PROJECT_DIR' && source ~/.nvm/nvm.sh && nvm use 20 && npm start"
     delay 0.5

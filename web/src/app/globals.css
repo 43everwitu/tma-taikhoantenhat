@@ -195,4 +195,330 @@ body {
   .clay-mascot-glow {
     box-shadow: 0 4px 14px color-mix(in srgb, var(--color-sakura-300) 60%, transparent);
   }
+
+  /* ──────────────────────────────────────────────────────────────
+     Mini App theme — Taikhoantenhat brand (gold + dark navy from
+     legacy WP toka-child theme) layered over Clay tokens.
+     Telegram theme params still override --tg-bg / --tg-text;
+     these vars are app-side fallbacks + brand accents.
+     ────────────────────────────────────────────────────────────── */
+  :root {
+    --brand-gold: #ffc200;
+    --brand-gold-soft: #fff1b8;
+    --brand-gold-deep: #d99700;
+    --brand-ink: #1c222b;
+    --brand-ink-soft: #2a323e;
+    --brand-cream: #fffaf0;
+  }
+
+  .miniapp-root {
+    background: var(--tg-bg, var(--brand-cream));
+    color: var(--tg-text, var(--brand-ink));
+    min-height: 100dvh;
+  }
+
+  /* Header with subtle gradient + sticky blur */
+  .miniapp-header {
+    position: sticky; top: 0; z-index: 20;
+    backdrop-filter: blur(14px);
+    background: color-mix(in srgb, var(--tg-bg, var(--brand-cream)) 88%, transparent);
+    border-bottom: 1px solid color-mix(in srgb, var(--brand-ink) 8%, transparent);
+  }
+  .miniapp-brand {
+    display: inline-flex; align-items: center; gap: .5rem;
+    font-weight: 700; letter-spacing: -0.02em;
+    color: var(--tg-text, var(--brand-ink));
+  }
+  .miniapp-brand-mark {
+    display: inline-grid; place-items: center;
+    width: 32px; height: 32px;
+    border-radius: 12px;
+    background: linear-gradient(135deg, var(--brand-gold) 0%, var(--brand-gold-deep) 100%);
+    color: var(--brand-ink);
+    font-weight: 800; font-size: 14px;
+    box-shadow: 0 2px 8px color-mix(in srgb, var(--brand-gold) 40%, transparent);
+  }
+
+  /* Bottom navigation bar */
+  .miniapp-bottomnav {
+    position: fixed; bottom: 0; left: 0; right: 0; z-index: 30;
+    display: grid; grid-template-columns: repeat(3, 1fr);
+    backdrop-filter: blur(14px);
+    background: color-mix(in srgb, var(--tg-bg, var(--brand-cream)) 92%, transparent);
+    border-top: 1px solid color-mix(in srgb, var(--brand-ink) 8%, transparent);
+    padding-bottom: env(safe-area-inset-bottom, 0);
+  }
+  .miniapp-bottomnav a {
+    display: flex; flex-direction: column; align-items: center; gap: 2px;
+    padding: .625rem 0;
+    font-size: 11px; font-weight: 500;
+    color: color-mix(in srgb, var(--tg-text, var(--brand-ink)) 60%, transparent);
+    transition: color .15s, transform .15s;
+  }
+  .miniapp-bottomnav a[aria-current="page"] {
+    color: var(--brand-gold-deep);
+  }
+  .miniapp-bottomnav a:active { transform: scale(.92); }
+  .miniapp-bottomnav-icon {
+    width: 22px; height: 22px;
+    display: inline-grid; place-items: center;
+    font-size: 18px;
+  }
+
+  /* Hero card on home */
+  .miniapp-hero {
+    border-radius: 20px;
+    padding: 1.25rem 1.25rem 1.5rem;
+    background: linear-gradient(135deg, var(--brand-ink) 0%, var(--brand-ink-soft) 100%);
+    color: #fff;
+    position: relative; overflow: hidden;
+  }
+  .miniapp-hero::after {
+    content: ''; position: absolute; right: -40px; top: -40px;
+    width: 160px; height: 160px;
+    border-radius: 50%;
+    background: radial-gradient(circle, var(--brand-gold) 0%, transparent 70%);
+    opacity: .35;
+    pointer-events: none;
+  }
+  .miniapp-hero h1 {
+    font-size: 1.5rem; line-height: 1.15; font-weight: 700;
+    letter-spacing: -0.02em; margin-bottom: .25rem;
+  }
+  .miniapp-hero p { font-size: .875rem; opacity: .85; line-height: 1.4; }
+  .miniapp-hero .miniapp-hero-cta {
+    display: inline-flex; align-items: center; gap: .375rem;
+    margin-top: .875rem;
+    padding: .5rem .875rem;
+    border-radius: 10px;
+    background: var(--brand-gold);
+    color: var(--brand-ink);
+    font-size: .8125rem; font-weight: 600;
+  }
+
+  /* Section heading */
+  .miniapp-section { margin-top: 1.5rem; }
+  .miniapp-section-title {
+    display: flex; align-items: center; justify-content: space-between;
+    margin-bottom: .625rem;
+    font-size: .9375rem; font-weight: 600;
+    color: color-mix(in srgb, var(--tg-text, var(--brand-ink)) 88%, transparent);
+  }
+  .miniapp-section-title a {
+    font-size: .75rem; font-weight: 500;
+    color: var(--brand-gold-deep);
+  }
+
+  /* Category tile */
+  .miniapp-cat-grid { display: grid; grid-template-columns: repeat(2, 1fr); gap: .75rem; }
+  .miniapp-cat-tile {
+    display: block; position: relative;
+    padding: 1.125rem 1rem;
+    border-radius: 16px;
+    background: var(--tg-bg-2, #fff);
+    border: 1px solid color-mix(in srgb, var(--brand-ink) 6%, transparent);
+    transition: transform .15s, box-shadow .2s;
+    overflow: hidden;
+  }
+  .miniapp-cat-tile::before {
+    content: ''; position: absolute; left: 0; right: 0; bottom: 0; height: 3px;
+    background: linear-gradient(90deg, var(--brand-gold) 0%, var(--brand-gold-deep) 100%);
+    opacity: .8;
+  }
+  .miniapp-cat-tile:active { transform: scale(.97); }
+  .miniapp-cat-emoji {
+    display: inline-grid; place-items: center;
+    width: 44px; height: 44px;
+    border-radius: 12px;
+    background: var(--brand-gold-soft);
+    font-size: 24px;
+    margin-bottom: .5rem;
+  }
+  .miniapp-cat-name { font-size: .875rem; font-weight: 600; line-height: 1.2; }
+
+  /* Announcement card */
+  .miniapp-ann {
+    padding: .875rem;
+    border-radius: 14px;
+    background: var(--brand-gold-soft);
+    border: 1px solid color-mix(in srgb, var(--brand-gold) 30%, transparent);
+  }
+  .miniapp-ann-title {
+    font-size: .875rem; font-weight: 600; color: var(--brand-ink);
+    margin-bottom: .125rem;
+  }
+  .miniapp-ann-body { font-size: .8125rem; color: var(--brand-ink-soft); line-height: 1.4; white-space: pre-line; }
+
+  /* Product card */
+  .miniapp-product-grid { display: grid; grid-template-columns: repeat(2, 1fr); gap: .75rem; }
+  .miniapp-product-card {
+    display: block; position: relative;
+    border-radius: 16px;
+    background: var(--tg-bg-2, #fff);
+    border: 1px solid color-mix(in srgb, var(--brand-ink) 6%, transparent);
+    overflow: hidden;
+    transition: transform .15s, box-shadow .2s;
+  }
+  .miniapp-product-card:active { transform: scale(.98); }
+  .miniapp-product-img {
+    position: relative; aspect-ratio: 1; overflow: hidden;
+    background: var(--brand-gold-soft);
+  }
+  .miniapp-product-emoji {
+    position: absolute; inset: 0;
+    display: grid; place-items: center;
+    font-size: 3rem;
+  }
+  .miniapp-product-info { padding: .625rem .75rem .75rem; }
+  .miniapp-product-name {
+    font-size: .8125rem; font-weight: 500; line-height: 1.3;
+    display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical;
+    overflow: hidden; min-height: 2.1em;
+  }
+  .miniapp-product-price {
+    margin-top: .375rem;
+    font-size: .9375rem; font-weight: 700;
+    color: var(--brand-ink);
+    color: var(--tg-text, var(--brand-ink));
+  }
+  .miniapp-product-stock {
+    display: inline-flex; align-items: center; gap: .25rem;
+    margin-top: .25rem;
+    font-size: .6875rem;
+    color: color-mix(in srgb, var(--tg-text, var(--brand-ink)) 55%, transparent);
+  }
+  .miniapp-product-stock.in { color: #16a34a; }
+  .miniapp-product-stock.out { color: #dc2626; }
+  .miniapp-product-badge {
+    position: absolute; top: .5rem; left: .5rem;
+    padding: .125rem .5rem;
+    border-radius: 999px;
+    background: var(--brand-gold);
+    color: var(--brand-ink);
+    font-size: .6875rem; font-weight: 700;
+    box-shadow: 0 2px 6px rgba(0,0,0,.15);
+  }
+
+  /* Search bar */
+  .miniapp-search {
+    display: flex; align-items: center; gap: .5rem;
+    padding: .625rem .875rem;
+    border-radius: 12px;
+    background: var(--tg-bg-2, #fff);
+    border: 1px solid color-mix(in srgb, var(--brand-ink) 8%, transparent);
+  }
+  .miniapp-search input {
+    flex: 1; background: transparent; border: 0; outline: none;
+    font-size: .9375rem; color: inherit;
+  }
+  .miniapp-search input::placeholder {
+    color: color-mix(in srgb, var(--tg-text, var(--brand-ink)) 45%, transparent);
+  }
+
+  .miniapp-chip-row {
+    display: flex; gap: .5rem; overflow-x: auto;
+    padding-bottom: .25rem; margin-top: .625rem;
+    scrollbar-width: none;
+  }
+  .miniapp-chip-row::-webkit-scrollbar { display: none; }
+  .miniapp-chip {
+    flex: 0 0 auto;
+    padding: .375rem .75rem;
+    border-radius: 999px;
+    background: var(--tg-bg-2, #fff);
+    border: 1px solid color-mix(in srgb, var(--brand-ink) 10%, transparent);
+    font-size: .8125rem; font-weight: 500;
+    color: color-mix(in srgb, var(--tg-text, var(--brand-ink)) 70%, transparent);
+    white-space: nowrap;
+  }
+  .miniapp-chip[aria-pressed="true"] {
+    background: var(--brand-ink);
+    color: #fff;
+    border-color: var(--brand-ink);
+  }
+
+  /* Primary CTA button */
+  .miniapp-btn {
+    display: inline-flex; align-items: center; justify-content: center; gap: .375rem;
+    width: 100%;
+    padding: .875rem 1rem;
+    border-radius: 12px;
+    font-size: .9375rem; font-weight: 600;
+    transition: transform .12s, box-shadow .2s;
+  }
+  .miniapp-btn:active { transform: scale(.98); }
+  .miniapp-btn--primary {
+    background: var(--brand-gold);
+    color: var(--brand-ink);
+    box-shadow: 0 4px 14px color-mix(in srgb, var(--brand-gold) 40%, transparent);
+  }
+  .miniapp-btn--ghost {
+    background: var(--tg-bg-2, #fff);
+    color: var(--tg-text, var(--brand-ink));
+    border: 1px solid color-mix(in srgb, var(--brand-ink) 14%, transparent);
+  }
+  .miniapp-btn--ink {
+    background: var(--brand-ink); color: #fff;
+  }
+  .miniapp-btn:disabled {
+    opacity: .5; pointer-events: none;
+  }
+
+  /* Sticky bottom bar (product detail / cart total) */
+  .miniapp-bottombar {
+    position: fixed; bottom: 56px; left: 0; right: 0; z-index: 25;
+    display: grid; grid-template-columns: 1fr 1fr; gap: .5rem;
+    padding: .625rem .875rem;
+    background: color-mix(in srgb, var(--tg-bg, var(--brand-cream)) 96%, transparent);
+    backdrop-filter: blur(14px);
+    border-top: 1px solid color-mix(in srgb, var(--brand-ink) 8%, transparent);
+  }
+
+  /* Status badges */
+  .miniapp-status {
+    display: inline-flex; align-items: center; gap: .375rem;
+    padding: .25rem .625rem;
+    border-radius: 999px;
+    font-size: .75rem; font-weight: 600;
+  }
+  .miniapp-status--pending { background: var(--brand-gold-soft); color: var(--brand-gold-deep); }
+  .miniapp-status--paid    { background: #dbeafe; color: #1e40af; }
+  .miniapp-status--delivered { background: #dcfce7; color: #166534; }
+  .miniapp-status--cancelled,
+  .miniapp-status--expired   { background: #f3f4f6; color: #4b5563; }
+
+  /* QR panel */
+  .miniapp-qr {
+    border-radius: 18px;
+    padding: 1.25rem;
+    background: var(--tg-bg-2, #fff);
+    border: 1px solid color-mix(in srgb, var(--brand-ink) 8%, transparent);
+    text-align: center;
+  }
+  .miniapp-qr-code {
+    display: inline-block;
+    padding: .75rem;
+    background: #fff;
+    border-radius: 14px;
+    box-shadow: 0 6px 20px rgba(0,0,0,.06);
+  }
+  .miniapp-qr-code-num {
+    margin-top: .75rem;
+    font-family: var(--font-mono);
+    font-size: 1.125rem; font-weight: 700;
+    color: var(--brand-ink);
+    user-select: all;
+  }
+
+  /* Key reveal card */
+  .miniapp-key {
+    padding: .75rem .875rem;
+    border-radius: 12px;
+    background: var(--brand-ink);
+    color: #fff;
+    font-family: var(--font-mono);
+    font-size: .8125rem;
+    word-break: break-all;
+    user-select: all;
+  }
 }

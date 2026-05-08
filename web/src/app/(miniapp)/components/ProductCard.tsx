@@ -5,28 +5,44 @@ import Image from 'next/image'
 import { formatPrice } from '@/lib/utils'
 
 export interface ProductSummary {
-  id: string; slug: string; name: string; emoji: string;
-  imageUrl?: string; price: number; stock: number;
+  id: string
+  slug: string
+  name: string
+  emoji: string
+  imageUrl?: string
+  price: number
+  stock: number
+  promotion?: string | null
 }
 
 export function ProductCard({ p }: { p: ProductSummary }) {
+  const inStock = p.stock > 0
   return (
-    <Link
-      href={`/san-pham/${p.slug}`}
-      className="block rounded-xl overflow-hidden"
-      style={{ background: 'var(--tg-bg-2)' }}
-    >
-      <div className="aspect-square relative">
+    <Link href={`/san-pham/${p.slug}`} className="miniapp-product-card">
+      <div className="miniapp-product-img">
+        {p.promotion && <span className="miniapp-product-badge">{p.promotion}</span>}
         {p.imageUrl ? (
-          <Image src={p.imageUrl} alt={p.name} fill sizes="(max-width: 768px) 50vw, 200px" />
+          <Image
+            src={p.imageUrl}
+            alt={p.name}
+            fill
+            sizes="(max-width: 768px) 50vw, 240px"
+            style={{ objectFit: 'cover' }}
+          />
         ) : (
-          <div className="absolute inset-0 flex items-center justify-center text-5xl">{p.emoji || '📦'}</div>
+          <div className="miniapp-product-emoji">{p.emoji || '📦'}</div>
         )}
       </div>
-      <div className="p-2">
-        <p className="text-sm font-medium line-clamp-2">{p.name}</p>
-        <p className="text-sm font-semibold mt-1">{formatPrice(p.price)}</p>
-        <p className="text-xs opacity-70">{p.stock > 0 ? `Còn ${p.stock}` : 'Hết hàng'}</p>
+      <div className="miniapp-product-info">
+        <p className="miniapp-product-name">{p.name}</p>
+        <p className="miniapp-product-price">{formatPrice(p.price)}</p>
+        <p className={`miniapp-product-stock ${inStock ? 'in' : 'out'}`}>
+          <span style={{
+            width: 6, height: 6, borderRadius: 999,
+            background: 'currentColor', display: 'inline-block',
+          }} />
+          {inStock ? `Còn ${p.stock}` : 'Hết hàng'}
+        </p>
       </div>
     </Link>
   )
