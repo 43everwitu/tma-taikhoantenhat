@@ -33,3 +33,8 @@ data/db.sqlite.fresh
 **/__pycache__/
 **/*.pyc
 *.tsbuildinfo
+
+# WP migration
+data/wp-imports/
+data/uploads/products/
+scripts/wp-migration/.cache/

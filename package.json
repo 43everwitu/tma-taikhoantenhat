@@ -9,7 +9,8 @@
         "bot-only": "node src/bot-legacy.js",
         "dev:web": "cd web && npm run dev",
         "dev:mbbank": "cd mbbank-api && python -m uvicorn app.main:app --port 8000",
-        "dev:all": "./scripts/dev-all.sh"
+        "dev:all": "./scripts/dev-all.sh",
+        "migrate:wp": "node scripts/migrate-wp.js"
     },
     "engines": {
         "node": ">=20.9.0"
