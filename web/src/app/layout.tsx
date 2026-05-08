@@ -7,8 +7,8 @@ const inter = Inter({ subsets: ['latin', 'vietnamese'], variable: '--font-inter'
 const jbm = JetBrains_Mono({ subsets: ['latin'], variable: '--font-jbm' })
 
 export const metadata: Metadata = {
-  title: 'Auto-chan — Shop tự động cho onii-chan',
-  description: 'Cửa hàng tự động Auto-chan. Mua sản phẩm số, thanh toán bằng QR, nhận sản phẩm tức thì.',
+  title: 'Taikhoantenhat',
+  description: 'Cửa hàng số Telegram',
 }
 
 export default function RootLayout({ children }: { children: React.ReactNode }) {
