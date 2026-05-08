@@ -39,6 +39,20 @@ const userService = {
         db.prepare('UPDATE users SET balance = balance - ? WHERE telegram_id = ?').run(amount, telegramId);
         return true;
     },
+
+    /**
+     * Find or create user from Telegram Mini App initData.user payload.
+     * The shape matches Telegraf's ctx.from (snake_case keys), so we delegate
+     * directly to findOrCreate.
+     */
+    findOrCreateFromInitData(user) {
+        return this.findOrCreate({
+            id: user.id,
+            first_name: user.first_name,
+            last_name: user.last_name,
+            username: user.username,
+        });
+    },
 };
 
 module.exports = userService;
