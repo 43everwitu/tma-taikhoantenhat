@@ -1,5 +1,6 @@
 const db = require('../database');
 const userService = require('./userService');
+const eventBus = require('./eventBus');
 
 const DUPLICATE_WINDOW_SECONDS = 60;
 
@@ -194,7 +195,9 @@ const orderService = {
     });
 
     return function confirmAndDeliver(orderId, autoConfirmed = 0) {
-      return atomicDeliver(orderId, autoConfirmed);
+      const r = atomicDeliver(orderId, autoConfirmed);
+      if (r.success) eventBus.publish({ type: 'order.delivered', orderId, status: 'delivered' });
+      return r;
     };
   })(),
 
@@ -257,6 +260,7 @@ const orderService = {
       UPDATE orders SET status = 'paid', paid_at = CURRENT_TIMESTAMP
       WHERE id = ?
     `).run(orderId);
+    eventBus.publish({ type: 'order.status', orderId, status: 'paid' });
 
     return { success: true, order };
   },
@@ -266,6 +270,7 @@ const orderService = {
       UPDATE orders SET status = 'delivered', delivered_at = CURRENT_TIMESTAMP
       WHERE id = ?
     `).run(orderId);
+    eventBus.publish({ type: 'order.delivered', orderId, status: 'delivered' });
   },
 
   /**

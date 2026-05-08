@@ -279,6 +279,27 @@ const authService = {
   },
 
   /**
+   * Issue a customer JWT for a known telegram user. Used by Mini App initData
+   * exchange and any other path that has already authenticated the user out-of-band.
+   */
+  async issueCustomerToken(telegramId) {
+    const user = db.prepare('SELECT telegram_id, full_name FROM users WHERE telegram_id = ?').get(telegramId);
+    if (!user) return null;
+
+    const { SignJWT } = await getJose();
+    const token = await new SignJWT({
+      telegramId: user.telegram_id,
+      fullName: user.full_name,
+    })
+      .setProtectedHeader({ alg: 'HS256' })
+      .setIssuedAt()
+      .setExpirationTime(CUSTOMER_TOKEN_EXPIRY)
+      .sign(getSecretKey());
+
+    return token;
+  },
+
+  /**
    * Verify customer JWT.
    */
   async verifyCustomerToken(token) {

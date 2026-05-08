@@ -1,6 +1,9 @@
 const { Router } = require('express');
 const { z } = require('zod');
 const authService = require('../../services/authService');
+const userService = require('../../services/userService');
+const { verifyInitData } = require('../../utils/initData');
+const config = require('../../config');
 const { validate } = require('../middleware/validate');
 const { requireCustomer } = require('../middleware/auth');
 
@@ -144,6 +147,39 @@ router.post('/customer/reset', validate(z.object({
     return res.status(400).json({ success: false, error: { code: result.error, message: map[result.error] || result.error } });
   }
   res.json({ success: true });
+});
+
+// ============================================================
+// Telegram Mini App — initData → customer JWT
+// ============================================================
+
+router.post('/miniapp', validate(z.object({
+  initData: z.string().min(1).max(8192),
+})), async (req, res) => {
+  const { initData } = req.validated;
+  const result = verifyInitData(initData, config.BOT_TOKEN);
+  if (!result.ok) {
+    return res.status(401).json({
+      success: false,
+      error: { code: 'INVALID_INIT_DATA', message: `initData rejected: ${result.reason}` },
+    });
+  }
+
+  const user = userService.findOrCreateFromInitData(result.user);
+  const token = await authService.issueCustomerToken(user.telegram_id);
+
+  res.json({
+    success: true,
+    data: {
+      token,
+      user: {
+        telegramId: user.telegram_id,
+        username: user.username || null,
+        fullName: user.full_name || '',
+        balance: user.balance || 0,
+      },
+    },
+  });
 });
 
 module.exports = router;
