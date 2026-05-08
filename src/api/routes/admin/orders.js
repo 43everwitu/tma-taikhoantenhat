@@ -4,7 +4,7 @@ const db = require('../../../database');
 const orderService = require('../../../services/orderService');
 const auditService = require('../../../services/auditService');
 const { validate } = require('../../middleware/validate');
-const { deliverOrder } = require('../../../handlers/paymentConfirm');
+const { deliverOrder } = require('../../../services/orderFulfillmentService');
 
 const router = Router();
 
