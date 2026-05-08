@@ -36,3 +36,8 @@ data/db.sqlite.fresh
 
 # Local Claude state
 .claude/
+
+# WP migration
+data/wp-imports/
+data/uploads/products/
+scripts/wp-migration/.cache/
