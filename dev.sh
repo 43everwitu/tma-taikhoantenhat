@@ -17,7 +17,7 @@ tell application "Terminal"
 end tell
 EOF
 
-echo "✅ Started 3 services in Terminal tabs"
+echo "✅ Taikhoantenhat — started 3 services in Terminal tabs"
 echo "   - MBBank API:    http://localhost:8000"
 echo "   - Backend API:   http://localhost:3000"
 echo "   - Web frontend:  http://localhost:3001"
