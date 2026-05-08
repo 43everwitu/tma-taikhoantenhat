@@ -14,8 +14,8 @@ export const metadata: Metadata = {
 
 export default function RootLayout({ children }: { children: React.ReactNode }) {
   return (
-    <html lang="vi" className={`${inter.variable} ${jbm.variable}`}>
-      <body>
+    <html lang="vi" className={`${inter.variable} ${jbm.variable}`} suppressHydrationWarning>
+      <body suppressHydrationWarning>
         <Script
           src="https://telegram.org/js/telegram-web-app.js?57"
           strategy="beforeInteractive"
