@@ -1,7 +1,7 @@
 {
-    "name": "starizzi-shop-bot",
+    "name": "taikhoantenhat-bot",
     "version": "1.0.0",
-    "description": "Telegram Shop Bot - Starizzi Shop",
+    "description": "Taikhoantenhat — Telegram Mini App shop",
     "main": "src/index.js",
     "scripts": {
         "start": "node src/index.js",
