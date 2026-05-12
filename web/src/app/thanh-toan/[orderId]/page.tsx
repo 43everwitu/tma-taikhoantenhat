@@ -9,6 +9,7 @@ import { renderTemplate } from '@/lib/messages'
 import { formatPrice } from '@/lib/utils'
 import { Clock, CheckCircle2, XCircle, PartyPopper, BookOpen } from '@/lib/icons'
 import { MascotBadge } from '@/components/MascotBadge'
+import { t } from '@/i18n/vi'
 
 interface OrderStatus {
   id: string
@@ -93,7 +94,7 @@ export default function PaymentPage() {
         <div className="max-w-6xl mx-auto px-4 sm:px-6 py-5 flex items-center justify-between">
           <Link href="/" className="text-2xl clay-display flex items-center gap-2">
             <MascotBadge size={32} />
-            Taikhoantenhat
+            {t.appName}
           </Link>
           <Link href="/san-pham" className="clay-btn">Sản phẩm</Link>
         </div>

@@ -1,4 +1,4 @@
-import type { Metadata } from 'next'
+import type { Metadata, Viewport } from 'next'
 import { Inter, JetBrains_Mono } from 'next/font/google'
 import Script from 'next/script'
 import './globals.css'
@@ -8,8 +8,22 @@ const inter = Inter({ subsets: ['latin', 'vietnamese'], variable: '--font-inter'
 const jbm = JetBrains_Mono({ subsets: ['latin'], variable: '--font-jbm' })
 
 export const metadata: Metadata = {
-  title: 'Taikhoantenhat',
-  description: 'Cửa hàng số Telegram',
+  title: {
+    default: 'Taikhoantenhat',
+    template: '%s · Taikhoantenhat',
+  },
+  description: 'Cửa hàng tài khoản số chính chủ — mua trong Telegram, giao key tự động, bảo hành dài hạn.',
+  applicationName: 'Taikhoantenhat',
+  openGraph: {
+    title: 'Taikhoantenhat',
+    description: 'Cửa hàng tài khoản số chính chủ — mua trong Telegram, giao key tự động.',
+    type: 'website',
+    locale: 'vi_VN',
+  },
+}
+
+export const viewport: Viewport = {
+  themeColor: '#ffc200',
 }
 
 export default function RootLayout({ children }: { children: React.ReactNode }) {

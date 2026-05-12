@@ -9,6 +9,7 @@ import { formatPrice, formatDate } from '@/lib/utils'
 import { ShoppingCart, Wallet, Receipt, LogOut, Copy, Send, Lock } from '@/lib/icons'
 import { UserMenu } from '@/components/UserMenu'
 import { MascotBadge } from '@/components/MascotBadge'
+import { t } from '@/i18n/vi'
 
 interface Me {
   telegramId: number
@@ -164,7 +165,7 @@ function AccountPageInner() {
         <div className="max-w-6xl mx-auto px-4 sm:px-6 py-3 sm:py-5 flex items-center justify-between">
           <Link href="/" className="text-xl sm:text-2xl clay-display flex items-center gap-2">
             <MascotBadge size={32} />
-            Taikhoantenhat
+            {t.appName}
           </Link>
           <nav className="flex gap-3">
             <Link href="/san-pham" className="clay-btn flex items-center gap-1.5">
@@ -428,7 +429,7 @@ function AccountPageInner() {
       </main>
 
       <footer className="border-t border-clay-oat py-8 text-center text-clay-charcoal text-sm">
-        <p>© 2026 Taikhoantenhat · Hỗ trợ: <a href="https://t.me/peanut1010" className="underline">@peanut1010</a></p>
+        <p>© 2026 {t.appName} · Hỗ trợ: <a href="https://t.me/peanut1010" className="underline">@peanut1010</a></p>
       </footer>
     </>
   )

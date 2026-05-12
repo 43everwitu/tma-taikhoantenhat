@@ -6,6 +6,7 @@ import { useEffect } from 'react'
 import { clearAdminToken } from '@/lib/api'
 import { BarChart3, Receipt, Package, Boxes, Megaphone, Settings, LogOut, Users, Wallet, X, MessageSquare } from '@/lib/icons'
 import { MascotBadge } from '@/components/MascotBadge'
+import { t } from '@/i18n/vi'
 
 const NAV = [
   { href: '/admin/dashboard', label: 'Tổng quan', icon: BarChart3 },
@@ -50,7 +51,7 @@ export function AdminSidebar({ open, onClose }: Props) {
       <aside className={`clay-drawer-panel ${open ? 'open' : ''} lg:w-64 p-5 flex flex-col flex-shrink-0`}>
         <div className="flex items-center justify-between mb-8">
           <div className="clay-display text-2xl">
-            <span className="flex items-center gap-2"><MascotBadge size={28} />Taikhoantenhat <span style={{ color: 'var(--color-ube-800)' }}>Admin</span></span>
+            <span className="flex items-center gap-2"><MascotBadge size={28} />{t.appName} <span style={{ color: 'var(--color-ube-800)' }}>Admin</span></span>
           </div>
           <button onClick={onClose} className="clay-btn p-2 lg:hidden" aria-label="Đóng menu">
             <X size={16} />

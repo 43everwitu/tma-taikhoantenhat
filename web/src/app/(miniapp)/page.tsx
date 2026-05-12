@@ -47,7 +47,7 @@ export default function MiniAppHome() {
   return (
     <MiniAppShell>
       <section className="miniapp-hero">
-        <p className="text-xs uppercase tracking-wider opacity-70 mb-2">Taikhoantenhat</p>
+        <p className="text-xs uppercase tracking-wider opacity-70 mb-2">{t.appName}</p>
         <h1>Tài khoản số chính chủ</h1>
         <p>Mua trong Telegram. Giao key tự động. Bảo hành dài hạn.</p>
         <Link href="/san-pham" className="miniapp-hero-cta">

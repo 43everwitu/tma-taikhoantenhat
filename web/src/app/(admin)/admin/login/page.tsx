@@ -3,6 +3,7 @@
 import { useState } from 'react'
 import { useRouter } from 'next/navigation'
 import { api, setAdminToken } from '@/lib/api'
+import { t } from '@/i18n/vi'
 
 export default function AdminLoginPage() {
   const router = useRouter()
@@ -31,7 +32,7 @@ export default function AdminLoginPage() {
     <main className="min-h-screen flex items-center justify-center bg-clay-cream">
       <form onSubmit={handleSubmit} className="clay-card p-8 w-full max-w-md">
         <h1 className="clay-display text-3xl mb-1">Đăng nhập Admin</h1>
-        <p className="text-clay-charcoal mb-6">Quản lý cửa hàng Taikhoantenhat</p>
+        <p className="text-clay-charcoal mb-6">Quản lý cửa hàng {t.appName}</p>
 
         <label className="block text-sm font-medium text-clay-charcoal mb-1">Tên đăng nhập</label>
         <input
