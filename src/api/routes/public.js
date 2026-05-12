@@ -1,6 +1,5 @@
 const { Router } = require('express');
 const db = require('../../database');
-const productService = require('../../services/productService');
 const { sanitizeProductForClient } = require('../../services/productService');
 const config = require('../../config');
 const messageTemplateService = require('../../services/messageTemplateService');
