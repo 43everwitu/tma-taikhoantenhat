@@ -28,7 +28,7 @@ export default function CartPage() {
       {!empty && (
         <ul className="space-y-2 mb-4">
           {cart.items.map((it) => (
-            <li key={it.id} className="rounded-2xl p-3 flex gap-3 items-center" style={{ background: 'var(--tg-bg-2)' }}>
+            <li key={it.lineKey} className="rounded-2xl p-3 flex gap-3 items-center" style={{ background: 'var(--tg-bg-2)' }}>
               <div className="w-16 h-16 rounded-xl overflow-hidden shrink-0" style={{ position: 'relative', background: 'var(--brand-gold-soft)' }}>
                 {it.imageUrl
                   ? <Image src={it.imageUrl} alt={it.name} fill sizes="64px" style={{ objectFit: 'cover' }} />
@@ -38,23 +38,31 @@ export default function CartPage() {
               </div>
               <div className="flex-1 min-w-0">
                 <p className="text-sm font-medium line-clamp-2">{it.name}</p>
+                {it.variantName && (
+                  <p className="text-xs opacity-60 mt-0.5">{it.variantName}</p>
+                )}
+                {it.inputValue && (
+                  <p className="text-xs opacity-50 mt-0.5 inline-flex items-center gap-1">
+                    <Icon name="check" size={12} /> Đã ghi nhận thông tin
+                  </p>
+                )}
                 <p className="text-sm font-bold mt-0.5">{formatPrice(it.price * it.quantity)}</p>
                 <div className="mt-2 flex items-center gap-1">
                   <button
-                    onClick={() => cart.setQuantity(it.id, it.quantity - 1)}
+                    onClick={() => cart.setQuantity(it.lineKey, it.quantity - 1)}
                     className="w-7 h-7 grid place-items-center rounded-full text-base"
                     style={{ background: 'var(--tg-bg)' }}
                     aria-label={t.cart.decrease}
                   ><Icon name="minus" size={14} /></button>
                   <span className="w-7 text-center text-sm font-semibold">{it.quantity}</span>
                   <button
-                    onClick={() => cart.setQuantity(it.id, it.quantity + 1)}
+                    onClick={() => cart.setQuantity(it.lineKey, it.quantity + 1)}
                     className="w-7 h-7 grid place-items-center rounded-full text-base"
                     style={{ background: 'var(--tg-bg)' }}
                     aria-label={t.cart.increase}
                   ><Icon name="plus" size={14} /></button>
                   <button
-                    onClick={() => cart.remove(it.id)}
+                    onClick={() => cart.remove(it.lineKey)}
                     className="ml-auto text-xs opacity-60 px-2"
                     aria-label={t.cart.remove}
                   ><span className="inline-flex items-center gap-1"><Icon name="trash" size={12} />{t.cart.remove}</span></button>

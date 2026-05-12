@@ -78,8 +78,10 @@ router.post('/orders', requireCustomer, validate(z.object({
   productId: z.number().int().positive(),
   quantity: z.number().int().min(1).max(10),
   bankIndex: z.number().int().min(0).max(1).optional().default(0),
+  variantId: z.number().int().positive().nullable().optional(),
+  inputValue: z.string().min(1).max(200).nullable().optional(),
 })), (req, res) => {
-  const { productId, quantity, bankIndex } = req.validated;
+  const { productId, quantity, bankIndex, variantId, inputValue } = req.validated;
   const telegramId = req.customer.telegramId;
 
   const product = db.prepare('SELECT * FROM products WHERE id = ? AND is_active = 1').get(productId);
@@ -87,17 +89,43 @@ router.post('/orders', requireCustomer, validate(z.object({
     return res.status(404).json({ success: false, error: { code: 'NOT_FOUND', message: 'Sản phẩm không tồn tại' } });
   }
 
-  const stockCount = db.prepare('SELECT COUNT(*) as c FROM stock WHERE product_id = ? AND is_sold = 0').get(productId).c;
-  const available = stockCount > 0 ? stockCount : (product.sheet_stock || 0);
+  let variant = null;
+  if (variantId) {
+    variant = db.prepare('SELECT * FROM product_variants WHERE id = ? AND product_id = ? AND is_active = 1').get(variantId, productId);
+    if (!variant) {
+      return res.status(404).json({ success: false, error: { code: 'VARIANT_NOT_FOUND', message: 'Biến thể không tồn tại' } });
+    }
+    if (variant.requires_input && !inputValue) {
+      return res.status(400).json({ success: false, error: { code: 'INPUT_REQUIRED', message: `Vui lòng cung cấp ${variant.input_label || 'thông tin'}` } });
+    }
+  }
+
+  let available;
+  if (variant) {
+    available = db.prepare(
+      'SELECT COUNT(*) as c FROM stock WHERE product_id = ? AND variant_id = ? AND is_sold = 0 AND reserved_for_order_id IS NULL'
+    ).get(productId, variantId).c;
+  } else {
+    const stockCount = db.prepare(
+      'SELECT COUNT(*) as c FROM stock WHERE product_id = ? AND variant_id IS NULL AND is_sold = 0 AND reserved_for_order_id IS NULL'
+    ).get(productId).c;
+    available = stockCount > 0 ? stockCount : (product.sheet_stock || 0);
+  }
   if (available < quantity) {
     return res.status(400).json({ success: false, error: { code: 'INSUFFICIENT_STOCK', message: `Chỉ còn ${available} sản phẩm` } });
   }
 
-  const totalPrice = product.price * quantity;
+  const unitPrice = variant ? variant.price : product.price;
+  const totalPrice = unitPrice * quantity;
 
   const order = orderService.create(
     telegramId, productId, quantity, totalPrice,
-    { source: 'web', bankName: paymentService.getBank(bankIndex).NAME }
+    {
+      source: 'web',
+      bankName: paymentService.getBank(bankIndex).NAME,
+      variantId: variantId ?? null,
+      inputValue: inputValue ?? null,
+    }
   );
 
   const payment = paymentService.buildPayment(order.id, totalPrice, bankIndex);
