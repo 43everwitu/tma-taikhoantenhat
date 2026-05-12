@@ -1,11 +1,12 @@
 'use client'
 
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
 import { useQuery } from '@tanstack/react-query'
 import { useParams, useRouter } from 'next/navigation'
 import Image from 'next/image'
 import { apiFetch } from '@/lib/miniappApi'
 import { useCart } from '@/lib/cart'
+import { pushRecentlyViewed } from '@/lib/recentlyViewed'
 import { MiniAppShell } from '../../components/MiniAppShell'
 import { Icon } from '../../components/Icon'
 import { formatPrice } from '@/lib/utils'
@@ -30,6 +31,10 @@ export default function ProductDetailPage() {
     queryKey: ['product', slug],
     queryFn: () => apiFetch<ProductDetail>(`/products/${slug}`),
   })
+
+  useEffect(() => {
+    if (p?.id) pushRecentlyViewed(String(p.id))
+  }, [p?.id])
 
   if (isLoading) return <MiniAppShell><p className="opacity-60 text-sm">Đang tải…</p></MiniAppShell>
   if (!p) return <MiniAppShell><p>Không tìm thấy sản phẩm.</p></MiniAppShell>

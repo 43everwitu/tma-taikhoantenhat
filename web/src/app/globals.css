@@ -547,6 +547,12 @@ body {
   @media (min-width: 1024px) { .miniapp-product-grid { grid-template-columns: repeat(5, 1fr); } }
   @media (min-width: 1280px) { .miniapp-product-grid { grid-template-columns: repeat(6, 1fr); } }
   @media (min-width: 1536px) { .miniapp-product-grid { grid-template-columns: repeat(7, 1fr); } }
+  .miniapp-product-grid--featured { grid-template-columns: repeat(2, 1fr); }
+  @media (min-width: 480px) { .miniapp-product-grid--featured { grid-template-columns: repeat(2, 1fr); } }
+  @media (min-width: 768px) { .miniapp-product-grid--featured { grid-template-columns: repeat(4, 1fr); } }
+  @media (min-width: 1024px) { .miniapp-product-grid--featured { grid-template-columns: repeat(4, 1fr); } }
+  @media (min-width: 1280px) { .miniapp-product-grid--featured { grid-template-columns: repeat(4, 1fr); } }
+  @media (min-width: 1536px) { .miniapp-product-grid--featured { grid-template-columns: repeat(4, 1fr); } }
 
   /* Category grid scales the same way but caps at 6 — categories are coarse */
   .miniapp-cat-grid {
