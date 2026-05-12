@@ -10,7 +10,8 @@
         "dev:web": "cd web && npm run dev",
         "dev:mbbank": "cd mbbank-api && python -m uvicorn app.main:app --port 8000",
         "dev:all": "./scripts/dev-all.sh",
-        "migrate:wp": "node scripts/migrate-wp.js"
+        "migrate:wp": "node scripts/migrate-wp.js",
+        "admin:reset-password": "node scripts/admin-reset-password.js"
     },
     "engines": {
         "node": ">=20.9.0"
