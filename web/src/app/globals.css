@@ -554,6 +554,26 @@ body {
   @media (min-width: 1280px) { .miniapp-product-grid--featured { grid-template-columns: repeat(4, 1fr); } }
   @media (min-width: 1536px) { .miniapp-product-grid--featured { grid-template-columns: repeat(4, 1fr); } }
 
+  /* Rail grid: 2 cols mobile, scales to 5 cols ≥ 1024px. Paged rails. */
+  .miniapp-product-grid--rail { grid-template-columns: repeat(2, 1fr); }
+  @media (min-width: 480px) { .miniapp-product-grid--rail { grid-template-columns: repeat(2, 1fr); } }
+  @media (min-width: 768px) { .miniapp-product-grid--rail { grid-template-columns: repeat(3, 1fr); } }
+  @media (min-width: 1024px) { .miniapp-product-grid--rail { grid-template-columns: repeat(5, 1fr); } }
+  @media (min-width: 1280px) { .miniapp-product-grid--rail { grid-template-columns: repeat(5, 1fr); } }
+  @media (min-width: 1536px) { .miniapp-product-grid--rail { grid-template-columns: repeat(5, 1fr); } }
+
+  .miniapp-pager { display: flex; align-items: center; justify-content: center; gap: .5rem; margin-top: .75rem; }
+  .miniapp-pager button {
+    padding: .375rem .75rem;
+    border-radius: 999px;
+    border: 1px solid color-mix(in srgb, var(--brand-ink) 12%, transparent);
+    background: var(--tg-bg-2, #fff);
+    color: var(--brand-ink);
+    font-size: .8125rem; font-weight: 500;
+  }
+  .miniapp-pager button:disabled { opacity: .4; cursor: not-allowed; }
+  .miniapp-pager .miniapp-pager-page { font-size: .75rem; opacity: .7; }
+
   /* Category grid scales the same way but caps at 6 — categories are coarse */
   .miniapp-cat-grid {
     display: grid; grid-template-columns: repeat(2, 1fr); gap: .75rem;
