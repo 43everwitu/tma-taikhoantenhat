@@ -11,6 +11,7 @@ export interface Variant {
   requiresInput: boolean
   inputLabel: string | null
   inputPlaceholder: string | null
+  inputType?: string
 }
 
 interface Props {
@@ -54,20 +55,37 @@ export function VariantPicker({ variants, selectedId, onSelect, inputValue, onIn
       {selected?.requiresInput && (
         <div>
           <label className="block text-xs opacity-70 mb-1">{selected.inputLabel || 'Thông tin'}</label>
-          <input
-            type="text"
-            value={inputValue}
-            onChange={(e) => onInputChange(e.target.value)}
-            placeholder={selected.inputPlaceholder || ''}
-            className="w-full rounded-xl px-3 py-2 text-sm"
-            style={{
-              background: 'var(--tg-bg-2, #fff)',
-              border: '1px solid color-mix(in srgb, var(--brand-ink) 14%, transparent)',
-            }}
-            minLength={3}
-            maxLength={200}
-            required
-          />
+          {selected.inputType === 'textarea' ? (
+            <textarea
+              value={inputValue}
+              onChange={(e) => onInputChange(e.target.value)}
+              placeholder={selected.inputPlaceholder || ''}
+              rows={3}
+              className="w-full rounded-xl px-3 py-2 text-sm"
+              style={{
+                background: 'var(--tg-bg-2, #fff)',
+                border: '1px solid color-mix(in srgb, var(--brand-ink) 14%, transparent)',
+              }}
+              minLength={3}
+              maxLength={500}
+              required
+            />
+          ) : (
+            <input
+              type={selected.inputType || 'text'}
+              value={inputValue}
+              onChange={(e) => onInputChange(e.target.value)}
+              placeholder={selected.inputPlaceholder || ''}
+              className="w-full rounded-xl px-3 py-2 text-sm"
+              style={{
+                background: 'var(--tg-bg-2, #fff)',
+                border: '1px solid color-mix(in srgb, var(--brand-ink) 14%, transparent)',
+              }}
+              minLength={3}
+              maxLength={200}
+              required
+            />
+          )}
         </div>
       )}
     </div>
