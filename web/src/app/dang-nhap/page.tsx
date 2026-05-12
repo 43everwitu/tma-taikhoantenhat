@@ -6,6 +6,7 @@ import { useRouter } from 'next/navigation'
 import { api, setCustomerToken, getCustomerToken } from '@/lib/api'
 import { Send, Lock, Hash } from '@/lib/icons'
 import { MascotBadge } from '@/components/MascotBadge'
+import { t } from '@/i18n/vi'
 
 export default function CustomerLoginPage() {
   const router = useRouter()
@@ -41,7 +42,7 @@ export default function CustomerLoginPage() {
         <div className="max-w-6xl mx-auto px-4 sm:px-6 py-3 sm:py-5 flex items-center justify-between">
           <Link href="/" className="text-2xl clay-display flex items-center gap-2">
             <MascotBadge size={32} />
-            Taikhoantenhat
+            {t.appName}
           </Link>
           <Link href="/san-pham" className="clay-btn">Sản phẩm</Link>
         </div>

@@ -6,6 +6,7 @@ import { api, setCustomerToken, getCustomerToken } from '@/lib/api'
 import Link from 'next/link'
 import { Send, PartyPopper, ArrowLeft, Hash } from '@/lib/icons'
 import { MascotBadge } from '@/components/MascotBadge'
+import { t } from '@/i18n/vi'
 
 type Step = 'enter-id' | 'enter-code' | 'success'
 
@@ -87,7 +88,7 @@ export default function LinkTelegramPage() {
         <div className="max-w-6xl mx-auto px-4 sm:px-6 py-3 sm:py-5 flex items-center justify-between">
           <Link href="/" className="text-2xl clay-display flex items-center gap-2">
             <MascotBadge size={32} />
-            Taikhoantenhat
+            {t.appName}
           </Link>
           <Link href="/san-pham" className="clay-btn">Sản phẩm</Link>
         </div>
@@ -214,7 +215,7 @@ export default function LinkTelegramPage() {
       </main>
 
       <footer className="border-t border-clay-oat py-8 text-center text-clay-charcoal text-sm">
-        <p>© 2026 Taikhoantenhat · Hỗ trợ: <a href="https://t.me/peanut1010" className="underline">@peanut1010</a></p>
+        <p>© 2026 {t.appName} · Hỗ trợ: <a href="https://t.me/peanut1010" className="underline">@peanut1010</a></p>
       </footer>
     </>
   )

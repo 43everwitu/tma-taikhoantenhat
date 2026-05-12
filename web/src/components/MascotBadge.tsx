@@ -1,4 +1,5 @@
 import Image from 'next/image'
+import { t } from '@/i18n/vi'
 
 interface MascotBadgeProps {
   size?: number
@@ -13,7 +14,7 @@ export function MascotBadge({ size = 32, className = '' }: MascotBadgeProps) {
     >
       <Image
         src="/qr-template.png"
-        alt="Taikhoantenhat"
+        alt={t.appName}
         width={size * 4}
         height={size * 4}
         className="object-cover"
