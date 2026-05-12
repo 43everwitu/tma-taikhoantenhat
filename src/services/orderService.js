@@ -162,8 +162,16 @@ const orderService = {
     const getReserved = db.prepare(
       `SELECT * FROM stock WHERE reserved_for_order_id = ? AND is_sold = 0 LIMIT ?`
     );
-    const getFreeStock = db.prepare(
-      `SELECT * FROM stock WHERE product_id = ? AND is_sold = 0
+    // Fallback free-stock queries: narrow by variant_id so a variant-bearing
+    // order never accidentally siphons keys from a different variant (or the
+    // product-level pool). Mirrors the reservation split above.
+    const getFreeStockByVariant = db.prepare(
+      `SELECT * FROM stock WHERE product_id = ? AND variant_id = ? AND is_sold = 0
+       AND (reserved_for_order_id IS NULL OR reserved_for_order_id = ?)
+       LIMIT ?`
+    );
+    const getFreeStockNoVariant = db.prepare(
+      `SELECT * FROM stock WHERE product_id = ? AND variant_id IS NULL AND is_sold = 0
        AND (reserved_for_order_id IS NULL OR reserved_for_order_id = ?)
        LIMIT ?`
     );
@@ -192,9 +200,13 @@ const orderService = {
       if (stock.length < order.quantity) {
         // Reservation incomplete — top up from free pool. Defensive path for
         // legacy orders created before this migration, or if reservations
-        // were manually cleared.
+        // were manually cleared. Variant-aware: never cross-pull from another
+        // variant's bucket or from the product-level pool.
         const need = order.quantity - stock.length;
-        const extra = getFreeStock.all(order.product_id, orderId, need);
+        const variantId = order.variant_id ?? null;
+        const extra = variantId
+          ? getFreeStockByVariant.all(order.product_id, variantId, orderId, need)
+          : getFreeStockNoVariant.all(order.product_id, orderId, need);
         stock = [...stock, ...extra];
         if (stock.length < order.quantity) {
           return { success: false, error: `Không đủ hàng. Chỉ còn ${stock.length} sản phẩm.` };
