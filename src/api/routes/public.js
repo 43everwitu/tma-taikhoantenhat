@@ -25,11 +25,16 @@ router.get('/shop/info', (req, res) => {
 
 // GET /categories
 router.get('/categories', (req, res) => {
-  const categories = db.prepare(
-    "SELECT id, name, slug, emoji, description FROM categories WHERE is_active = 1 ORDER BY sort_order"
-  ).all();
-
-  res.json({ success: true, data: categories });
+  const exclude = (req.query.exclude || '').trim();
+  let sql = "SELECT id, name, slug, emoji, description FROM categories WHERE is_active = 1";
+  const params = [];
+  if (exclude) {
+    sql += ' AND slug != ?';
+    params.push(exclude);
+  }
+  sql += ' ORDER BY sort_order';
+  const rows = db.prepare(sql).all(...params);
+  res.json({ success: true, data: rows });
 });
 
 function shapePublicProduct(p) {
@@ -57,6 +62,31 @@ function shapePublicProduct(p) {
 
 // GET /products
 router.get('/products', (req, res) => {
+  const idsParam = (req.query.ids || '').trim();
+  if (idsParam) {
+    const ids = idsParam.split(',').map((s) => parseInt(s, 10)).filter((n) => Number.isInteger(n) && n > 0).slice(0, 50);
+    if (ids.length === 0) {
+      return res.json({ success: true, data: [] });
+    }
+    const placeholders = ids.map(() => '?').join(',');
+    const caseExpr = ids.map((id, i) => `WHEN p.id = ${id} THEN ${i}`).join(' ');
+    const rows = db.prepare(`
+      SELECT p.*,
+        (SELECT COUNT(*) FROM stock s WHERE s.product_id = p.id AND s.is_sold = 0) as stock_count,
+        CASE
+          WHEN (SELECT COUNT(*) FROM stock s WHERE s.product_id = p.id AND s.is_sold = 0) > 0
+          THEN (SELECT COUNT(*) FROM stock s WHERE s.product_id = p.id AND s.is_sold = 0)
+          ELSE COALESCE(p.sheet_stock, 0)
+        END as display_stock,
+        c.name as category_name, c.slug as category_slug
+      FROM products p
+      LEFT JOIN categories c ON p.category_id = c.id
+      WHERE p.id IN (${placeholders}) AND p.is_active = 1
+      ORDER BY CASE ${caseExpr} END
+    `).all(...ids);
+    return res.json({ success: true, data: rows.map(shapePublicProduct) });
+  }
+
   const q = (req.query.q || '').trim();
   const categorySlug = (req.query.category || '').trim();
   const sort = req.query.sort || 'default';
@@ -98,6 +128,50 @@ router.get('/products', (req, res) => {
   `).all(...params);
 
   res.json({ success: true, data: rows.map(shapePublicProduct) });
+});
+
+// GET /products/featured — featured products, padded with newest if needed
+router.get('/products/featured', (req, res) => {
+  const limit = 8;
+  const featured = db.prepare(`
+    SELECT p.*,
+      (SELECT COUNT(*) FROM stock s WHERE s.product_id = p.id AND s.is_sold = 0) as stock_count,
+      CASE
+        WHEN (SELECT COUNT(*) FROM stock s WHERE s.product_id = p.id AND s.is_sold = 0) > 0
+        THEN (SELECT COUNT(*) FROM stock s WHERE s.product_id = p.id AND s.is_sold = 0)
+        ELSE COALESCE(p.sheet_stock, 0)
+      END as display_stock,
+      c.name as category_name, c.slug as category_slug
+    FROM products p
+    LEFT JOIN categories c ON p.category_id = c.id
+    WHERE p.is_active = 1 AND p.is_featured = 1
+    ORDER BY p.sort_order, p.id
+    LIMIT ?
+  `).all(limit);
+
+  if (featured.length >= limit) {
+    return res.json({ success: true, data: featured.map(shapePublicProduct) });
+  }
+  const featuredIds = new Set(featured.map((r) => r.id));
+  const fillNeeded = limit - featured.length;
+  const fill = db.prepare(`
+    SELECT p.*,
+      (SELECT COUNT(*) FROM stock s WHERE s.product_id = p.id AND s.is_sold = 0) as stock_count,
+      CASE
+        WHEN (SELECT COUNT(*) FROM stock s WHERE s.product_id = p.id AND s.is_sold = 0) > 0
+        THEN (SELECT COUNT(*) FROM stock s WHERE s.product_id = p.id AND s.is_sold = 0)
+        ELSE COALESCE(p.sheet_stock, 0)
+      END as display_stock,
+      c.name as category_name, c.slug as category_slug
+    FROM products p
+    LEFT JOIN categories c ON p.category_id = c.id
+    WHERE p.is_active = 1
+    ORDER BY p.created_at DESC, p.id DESC
+    LIMIT ?
+  `).all(fillNeeded + featured.length);
+  const fillFiltered = fill.filter((r) => !featuredIds.has(r.id)).slice(0, fillNeeded);
+
+  res.json({ success: true, data: [...featured, ...fillFiltered].map(shapePublicProduct) });
 });
 
 // GET /products/:slug
