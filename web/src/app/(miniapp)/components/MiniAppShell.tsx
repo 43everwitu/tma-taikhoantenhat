@@ -3,7 +3,17 @@
 import Link from 'next/link'
 import { ReactNode } from 'react'
 import { usePathname } from 'next/navigation'
+import { Icon } from './Icon'
+import type { MiniappIconName } from '@/lib/miniappIcons'
 import { t } from '@/i18n/vi'
+
+type NavItem = { href: string; label: string; icon: MiniappIconName; match: (p: string) => boolean }
+
+const NAV: NavItem[] = [
+  { href: '/',         label: t.nav.home,   icon: 'home',   match: (p) => p === '/' },
+  { href: '/gio-hang', label: t.nav.cart,   icon: 'cart',   match: (p) => p.startsWith('/gio-hang') },
+  { href: '/don-hang', label: t.nav.orders, icon: 'orders', match: (p) => p.startsWith('/don-hang') },
+]
 
 export function MiniAppShell({
   children,
@@ -19,36 +29,59 @@ export function MiniAppShell({
   hasBottombar?: boolean
 }) {
   const pathname = usePathname()
-  const navItems: { href: string; label: string; icon: string; match: (p: string) => boolean }[] = [
-    { href: '/',         label: t.nav.home,    icon: '🏠', match: (p) => p === '/' },
-    { href: '/gio-hang', label: t.nav.cart,    icon: '🛒', match: (p) => p.startsWith('/gio-hang') },
-    { href: '/don-hang', label: t.nav.orders,  icon: '📋', match: (p) => p.startsWith('/don-hang') },
-  ]
   return (
     <div className="miniapp-root">
       {showHeader && (
-        <header className="miniapp-header px-4 py-3">
-          <div className="flex items-center justify-between">
+        <header className="miniapp-header">
+          <div className="miniapp-container px-4 py-3 flex items-center justify-between">
             <Link href="/" className="miniapp-brand">
               <span className="miniapp-brand-mark">T</span>
               <span>{title ?? t.appName}</span>
             </Link>
-            <Link href="/gio-hang" className="text-xl" aria-label={t.nav.cart}>🛒</Link>
+
+            <nav className="miniapp-topnav-actions">
+              {NAV.map((it) => (
+                <Link
+                  key={it.href}
+                  href={it.href}
+                  className="miniapp-topnav-link"
+                  aria-current={it.match(pathname) ? 'page' : undefined}
+                >
+                  <Icon name={it.icon} size={18} />
+                  {it.label}
+                </Link>
+              ))}
+            </nav>
+
+            <Link
+              href="/gio-hang"
+              aria-label={t.nav.cart}
+              className="md:hidden inline-flex items-center justify-center w-9 h-9 rounded-full"
+              style={{ background: 'var(--brand-gold-soft)', color: 'var(--brand-ink)' }}
+            >
+              <Icon name="cart" size={18} />
+            </Link>
           </div>
           {subtitle && (
-            <p className="text-xs opacity-60 mt-0.5 ml-10">{subtitle}</p>
+            <div className="miniapp-container px-4">
+              <p className="text-xs opacity-60 mt-0.5 ml-10">{subtitle}</p>
+            </div>
           )}
         </header>
       )}
-      <main className={`px-4 pt-3 ${hasBottombar ? 'pb-32' : 'pb-24'}`}>{children}</main>
+
+      <main className={`miniapp-container px-4 pt-3 ${hasBottombar ? 'pb-32' : 'pb-24'} md:pb-12`}>
+        {children}
+      </main>
+
       <nav className="miniapp-bottomnav">
-        {navItems.map((it) => (
+        {NAV.map((it) => (
           <Link
             key={it.href}
             href={it.href}
             aria-current={it.match(pathname) ? 'page' : undefined}
           >
-            <span className="miniapp-bottomnav-icon">{it.icon}</span>
+            <Icon name={it.icon} size={22} />
             {it.label}
           </Link>
         ))}
