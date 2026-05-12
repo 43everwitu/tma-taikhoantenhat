@@ -259,11 +259,6 @@ body {
     color: var(--brand-gold-deep);
   }
   .miniapp-bottomnav a:active { transform: scale(.92); }
-  .miniapp-bottomnav-icon {
-    width: 22px; height: 22px;
-    display: inline-grid; place-items: center;
-    font-size: 18px;
-  }
 
   /* Hero card on home */
   .miniapp-hero {
@@ -361,11 +356,6 @@ body {
   .miniapp-product-img {
     position: relative; aspect-ratio: 1; overflow: hidden;
     background: var(--brand-gold-soft);
-  }
-  .miniapp-product-emoji {
-    position: absolute; inset: 0;
-    display: grid; place-items: center;
-    font-size: 3rem;
   }
   .miniapp-product-info { padding: .625rem .75rem .75rem; }
   .miniapp-product-name {
@@ -554,7 +544,7 @@ body {
   /* Desktop: hide bottom nav, show top-bar nav actions */
   @media (min-width: 768px) {
     .miniapp-bottomnav { display: none; }
-    .miniapp-bottombar { position: sticky; bottom: 1rem; max-width: 920px; margin-inline: auto; border-radius: 16px; border: 1px solid color-mix(in srgb, var(--brand-ink) 8%, transparent); box-shadow: var(--shadow-clay); }
+    .miniapp-bottombar { position: sticky; bottom: 1rem; border-radius: 16px; border: 1px solid color-mix(in srgb, var(--brand-ink) 8%, transparent); box-shadow: var(--shadow-clay); }
     .miniapp-topnav-actions { display: inline-flex; align-items: center; gap: .5rem; }
   }
   @media (max-width: 767.98px) {
