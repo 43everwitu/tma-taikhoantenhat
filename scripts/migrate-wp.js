@@ -22,9 +22,23 @@ async function runInlineImages() {
   console.log('Done:', summary);
 }
 
+async function runNormalizeTables() {
+  const Database = require('better-sqlite3');
+  const path = require('node:path');
+  const dbPath = path.resolve(__dirname, '..', 'data', 'shop.db');
+  console.log(`Running normalize-tables pass-3 against ${dbPath} …`);
+  const db = new Database(dbPath);
+  const { migrateNormalizeTables } = require('./wp-migration/normalize-tables');
+  const summary = migrateNormalizeTables(db);
+  console.log('Done:', summary);
+}
+
 async function main() {
   if (process.argv.includes('--inline-images')) {
     return runInlineImages();
+  }
+  if (process.argv.includes('--normalize-tables')) {
+    return runNormalizeTables();
   }
   const report = makeReport();
   console.log('1/6 extracting categories…');
