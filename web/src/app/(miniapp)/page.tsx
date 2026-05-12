@@ -5,7 +5,9 @@ import { useEffect, useState } from 'react'
 import { useQuery } from '@tanstack/react-query'
 import { apiFetch } from '@/lib/miniappApi'
 import { MiniAppShell } from './components/MiniAppShell'
-import { ProductCard, ProductSummary } from './components/ProductCard'
+import { ProductSummary } from './components/ProductCard'
+import { ProductRail } from './components/ProductRail'
+import { SearchBox } from './components/SearchBox'
 import { Icon } from './components/Icon'
 import { categoryIcons } from '@/lib/miniappIcons'
 import { getRecentlyViewedIds } from '@/lib/recentlyViewed'
@@ -16,6 +18,7 @@ interface Category { id: number; name: string; slug: string; emoji: string }
 
 export default function MiniAppHome() {
   const [recentIds, setRecentIds] = useState<string[]>([])
+  const [q, setQ] = useState('')
 
   useEffect(() => {
     setRecentIds(getRecentlyViewedIds())
@@ -34,9 +37,9 @@ export default function MiniAppHome() {
     queryFn: () => apiFetch<ProductSummary[]>('/products/featured'),
   })
   const newest = useQuery({
-    queryKey: ['products', 'newest'],
-    queryFn: () => apiFetch<ProductSummary[]>('/products?sort=newest'),
-    select: (rows) => rows.slice(0, 8),
+    queryKey: ['products', 'newest', 30],
+    queryFn: () => apiFetch<ProductSummary[]>('/products?sort=newest&limit=30'),
+    select: (rows) => rows.slice(0, 30),
   })
   const recently = useQuery({
     queryKey: ['products', 'recently', recentIds.join(',')],
@@ -46,6 +49,9 @@ export default function MiniAppHome() {
 
   return (
     <MiniAppShell>
+      <div className="mb-3">
+        <SearchBox value={q} onChange={setQ} placeholder="Tìm sản phẩm…" />
+      </div>
       <section className="miniapp-hero">
         <p className="text-xs uppercase tracking-wider opacity-70 mb-2">{t.appName}</p>
         <h1>Tài khoản số chính chủ</h1>
@@ -104,14 +110,10 @@ export default function MiniAppHome() {
           <div className="miniapp-section-title">
             <span className="inline-flex items-center gap-1.5">
               <Icon name="clock" size={16} />
-              Khách đã xem
+              Sản phẩm đã xem
             </span>
           </div>
-          <ul className="miniapp-product-grid miniapp-product-grid--featured">
-            {recently.data.slice(0, 8).map((p) => (
-              <li key={p.id}><ProductCard p={p} /></li>
-            ))}
-          </ul>
+          <ProductRail items={recently.data} />
         </section>
       )}
 
@@ -126,11 +128,7 @@ export default function MiniAppHome() {
               Tất cả <Icon name="arrowRight" size={14} />
             </Link>
           </div>
-          <ul className="miniapp-product-grid miniapp-product-grid--featured">
-            {featured.data.map((p) => (
-              <li key={p.id}><ProductCard p={p} /></li>
-            ))}
-          </ul>
+          <ProductRail items={featured.data} />
         </section>
       )}
 
@@ -145,11 +143,7 @@ export default function MiniAppHome() {
               Tất cả <Icon name="arrowRight" size={14} />
             </Link>
           </div>
-          <ul className="miniapp-product-grid miniapp-product-grid--featured">
-            {newest.data.map((p) => (
-              <li key={p.id}><ProductCard p={p} /></li>
-            ))}
-          </ul>
+          <ProductRail items={newest.data} />
         </section>
       )}
     </MiniAppShell>

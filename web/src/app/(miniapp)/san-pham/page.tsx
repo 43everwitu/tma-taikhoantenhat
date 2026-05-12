@@ -1,41 +1,47 @@
 'use client'
 
-import { useState } from 'react'
+import { useState, useMemo } from 'react'
 import { useQuery } from '@tanstack/react-query'
 import { apiFetch } from '@/lib/miniappApi'
 import { MiniAppShell } from '../components/MiniAppShell'
 import { ProductCard, ProductSummary } from '../components/ProductCard'
+import { SearchBox } from '../components/SearchBox'
+import { FilterBar, type FilterValue } from '../components/FilterBar'
 import { Icon } from '../components/Icon'
 import { t } from '@/i18n/vi'
 
 interface Category { id: number; name: string; slug: string; emoji: string }
 
+const DEFAULT_FILTER: FilterValue = { sort: 'default', priceMin: '', priceMax: '' }
+
 export default function AllProductsPage() {
   const [q, setQ] = useState('')
   const [activeSlug, setActiveSlug] = useState<string | ''>('')
+  const [filter, setFilter] = useState<FilterValue>(DEFAULT_FILTER)
 
   const cats = useQuery({
     queryKey: ['categories', 'noUncat'],
     queryFn: () => apiFetch<Category[]>('/categories?exclude=uncategorized'),
   })
 
+  const queryString = useMemo(() => {
+    const p = new URLSearchParams()
+    if (activeSlug) p.set('category', activeSlug)
+    if (q.trim()) p.set('q', q.trim())
+    if (filter.sort !== 'default') p.set('sort', filter.sort)
+    if (filter.priceMin !== '') p.set('priceMin', String(filter.priceMin))
+    if (filter.priceMax !== '') p.set('priceMax', String(filter.priceMax))
+    return p.toString()
+  }, [activeSlug, q, filter])
+
   const products = useQuery({
-    queryKey: ['products', 'all', activeSlug, q],
-    queryFn: () => apiFetch<ProductSummary[]>(
-      `/products?category=${encodeURIComponent(activeSlug)}&q=${encodeURIComponent(q)}`,
-    ),
+    queryKey: ['products', 'all', queryString],
+    queryFn: () => apiFetch<ProductSummary[]>(`/products?${queryString}`),
   })
 
   return (
     <MiniAppShell title="Tất cả sản phẩm" subtitle={products.data ? `${products.data.length} sản phẩm` : undefined}>
-      <div className="miniapp-search">
-        <span className="opacity-60 flex"><Icon name="search" size={18} /></span>
-        <input
-          value={q}
-          onChange={(e) => setQ(e.target.value)}
-          placeholder={t.catalog.searchPlaceholder}
-        />
-      </div>
+      <SearchBox value={q} onChange={setQ} placeholder={t.catalog.searchPlaceholder} />
 
       <div className="miniapp-chip-row">
         <button
@@ -43,9 +49,7 @@ export default function AllProductsPage() {
           className="miniapp-chip"
           aria-pressed={activeSlug === ''}
           onClick={() => setActiveSlug('')}
-        >
-          Tất cả
-        </button>
+        >Tất cả</button>
         {cats.data?.map((c) => (
           <button
             key={c.id}
@@ -53,11 +57,11 @@ export default function AllProductsPage() {
             className="miniapp-chip"
             aria-pressed={activeSlug === c.slug}
             onClick={() => setActiveSlug(c.slug)}
-          >
-            {c.name}
-          </button>
+          >{c.name}</button>
         ))}
       </div>
+
+      <FilterBar value={filter} onChange={setFilter} />
 
       <div className="miniapp-section">
         {products.isLoading && <p className="opacity-60 text-sm">Đang tải…</p>}
