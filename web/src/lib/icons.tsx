@@ -61,4 +61,5 @@ export {
   RemoveFormatting,
   RotateCcw,
   MessageSquare,
+  ShieldCheck,
 } from 'lucide-react'

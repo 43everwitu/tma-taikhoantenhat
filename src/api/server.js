@@ -2,7 +2,7 @@ const { Router } = require('express');
 const cors = require('cors');
 const rateLimit = require('express-rate-limit');
 const config = require('../config');
-const { requireAdmin } = require('./middleware/auth');
+const { requireAdmin, loadAdminPermissions } = require('./middleware/auth');
 const { auditLog } = require('./middleware/audit');
 
 function createApiRouter() {
@@ -33,7 +33,7 @@ function createApiRouter() {
   router.use('/', customerLimiter, require('./routes/customer'));
 
   // Admin routes
-  router.use('/admin', adminLimiter, requireAdmin, auditLog, require('./routes/admin'));
+  router.use('/admin', adminLimiter, requireAdmin, loadAdminPermissions, auditLog, require('./routes/admin'));
 
   return router;
 }
