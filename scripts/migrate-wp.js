@@ -33,12 +33,47 @@ async function runNormalizeTables() {
   console.log('Done:', summary);
 }
 
+async function runVariations() {
+  const Database = require('better-sqlite3');
+  const path = require('node:path');
+  const dbPath = path.resolve(__dirname, '..', 'data', 'shop.db');
+  console.log(`Importing WP product variations into ${dbPath} …`);
+
+  const { extractVariationsAndMeta } = require('./wp-migration/extract-variations');
+  const { extractProductsAndMeta } = require('./wp-migration/extract-products');
+  const { buildVariationRows, loadVariations } = require('./wp-migration/load-variations');
+
+  const db = new Database(dbPath);
+  const { variations, meta } = await extractVariationsAndMeta();
+  console.log(`  → ${variations.length} variations, ${meta.length} relevant meta rows`);
+
+  // Build wpPostId → product_id by walking WP posts and matching post_name → products.slug
+  const slugToId = new Map(db.prepare('SELECT id, slug FROM products').all().map((r) => [r.slug, r.id]));
+  const wpPostIdToProductId = new Map();
+  const { posts } = await extractProductsAndMeta();
+  for (const p of posts) {
+    if (p.post_type !== 'product') continue;
+    const local = slugToId.get(p.post_name);
+    if (local) wpPostIdToProductId.set(Number(p.ID), local);
+  }
+  console.log(`  → ${wpPostIdToProductId.size} parent products mapped`);
+
+  const rows = buildVariationRows({ variations, meta, wpPostIdToProductId });
+  console.log(`  → ${rows.length} variations to insert`);
+  const inserted = loadVariations(db, rows);
+
+  console.log('Done:', { variationsScanned: variations.length, variantsInserted: inserted });
+}
+
 async function main() {
   if (process.argv.includes('--inline-images')) {
     return runInlineImages();
   }
   if (process.argv.includes('--normalize-tables')) {
     return runNormalizeTables();
+  }
+  if (process.argv.includes('--variations')) {
+    return runVariations();
   }
   const report = makeReport();
   console.log('1/6 extracting categories…');
