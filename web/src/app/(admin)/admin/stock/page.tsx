@@ -7,6 +7,22 @@ import Link from 'next/link'
 import { ResponsiveTable, Column } from '@/components/ResponsiveTable'
 import { QuickAddKeysModal } from './QuickAddKeysModal'
 
+function VariantStockBadge({ productId }: { productId: string }) {
+  const { data } = useQuery({
+    queryKey: ['admin', 'variants', productId, 'count'],
+    queryFn: () => api.get<{ id: string; name: string; stock: number }[]>(`/admin/products/${productId}/variants`),
+    staleTime: 30000,
+  })
+  const variants = data?.data ?? []
+  if (variants.length === 0) return <span className="text-xs opacity-40">—</span>
+  const total = variants.reduce((s, v) => s + (v.stock || 0), 0)
+  return (
+    <span className="text-xs px-2 py-0.5 rounded-full bg-purple-100 text-purple-700" title={variants.map(v => `${v.name}: ${v.stock}`).join(' · ')}>
+      {variants.length} biến thể · {total}
+    </span>
+  )
+}
+
 interface ProductStock {
   id: string
   name: string
@@ -45,6 +61,11 @@ const columns: Column<ProductStock>[] = [
         {p.soldStock ?? '-'}
       </span>
     ),
+  },
+  {
+    header: 'Biến thể',
+    className: 'text-center',
+    cell: (p) => <VariantStockBadge productId={p.id} />,
   },
   {
     header: 'Còn lại',
