@@ -1,9 +1,11 @@
 'use client'
 
+import { useMemo, useState } from 'react'
 import { useQuery } from '@tanstack/react-query'
 import { api } from '@/lib/api'
 import Link from 'next/link'
 import { ResponsiveTable, Column } from '@/components/ResponsiveTable'
+import { QuickAddKeysModal } from './QuickAddKeysModal'
 
 interface ProductStock {
   id: string
@@ -85,21 +87,92 @@ export default function StockIndexPage() {
     queryFn: () => api.get<ProductStock[]>('/admin/products'),
     refetchInterval: 10000,
   })
+  const [q, setQ] = useState('')
+  const [statusFilter, setStatusFilter] = useState<'all' | 'in' | 'out' | 'low'>('all')
+  const [sort, setSort] = useState<'default' | 'stock_asc' | 'stock_desc'>('default')
+  const [quickAddOpen, setQuickAddOpen] = useState(false)
 
   const products = data?.data ?? []
 
+  const filtered = useMemo(() => {
+    const ql = q.trim().toLowerCase()
+    let rows = products
+    if (ql) {
+      rows = rows.filter((p) =>
+        p.name.toLowerCase().includes(ql) || p.category.toLowerCase().includes(ql)
+      )
+    }
+    if (statusFilter === 'in') rows = rows.filter((p) => p.stock > 0)
+    else if (statusFilter === 'out') rows = rows.filter((p) => p.stock === 0)
+    else if (statusFilter === 'low') rows = rows.filter((p) => p.stock > 0 && p.stock <= 5)
+
+    if (sort === 'stock_asc') rows = [...rows].sort((a, b) => a.stock - b.stock)
+    else if (sort === 'stock_desc') rows = [...rows].sort((a, b) => b.stock - a.stock)
+    return rows
+  }, [products, q, statusFilter, sort])
+
   return (
-    <div className="space-y-6">
-      <h1 className="clay-display text-3xl mb-6">Kho</h1>
+    <div className="space-y-4">
+      <div className="flex items-center justify-between">
+        <h1 className="clay-display text-3xl">Kho</h1>
+        <button
+          type="button"
+          onClick={() => setQuickAddOpen(true)}
+          className="clay-btn clay-btn--lemon text-sm"
+        >
+          + Thêm key
+        </button>
+      </div>
+
+      <div className="clay-input flex items-center gap-2">
+        <input
+          value={q}
+          onChange={(e) => setQ(e.target.value)}
+          placeholder="Tìm theo tên sản phẩm hoặc danh mục…"
+          className="w-full bg-transparent outline-none text-sm"
+        />
+      </div>
+
+      <div className="flex gap-2 flex-wrap items-center">
+        {[
+          { k: 'all', label: 'Tất cả' },
+          { k: 'in', label: 'Còn hàng' },
+          { k: 'out', label: 'Hết hàng' },
+          { k: 'low', label: 'Sắp hết' },
+        ].map((s) => (
+          <button
+            key={s.k}
+            type="button"
+            onClick={() => setStatusFilter(s.k as typeof statusFilter)}
+            className="clay-pill text-xs"
+            style={statusFilter === s.k ? { background: 'var(--color-clay-ink)', color: '#fff', borderColor: 'var(--color-clay-ink)' } : undefined}
+          >
+            {s.label}
+          </button>
+        ))}
+        <select
+          value={sort}
+          onChange={(e) => setSort(e.target.value as typeof sort)}
+          className="clay-input text-xs py-1 px-2 ml-auto"
+        >
+          <option value="default">Sắp xếp mặc định</option>
+          <option value="stock_asc">Tồn ↑</option>
+          <option value="stock_desc">Tồn ↓</option>
+        </select>
+      </div>
 
       <ResponsiveTable
-        rows={products}
+        rows={filtered}
         columns={columns}
         rowKey={(p) => p.id}
         loading={isLoading}
-        emptyText="Chưa có sản phẩm nào"
+        emptyText="Không tìm thấy sản phẩm phù hợp"
         cardActions={cardActions}
       />
+
+      {quickAddOpen && (
+        <QuickAddKeysModal products={products} onClose={() => setQuickAddOpen(false)} />
+      )}
     </div>
   )
 }
