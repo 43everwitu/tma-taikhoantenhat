@@ -55,4 +55,9 @@ module.exports = {
     // Google Sheet
     GOOGLE_SHEET_ID: process.env.GOOGLE_SHEET_ID || '',
     SHEET_SYNC_INTERVAL: parseInt(process.env.SHEET_SYNC_INTERVAL) || 5,
+
+    // Feature flags (sub-project D)
+    FEATURE_TOPUPS: process.env.FEATURE_TOPUPS === 'true',
+    FEATURE_BROADCAST: process.env.FEATURE_BROADCAST === 'true',
+    FEATURE_TELEGRAM_NOTIFY: process.env.FEATURE_TELEGRAM_NOTIFY || 'order_only',
 };
