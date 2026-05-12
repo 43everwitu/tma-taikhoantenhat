@@ -5,6 +5,7 @@ const router = Router();
 router.use('/dashboard', require('./dashboard'));
 router.use('/orders', require('./orders'));
 router.use('/products', require('./products'));
+router.use('/products/:productId/variants', require('./variants'));
 router.use('/categories', require('./categories'));
 router.use('/stock', require('./stock'));
 router.use('/users', require('./users'));

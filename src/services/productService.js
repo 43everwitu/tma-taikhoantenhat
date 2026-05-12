@@ -2,11 +2,18 @@ const db = require('../database');
 const { sanitizeDescription } = require('../utils/richHtml');
 
 function sanitizeProductForClient(row) {
-    return {
+    const out = {
         ...row,
         description: sanitizeDescription(row.description),
         longDescription: sanitizeDescription(row.longDescription),
     };
+    if (Array.isArray(row.variants)) {
+        out.variants = row.variants.map(v => ({
+            ...v,
+            description: sanitizeDescription(v.description),
+        }));
+    }
+    return out;
 }
 
 const productService = {
@@ -71,12 +78,12 @@ const productService = {
     /**
      * Add stock items for a product
      */
-    addStock(productId, dataLines) {
-        const insert = db.prepare('INSERT INTO stock (product_id, data) VALUES (?, ?)');
+    addStock(productId, dataLines, variantId = null) {
+        const insert = db.prepare('INSERT INTO stock (product_id, variant_id, data) VALUES (?, ?, ?)');
         const insertMany = db.transaction((lines) => {
             for (const line of lines) {
                 if (line.trim()) {
-                    insert.run(productId, line.trim());
+                    insert.run(productId, variantId, line.trim());
                 }
             }
         });
