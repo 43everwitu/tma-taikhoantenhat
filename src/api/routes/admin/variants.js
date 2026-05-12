@@ -16,6 +16,7 @@ const variantBody = z.object({
   requiresInput: z.boolean().optional(),
   inputLabel: z.string().max(80).nullable().optional(),
   inputPlaceholder: z.string().max(200).nullable().optional(),
+  inputType: z.enum(['text', 'email', 'password', 'tel', 'url', 'number', 'textarea']).optional(),
 });
 
 const variantPatch = variantBody.partial().extend({
@@ -38,6 +39,7 @@ function shapeVariant(v) {
     requiresInput: !!v.requires_input,
     inputLabel: v.input_label || null,
     inputPlaceholder: v.input_placeholder || null,
+    inputType: v.input_type || 'text',
     stock: variantService.countAvailableStock(db, v.product_id, v.id),
   };
 }

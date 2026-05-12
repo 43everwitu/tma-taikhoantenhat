@@ -9,6 +9,7 @@ import { Search, Plus, Pencil, Trash2, Boxes, Sparkles, GripVertical, Copy } fro
 import { ResponsiveTable, Column } from '@/components/ResponsiveTable'
 import { RichEditor } from '@/components/RichEditor'
 import { RichEditorRich } from '@/components/RichEditorRich'
+import { VariantsManager } from './VariantsManager'
 
 interface Product {
   id: string
@@ -726,6 +727,10 @@ export default function ProductsPage() {
                   />
                 </>
               )}
+
+              <div className="mt-4 pt-4 border-t border-gray-200">
+                <VariantsManager productId={editingId} />
+              </div>
 
               <div className="flex justify-end gap-3 pt-2">
                 <button

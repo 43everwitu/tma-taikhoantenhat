@@ -3,7 +3,7 @@ const variantService = {
     const where = includeInactive ? '' : ' AND is_active = 1';
     return db.prepare(
       `SELECT id, product_id, name, description, price, sort_order, is_active,
-              requires_input, input_label, input_placeholder, created_at, updated_at
+              requires_input, input_label, input_placeholder, input_type, created_at, updated_at
          FROM product_variants
         WHERE product_id = ?${where}
         ORDER BY sort_order ASC, id ASC`
@@ -13,20 +13,21 @@ const variantService = {
   getById(db, variantId) {
     return db.prepare(
       `SELECT id, product_id, name, description, price, sort_order, is_active,
-              requires_input, input_label, input_placeholder
+              requires_input, input_label, input_placeholder, input_type
          FROM product_variants
         WHERE id = ?`
     ).get(variantId) || null;
   },
 
   create(db, { productId, name, description = null, price, sortOrder = 0,
-               requiresInput = false, inputLabel = null, inputPlaceholder = null }) {
+               requiresInput = false, inputLabel = null, inputPlaceholder = null,
+               inputType = 'text' }) {
     const r = db.prepare(
       `INSERT INTO product_variants
-         (product_id, name, description, price, sort_order, requires_input, input_label, input_placeholder)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?)`
+         (product_id, name, description, price, sort_order, requires_input, input_label, input_placeholder, input_type)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`
     ).run(productId, name, description, price, sortOrder,
-          requiresInput ? 1 : 0, inputLabel, inputPlaceholder);
+          requiresInput ? 1 : 0, inputLabel, inputPlaceholder, inputType);
     return { id: r.lastInsertRowid };
   },
 
@@ -36,6 +37,7 @@ const variantService = {
       sortOrder: 'sort_order', isActive: 'is_active',
       requiresInput: 'requires_input', inputLabel: 'input_label',
       inputPlaceholder: 'input_placeholder',
+      inputType: 'input_type',
     };
     const sets = [];
     const params = [];
