@@ -94,13 +94,13 @@ export default function ProductDetailPage() {
           )}
 
           {p.longDescription && (
-            <details className="mb-4 rounded-xl p-3" style={{ background: 'var(--tg-bg-2)' }}>
-              <summary className="cursor-pointer font-medium text-sm">Chi tiết sản phẩm</summary>
+            <section className="mb-4">
+              <h2 className="font-medium text-sm mb-2">Thông tin sản phẩm</h2>
               <div
-                className="rich-text mt-2 text-sm opacity-90"
+                className="rich-text text-sm opacity-90"
                 dangerouslySetInnerHTML={{ __html: p.longDescription }}
               />
-            </details>
+            </section>
           )}
         </div>
       </div>
