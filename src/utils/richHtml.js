@@ -33,12 +33,17 @@ const DESCRIPTION_TAGS = [
   'ul', 'ol', 'li',
   'code', 'pre', 'blockquote',
   'img',
+  'table', 'thead', 'tbody', 'tfoot', 'tr', 'th', 'td', 'caption', 'colgroup', 'col',
 ];
 const DESCRIPTION_ATTR = {
   a: ['href', 'title', 'rel'],
   img: ['src', 'alt', 'width', 'height', 'loading'],
   span: ['class'],
   div: ['class'],
+  th: ['colspan', 'rowspan', 'scope', 'align'],
+  td: ['colspan', 'rowspan', 'align'],
+  col: ['span', 'align'],
+  table: ['align'],
 };
 const DESCRIPTION_OPTS = {
   allowedTags: DESCRIPTION_TAGS,
