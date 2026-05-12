@@ -30,6 +30,18 @@ router.get('/:productId', (req, res) => {
     params.push(wild, wild);
   }
 
+  // Variant filter: undefined = no filter; 0 = NULL-only; >0 = exact match
+  const variantIdParam = req.query.variantId;
+  if (variantIdParam !== undefined) {
+    const n = parseInt(variantIdParam);
+    if (n === 0) {
+      where += ' AND variant_id IS NULL';
+    } else if (n > 0) {
+      where += ' AND variant_id = ?';
+      params.push(n);
+    }
+  }
+
   const rows = db.prepare(`SELECT * FROM stock WHERE ${where} ORDER BY id DESC LIMIT ? OFFSET ?`)
     .all(...params, limit, offset);
   const total = db.prepare(`SELECT COUNT(*) as c FROM stock WHERE ${where}`).all(...params)[0].c;
@@ -52,13 +64,14 @@ router.get('/:productId', (req, res) => {
 // POST /admin/stock/:productId — Bulk add stock
 router.post('/:productId', validate(z.object({
   items: z.array(z.string().min(1)).min(1).max(1000),
+  variantId: z.number().int().positive().nullable().optional(),
 })), (req, res) => {
   const productId = parseInt(req.params.productId);
   const product = db.prepare('SELECT id FROM products WHERE id = ?').get(productId);
   if (!product) return res.status(404).json({ success: false, error: { code: 'NOT_FOUND' } });
 
-  productService.addStock(productId, req.validated.items);
-  auditService.log(req.admin.adminId, 'stock.add', 'product', productId, { count: req.validated.items.length }, req.ip);
+  productService.addStock(productId, req.validated.items, req.validated.variantId ?? null);
+  auditService.log(req.admin.adminId, 'stock.add', 'product', productId, { count: req.validated.items.length, variant_id: req.validated.variantId ?? null }, req.ip);
 
   // Notify followers
   const poller = req.app.locals.notificationService;
