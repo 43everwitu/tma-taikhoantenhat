@@ -8,6 +8,7 @@ import Link from 'next/link'
 import { Search, Plus, Pencil, Trash2, Boxes, Sparkles, GripVertical, Copy } from '@/lib/icons'
 import { ResponsiveTable, Column } from '@/components/ResponsiveTable'
 import { RichEditor } from '@/components/RichEditor'
+import { RichEditorRich } from '@/components/RichEditorRich'
 
 interface Product {
   id: string
@@ -619,18 +620,16 @@ export default function ProductsPage() {
                 </div>
               </div>
               <label className="block text-sm font-medium text-gray-700 mt-3">Mô tả ngắn</label>
-              <RichEditor
+              <RichEditorRich
                 value={form.description}
                 onChange={(html) => setForm({ ...form, description: html })}
-                rows={2}
                 placeholder="Hiển thị trên thẻ sản phẩm..."
               />
 
               <label className="block text-sm font-medium text-gray-700 mt-3">Mô tả chi tiết</label>
-              <RichEditor
+              <RichEditorRich
                 value={form.longDescription}
                 onChange={(html) => setForm({ ...form, longDescription: html })}
-                rows={4}
                 placeholder="Mô tả đầy đủ hiển thị trên trang sản phẩm..."
               />
 
