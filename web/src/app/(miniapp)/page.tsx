@@ -5,17 +5,12 @@ import { useQuery } from '@tanstack/react-query'
 import { apiFetch } from '@/lib/miniappApi'
 import { MiniAppShell } from './components/MiniAppShell'
 import { ProductCard, ProductSummary } from './components/ProductCard'
+import { Icon } from './components/Icon'
+import { categoryIcons } from '@/lib/miniappIcons'
 import { t } from '@/i18n/vi'
 
 interface Announcement { id: string; title: string; body: string; pinned: boolean }
 interface Category { id: number; name: string; slug: string; emoji: string }
-
-const CAT_EMOJI_FALLBACK: Record<string, string> = {
-  'hoc-tap': '📚',
-  'giai-tri': '🎬',
-  'tien-ich': '🛠️',
-  'uncategorized': '📦',
-}
 
 export default function MiniAppHome() {
   const ann = useQuery({
@@ -29,7 +24,7 @@ export default function MiniAppHome() {
   const featured = useQuery({
     queryKey: ['products', 'featured'],
     queryFn: () => apiFetch<ProductSummary[]>('/products?sort=newest'),
-    select: (rows) => rows.slice(0, 6),
+    select: (rows) => rows.slice(0, 14),
   })
 
   return (
@@ -39,14 +34,18 @@ export default function MiniAppHome() {
         <h1>Tài khoản số chính chủ</h1>
         <p>Mua trong Telegram. Giao key tự động. Bảo hành dài hạn.</p>
         <Link href="/danh-muc/hoc-tap" className="miniapp-hero-cta">
-          Khám phá ngay →
+          Khám phá ngay
+          <Icon name="arrowRight" size={16} />
         </Link>
       </section>
 
       {ann.data && ann.data.length > 0 && (
         <section className="miniapp-section">
           <div className="miniapp-section-title">
-            <span>📣 {t.home.announcementsTitle}</span>
+            <span className="inline-flex items-center gap-1.5">
+              <Icon name="megaphone" size={16} />
+              {t.home.announcementsTitle}
+            </span>
           </div>
           <ul className="space-y-2">
             {ann.data.slice(0, 3).map((a) => (
@@ -73,7 +72,7 @@ export default function MiniAppHome() {
               <li key={c.id}>
                 <Link href={`/danh-muc/${c.slug}`} className="miniapp-cat-tile">
                   <span className="miniapp-cat-emoji">
-                    {CAT_EMOJI_FALLBACK[c.slug] || c.emoji || '📦'}
+                    <Icon name={categoryIcons[c.slug] ?? 'package'} size={22} strokeWidth={1.75} />
                   </span>
                   <p className="miniapp-cat-name">{c.name}</p>
                 </Link>
@@ -86,8 +85,13 @@ export default function MiniAppHome() {
       {featured.data && featured.data.length > 0 && (
         <section className="miniapp-section">
           <div className="miniapp-section-title">
-            <span>✨ Sản phẩm nổi bật</span>
-            <Link href="/danh-muc/hoc-tap">Tất cả →</Link>
+            <span className="inline-flex items-center gap-1.5">
+              <Icon name="sparkles" size={16} />
+              Sản phẩm nổi bật
+            </span>
+            <Link href="/danh-muc/hoc-tap" className="inline-flex items-center gap-1">
+              Tất cả <Icon name="arrowRight" size={14} />
+            </Link>
           </div>
           <ul className="miniapp-product-grid">
             {featured.data.map((p) => (
