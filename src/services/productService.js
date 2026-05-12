@@ -1,4 +1,13 @@
 const db = require('../database');
+const { sanitizeDescription } = require('../utils/richHtml');
+
+function sanitizeProductForClient(row) {
+    return {
+        ...row,
+        description: sanitizeDescription(row.description),
+        longDescription: sanitizeDescription(row.longDescription),
+    };
+}
 
 const productService = {
     /**
@@ -110,3 +119,4 @@ const productService = {
 };
 
 module.exports = productService;
+module.exports.sanitizeProductForClient = sanitizeProductForClient;

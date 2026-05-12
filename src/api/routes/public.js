@@ -1,6 +1,7 @@
 const { Router } = require('express');
 const db = require('../../database');
 const productService = require('../../services/productService');
+const { sanitizeProductForClient } = require('../../services/productService');
 const config = require('../../config');
 const messageTemplateService = require('../../services/messageTemplateService');
 
@@ -33,7 +34,7 @@ router.get('/categories', (req, res) => {
 
 function shapePublicProduct(p) {
   const stock = (p.display_stock != null) ? p.display_stock : (p.stock_count || 0);
-  return {
+  const shaped = {
     id: String(p.id),
     name: p.name,
     slug: p.slug,
@@ -51,6 +52,7 @@ function shapePublicProduct(p) {
     categorySlug: p.category_slug || '',
     categoryId: p.category_id,
   };
+  return sanitizeProductForClient(shaped);
 }
 
 // GET /products
