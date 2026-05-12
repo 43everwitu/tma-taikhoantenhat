@@ -52,8 +52,58 @@ Ports: api `:3000`, web `:3001`, mbbank `:8000`.
 - Bot must run on **long-polling** (no webhook in dev); only one instance can hold the lock — kill stale node procs before restarting
 - Plans live in `docs/superpowers/plans/`; specs in `docs/superpowers/specs/`. Sub-projects #4/#5/#6/#8 still pending
 
+## Admin
+
+- Routes under `web/src/app/(admin)/admin/*`. Sidebar config: `web/src/components/AdminSidebar.tsx`.
+- Auth: `POST /api/v1/auth/login` → JWT in `localStorage` (admin slot, not customer). Reset password: `npm run admin:reset-password [<user> [<pw>]]`.
+- **RBAC** (sub-project B, tag `v0.14-rbac`): `permissionService.js` resolves `permissions || rolePermissions[role]`. Catalog: `dashboard.read`, `products.{read,write}`, `orders.{read,write}`, `stock.{read,write}`, `users.{read,write}`, `admins.{read,write}`, `settings.{read,write}`, `topups.{read,write}`, `messages.{read,write}`, `announcements.{read,write}`, `categories.{read,write}`. Roles: `super_admin` (`['*']`), `manager` (no dashboard/settings/admins/topups), `admin` (full minus admins).
+- Middleware: `requireAdmin` then `loadAdminPermissions` (populates `req.admin.perms`) then route-level `requirePermission('x.y')`. `/admin/me` returns `{adminId, role, username, permissions}` for UI filtering.
+- **Feature flags** (sub-project D, tag `v0.12-feature-gating`): `FEATURE_TOPUPS`, `FEATURE_BROADCAST`, `FEATURE_TELEGRAM_NOTIFY={order_only|full}` in `.env`. `GET /admin/features` returns the map. Sidebar hides items per flag.
+- **Media upload** (sub-project G, tag `v0.13-admin-modal`): `POST /admin/upload` (multer + sharp) writes to `data/uploads/products-inline/{hash}-{original|thumb}.{webp|avif}`. `GET /admin/uploads` lists files. Used by `RichEditorRich` TipTap inline image + Media Library picker.
+
+## Content + variants
+
+- Product description sanitisation: `sanitizeDescription` in `src/utils/richHtml.js` allows `p, h2-4, ul/ol/li, table family, img, a, code, pre, blockquote, b/i/u/s, span[class], div[class]`. Distinct from `sanitizeRich` which is Telegram-narrow (`b/i/u/s/a/code/pre/br/tg-spoiler`).
+- Frontend renders sanitised HTML via `dangerouslySetInnerHTML` into `.rich-text` containers — styling in `web/src/app/globals.css`.
+- **WP migration** (`scripts/migrate-wp.js`): full migration is default; pass-2 `--inline-images` downloads body images from local backup → sharp pipeline; pass-3 `--normalize-tables` strips wpautop empty `<p>` and wraps orphan `<tr>` runs.
+- **Product variants** (sub-project H, tag `v0.6-variants-api`): `product_variants` table linked to `products`. `stock.variant_id` / `orders.variant_id` nullable (NULL = legacy product-level). `orders.input_value` is AES-GCM encrypted via `src/utils/secrets.js`. `variantService` owns CRUD + per-variant `countAvailableStock`. Public `/products/:slug` returns `variants[]`. Order reservation branches by `variant_id`.
+
+## Encryption
+
+- AES-256-GCM helpers in `src/utils/secrets.js`: `encryptString` / `decryptString`. Reads `ENCRYPTION_KEY` (64 hex chars / 32 bytes) from `.env`. Output: base64 `iv|tag|ct`.
+- Customer `inputValue` (variant email/password capture) round-trips through these helpers. Never logged.
+
+## Gotchas
+
+- `data/db.sqlite` + `db.sqlite.fresh` are leftover fork files — runtime is `data/shop.db`
+- **`.env` values containing `#`** are truncated by `dotenv` as inline comments. Always quote: `KEY='value#with#hash'`. This bit us once on `ADMIN_INITIAL_PASSWORD=Ljn...#` losing the trailing `#`. `npm run admin:reset-password` exists to fix the resulting hash mismatch.
+- `seedAdmin()` is no-op when admins exist — changing `ADMIN_INITIAL_PASSWORD` later requires `npm run admin:reset-password`.
+- WP migration auto-detects tarball at repo-root or parent `telegram-shop-bot/` dir
+- License CSV (`data/wp-imports/lmfwc-export.csv`) is optional
+- Bot must run on long-polling (no webhook in dev); only one instance can hold the lock — kill stale node procs before restarting
+- Inline images for product descriptions resolve to `/uploads/products-inline/<hash>-original.webp` after migration pass-2
+- Next/Image `fill` parents need **inline** `style={{ position: 'relative' }}` (CSS-only races stylesheet load in dev)
+- Plans live in `docs/superpowers/plans/`; specs in `docs/superpowers/specs/`
+
+## Sub-projects shipped (today)
+
+| Tag | Scope |
+|---|---|
+| `v0.5-content-render` | F — sanitised HTML render + WP image migration pass-2 |
+| `v0.6-variants-api` | H — `product_variants` table + admin/public API |
+| `v0.7-content-tables` | I — table allow-list + normalize + auto-show "Thông tin sản phẩm" |
+| `v0.8-home-overhaul` | K — categories above hero, recently-viewed, new, `/san-pham` page |
+| `v0.9-variant-picker` | J — variant picker UI + email/pass input |
+| `v0.10-brand` | C — favicon + metadata + audit `t.appName` |
+| `v0.11-stock-ux` | A — `/admin/stock` search/filter/sort/quick-add |
+| `v0.12-feature-gating` | D — `FEATURE_TOPUPS`/`FEATURE_BROADCAST` env flags |
+| `v0.13-admin-modal` | G — TipTap rich + Media Library + multer upload |
+| `v0.14-rbac` | B — RBAC: roles, permissions, `/admin/admins` |
+
 ## Pending follow-ups
 
 - Refund route `POST /api/v1/admin/orders/:id/refund` then delete `src/handlers/adminActions.js` + `src/bot-legacy.js`
 - 2 stale `paymentConfirm` comments in `src/services/notificationService.js:254,262`
 - Sub-project #4 geo-block middleware, #5 custom-info order flow, #6 per-order chat, #8 legacy public web cleanup
+- Order detail page (`/don-hang/[id]`) doesn't yet show variant name to customer — would require `orderService.getById` to JOIN `product_variants`
+- `confirmAndDeliver` fallback `getFreeStock` in `orderService.js` ignores `variant_id` — latent if reservations get lost
