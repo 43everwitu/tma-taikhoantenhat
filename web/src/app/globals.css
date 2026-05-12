@@ -180,10 +180,19 @@ body {
     color: var(--color-clay-charcoal);
   }
 
-  .rich-text { white-space: pre-wrap; line-height: 1.55; }
-  .rich-text a { text-decoration: underline; color: var(--color-clay-ink); }
+  .rich-text { white-space: normal; line-height: 1.55; }
+  .rich-text p { margin-block: .5rem; }
+  .rich-text p:first-child { margin-top: 0; }
+  .rich-text p:last-child { margin-bottom: 0; }
+  .rich-text h2 { font-size: 1.125rem; font-weight: 600; margin: 1rem 0 .5rem; line-height: 1.3; }
+  .rich-text h3 { font-size: 1rem; font-weight: 600; margin: .875rem 0 .375rem; line-height: 1.3; }
+  .rich-text h4 { font-size: .9375rem; font-weight: 600; margin: .75rem 0 .25rem; }
+  .rich-text ul, .rich-text ol { padding-left: 1.25rem; margin-block: .5rem; }
+  .rich-text li { margin-block: .125rem; }
+  .rich-text a { text-decoration: underline; color: var(--brand-gold-deep, var(--color-clay-ink)); }
   .rich-text code { background: var(--color-clay-oat-light); padding: 0 .25rem; border-radius: 4px; font-family: var(--font-mono); font-size: .9em; }
   .rich-text pre { background: var(--color-clay-oat-light); padding: .75rem; border-radius: 8px; font-family: var(--font-mono); font-size: .85em; overflow-x: auto; }
+  .rich-text img { display: block; max-width: 100%; height: auto; border-radius: 12px; margin: .75rem 0; }
   .rich-text tg-spoiler { background: var(--color-clay-charcoal); color: var(--color-clay-charcoal); border-radius: 4px; cursor: pointer; transition: color .2s; }
   .rich-text tg-spoiler:hover, .rich-text tg-spoiler.revealed { color: #fff; }
 

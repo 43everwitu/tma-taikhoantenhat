@@ -87,13 +87,19 @@ export default function ProductDetailPage() {
           </div>
 
           {p.description && (
-            <p className="mb-3 whitespace-pre-line text-[0.9375rem] leading-relaxed">{p.description}</p>
+            <div
+              className="rich-text mb-3 text-[0.9375rem]"
+              dangerouslySetInnerHTML={{ __html: p.description }}
+            />
           )}
 
           {p.longDescription && (
             <details className="mb-4 rounded-xl p-3" style={{ background: 'var(--tg-bg-2)' }}>
               <summary className="cursor-pointer font-medium text-sm">Chi tiết sản phẩm</summary>
-              <div className="mt-2 whitespace-pre-line text-sm opacity-90">{p.longDescription}</div>
+              <div
+                className="rich-text mt-2 text-sm opacity-90"
+                dangerouslySetInnerHTML={{ __html: p.longDescription }}
+              />
             </details>
           )}
         </div>
