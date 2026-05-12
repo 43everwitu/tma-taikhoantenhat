@@ -104,13 +104,30 @@ router.get('/products', (req, res) => {
     params.push(categorySlug);
   }
 
+  const priceMin = parseInt(req.query.priceMin);
+  const priceMax = parseInt(req.query.priceMax);
+  if (Number.isInteger(priceMin) && priceMin >= 0) {
+    where += ' AND p.price >= ?';
+    params.push(priceMin);
+  }
+  if (Number.isInteger(priceMax) && priceMax >= 0) {
+    where += ' AND p.price <= ?';
+    params.push(priceMax);
+  }
+
   let orderBy;
   switch (sort) {
     case 'price_asc': orderBy = 'p.price ASC, p.id'; break;
     case 'price_desc': orderBy = 'p.price DESC, p.id'; break;
     case 'newest': orderBy = 'p.created_at DESC, p.id DESC'; break;
+    case 'name_asc': orderBy = 'p.name COLLATE NOCASE ASC, p.id'; break;
+    case 'name_desc': orderBy = 'p.name COLLATE NOCASE DESC, p.id'; break;
     default: orderBy = 'p.sort_order, p.id';
   }
+
+  const limit = Math.min(parseInt(req.query.limit) || 0, 100);
+  const offset = Math.max(parseInt(req.query.offset) || 0, 0);
+  const limitClause = limit > 0 ? ` LIMIT ${limit} OFFSET ${offset}` : '';
 
   const rows = db.prepare(`
     SELECT p.*,
@@ -124,10 +141,19 @@ router.get('/products', (req, res) => {
     FROM products p
     LEFT JOIN categories c ON p.category_id = c.id
     WHERE ${where}
-    ORDER BY ${orderBy}
+    ORDER BY ${orderBy}${limitClause}
   `).all(...params);
 
-  res.json({ success: true, data: rows.map(shapePublicProduct) });
+  const response = { success: true, data: rows.map(shapePublicProduct) };
+  if (limit > 0) {
+    const total = db.prepare(`
+      SELECT COUNT(*) AS c FROM products p
+      LEFT JOIN categories c ON p.category_id = c.id
+      WHERE ${where}
+    `).get(...params).c;
+    response.total = total;
+  }
+  res.json(response);
 });
 
 // GET /products/featured — featured products, padded with newest if needed
