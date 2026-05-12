@@ -6,6 +6,7 @@ import { useParams } from 'next/navigation'
 import { apiFetch } from '@/lib/miniappApi'
 import { MiniAppShell } from '../../components/MiniAppShell'
 import { ProductCard, ProductSummary } from '../../components/ProductCard'
+import { Icon } from '../../components/Icon'
 import { t } from '@/i18n/vi'
 
 interface Category { id: number; name: string; slug: string; emoji: string }
@@ -42,7 +43,7 @@ export default function CategoryPage() {
       subtitle={products.data ? `${products.data.length} sản phẩm` : undefined}
     >
       <div className="miniapp-search">
-        <span className="opacity-60">🔍</span>
+        <span className="opacity-60 flex"><Icon name="search" size={18} /></span>
         <input
           value={q}
           onChange={(e) => setQ(e.target.value)}
@@ -68,7 +69,9 @@ export default function CategoryPage() {
         {products.isLoading && <p className="opacity-60 text-sm">Đang tải…</p>}
         {products.data && products.data.length === 0 && (
           <div className="text-center py-12 opacity-60">
-            <div className="text-4xl mb-2">🔍</div>
+            <div className="mb-2 inline-flex p-3 rounded-full" style={{ background: 'var(--brand-gold-soft)', color: 'var(--brand-gold-deep)' }}>
+              <Icon name="search" size={28} />
+            </div>
             <p className="text-sm">{t.catalog.empty}</p>
           </div>
         )}

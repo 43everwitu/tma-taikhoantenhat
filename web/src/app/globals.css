@@ -259,11 +259,6 @@ body {
     color: var(--brand-gold-deep);
   }
   .miniapp-bottomnav a:active { transform: scale(.92); }
-  .miniapp-bottomnav-icon {
-    width: 22px; height: 22px;
-    display: inline-grid; place-items: center;
-    font-size: 18px;
-  }
 
   /* Hero card on home */
   .miniapp-hero {
@@ -310,7 +305,6 @@ body {
   }
 
   /* Category tile */
-  .miniapp-cat-grid { display: grid; grid-template-columns: repeat(2, 1fr); gap: .75rem; }
   .miniapp-cat-tile {
     display: block; position: relative;
     padding: 1.125rem 1rem;
@@ -350,7 +344,6 @@ body {
   .miniapp-ann-body { font-size: .8125rem; color: var(--brand-ink-soft); line-height: 1.4; white-space: pre-line; }
 
   /* Product card */
-  .miniapp-product-grid { display: grid; grid-template-columns: repeat(2, 1fr); gap: .75rem; }
   .miniapp-product-card {
     display: block; position: relative;
     border-radius: 16px;
@@ -363,11 +356,6 @@ body {
   .miniapp-product-img {
     position: relative; aspect-ratio: 1; overflow: hidden;
     background: var(--brand-gold-soft);
-  }
-  .miniapp-product-emoji {
-    position: absolute; inset: 0;
-    display: grid; place-items: center;
-    font-size: 3rem;
   }
   .miniapp-product-info { padding: .625rem .75rem .75rem; }
   .miniapp-product-name {
@@ -521,4 +509,78 @@ body {
     word-break: break-all;
     user-select: all;
   }
+
+  /* Centered content container: stays narrow on mobile, widens with breakpoints */
+  .miniapp-container {
+    width: 100%;
+    margin-inline: auto;
+    max-width: 100%;
+  }
+  @media (min-width: 768px) { .miniapp-container { max-width: 920px; } }
+  @media (min-width: 1024px) { .miniapp-container { max-width: 1120px; } }
+  @media (min-width: 1280px) { .miniapp-container { max-width: 1280px; } }
+  @media (min-width: 1536px) { .miniapp-container { max-width: 1440px; } }
+
+  /* Product grid: 2 → 3 → 4 → 5 → 6 → 7 columns. "4-7 on desktop" lives at ≥768px. */
+  .miniapp-product-grid {
+    display: grid;
+    grid-template-columns: repeat(2, 1fr);
+    gap: .75rem;
+  }
+  @media (min-width: 480px) { .miniapp-product-grid { grid-template-columns: repeat(3, 1fr); } }
+  @media (min-width: 768px) { .miniapp-product-grid { grid-template-columns: repeat(4, 1fr); gap: 1rem; } }
+  @media (min-width: 1024px) { .miniapp-product-grid { grid-template-columns: repeat(5, 1fr); } }
+  @media (min-width: 1280px) { .miniapp-product-grid { grid-template-columns: repeat(6, 1fr); } }
+  @media (min-width: 1536px) { .miniapp-product-grid { grid-template-columns: repeat(7, 1fr); } }
+
+  /* Category grid scales the same way but caps at 6 — categories are coarse */
+  .miniapp-cat-grid {
+    display: grid; grid-template-columns: repeat(2, 1fr); gap: .75rem;
+  }
+  @media (min-width: 640px) { .miniapp-cat-grid { grid-template-columns: repeat(3, 1fr); } }
+  @media (min-width: 1024px) { .miniapp-cat-grid { grid-template-columns: repeat(4, 1fr); } }
+  @media (min-width: 1280px) { .miniapp-cat-grid { grid-template-columns: repeat(6, 1fr); } }
+
+  /* Desktop: hide bottom nav, show top-bar nav actions */
+  @media (min-width: 768px) {
+    .miniapp-bottomnav { display: none; }
+    .miniapp-bottombar { position: sticky; bottom: 1rem; border-radius: 16px; border: 1px solid color-mix(in srgb, var(--brand-ink) 8%, transparent); box-shadow: var(--shadow-clay); }
+    .miniapp-topnav-actions { display: inline-flex; align-items: center; gap: .5rem; }
+  }
+  @media (max-width: 767.98px) {
+    .miniapp-topnav-actions { display: none; }
+  }
+
+  /* Desktop hero: side-by-side text + visual */
+  @media (min-width: 768px) {
+    .miniapp-hero { padding: 2.5rem 2.5rem 2.75rem; border-radius: 28px; }
+    .miniapp-hero h1 { font-size: 2.25rem; line-height: 1.1; }
+    .miniapp-hero p { font-size: 1rem; max-width: 38ch; }
+  }
+
+  /* Clay hover on product card — desktop only, mobile keeps tap feedback */
+  @media (hover: hover) and (min-width: 768px) {
+    .miniapp-product-card {
+      transition: transform .25s cubic-bezier(.34,1.56,.64,1), box-shadow .25s ease;
+    }
+    .miniapp-product-card:hover {
+      transform: rotateZ(-1.5deg) translateY(-4px);
+      box-shadow: var(--shadow-clay-hover);
+    }
+  }
+
+  /* Icon-bearing nav link — replaces emoji span inside .miniapp-bottomnav */
+  .miniapp-bottomnav a > svg { width: 22px; height: 22px; }
+
+  /* Top-nav (desktop) link styling */
+  .miniapp-topnav-link {
+    display: inline-flex; align-items: center; gap: .375rem;
+    padding: .5rem .875rem;
+    border-radius: 10px;
+    font-size: .9375rem; font-weight: 500;
+    color: color-mix(in srgb, var(--brand-ink) 75%, transparent);
+    transition: background .15s, color .15s;
+  }
+  .miniapp-topnav-link:hover { background: color-mix(in srgb, var(--brand-ink) 6%, transparent); color: var(--brand-ink); }
+  .miniapp-topnav-link[aria-current="page"] { color: var(--brand-gold-deep); background: var(--brand-gold-soft); }
 }

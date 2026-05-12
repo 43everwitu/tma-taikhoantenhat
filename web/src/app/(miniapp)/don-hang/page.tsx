@@ -4,6 +4,7 @@ import Link from 'next/link'
 import { useQuery } from '@tanstack/react-query'
 import { apiFetch } from '@/lib/miniappApi'
 import { MiniAppShell } from '../components/MiniAppShell'
+import { Icon } from '../components/Icon'
 import { formatPrice } from '@/lib/utils'
 import { t } from '@/i18n/vi'
 
@@ -44,7 +45,9 @@ export default function MyOrdersPage() {
       {isLoading && <p className="opacity-60 text-sm">Đang tải…</p>}
       {data && data.length === 0 && (
         <div className="text-center py-16">
-          <div className="text-6xl mb-3">📋</div>
+          <div className="mb-3 inline-flex p-4 rounded-full" style={{ background: 'var(--brand-gold-soft)', color: 'var(--brand-gold-deep)' }}>
+            <Icon name="inbox" size={40} strokeWidth={1.25} />
+          </div>
           <p className="opacity-60 text-sm mb-4">Chưa có đơn hàng nào.</p>
           <Link href="/" className="miniapp-btn miniapp-btn--primary inline-flex" style={{ width: 'auto', padding: '.625rem 1.25rem' }}>
             Bắt đầu mua sắm

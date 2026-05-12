@@ -2,6 +2,7 @@
 
 import Link from 'next/link'
 import Image from 'next/image'
+import { Icon } from './Icon'
 import { formatPrice } from '@/lib/utils'
 
 export interface ProductSummary {
@@ -26,21 +27,20 @@ export function ProductCard({ p }: { p: ProductSummary }) {
             src={p.imageUrl}
             alt={p.name}
             fill
-            sizes="(max-width: 768px) 50vw, 240px"
+            sizes="(min-width: 1536px) 14vw, (min-width: 1280px) 17vw, (min-width: 1024px) 20vw, (min-width: 768px) 25vw, (min-width: 480px) 33vw, 50vw"
             style={{ objectFit: 'cover' }}
           />
         ) : (
-          <div className="miniapp-product-emoji">{p.emoji || '📦'}</div>
+          <div className="absolute inset-0 grid place-items-center" style={{ color: 'var(--brand-gold-deep)' }}>
+            <Icon name="package" size={44} strokeWidth={1.25} />
+          </div>
         )}
       </div>
       <div className="miniapp-product-info">
         <p className="miniapp-product-name">{p.name}</p>
         <p className="miniapp-product-price">{formatPrice(p.price)}</p>
         <p className={`miniapp-product-stock ${inStock ? 'in' : 'out'}`}>
-          <span style={{
-            width: 6, height: 6, borderRadius: 999,
-            background: 'currentColor', display: 'inline-block',
-          }} />
+          <span style={{ width: 6, height: 6, borderRadius: 999, background: 'currentColor', display: 'inline-block' }} />
           {inStock ? `Còn ${p.stock}` : 'Hết hàng'}
         </p>
       </div>

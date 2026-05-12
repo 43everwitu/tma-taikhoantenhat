@@ -6,6 +6,7 @@ import { useCart } from '@/lib/cart'
 import { MiniAppShell } from '../components/MiniAppShell'
 import { formatPrice } from '@/lib/utils'
 import { t } from '@/i18n/vi'
+import { Icon } from '../components/Icon'
 
 export default function CartPage() {
   const cart = useCart()
@@ -15,7 +16,9 @@ export default function CartPage() {
     <MiniAppShell title={t.cart.title} hasBottombar={!empty}>
       {empty && (
         <div className="text-center py-16">
-          <div className="text-6xl mb-3">🛒</div>
+          <div className="mb-3 inline-flex p-4 rounded-full" style={{ background: 'var(--brand-gold-soft)', color: 'var(--brand-gold-deep)' }}>
+            <Icon name="cart" size={40} strokeWidth={1.25} />
+          </div>
           <p className="opacity-60 text-sm mb-4">{t.cart.empty}</p>
           <Link href="/" className="miniapp-btn miniapp-btn--primary inline-flex" style={{ width: 'auto', padding: '.625rem 1.25rem' }}>
             Tiếp tục mua sắm
@@ -29,7 +32,9 @@ export default function CartPage() {
               <div className="w-16 h-16 rounded-xl overflow-hidden shrink-0" style={{ position: 'relative', background: 'var(--brand-gold-soft)' }}>
                 {it.imageUrl
                   ? <Image src={it.imageUrl} alt={it.name} fill sizes="64px" style={{ objectFit: 'cover' }} />
-                  : <div className="absolute inset-0 grid place-items-center text-2xl">{it.emoji || '📦'}</div>}
+                  : <div className="absolute inset-0 grid place-items-center" style={{ color: 'var(--brand-gold-deep)' }}>
+                      <Icon name="package" size={24} strokeWidth={1.5} />
+                    </div>}
               </div>
               <div className="flex-1 min-w-0">
                 <p className="text-sm font-medium line-clamp-2">{it.name}</p>
@@ -40,19 +45,19 @@ export default function CartPage() {
                     className="w-7 h-7 grid place-items-center rounded-full text-base"
                     style={{ background: 'var(--tg-bg)' }}
                     aria-label={t.cart.decrease}
-                  >−</button>
+                  ><Icon name="minus" size={14} /></button>
                   <span className="w-7 text-center text-sm font-semibold">{it.quantity}</span>
                   <button
                     onClick={() => cart.setQuantity(it.id, it.quantity + 1)}
                     className="w-7 h-7 grid place-items-center rounded-full text-base"
                     style={{ background: 'var(--tg-bg)' }}
                     aria-label={t.cart.increase}
-                  >+</button>
+                  ><Icon name="plus" size={14} /></button>
                   <button
                     onClick={() => cart.remove(it.id)}
                     className="ml-auto text-xs opacity-60 px-2"
                     aria-label={t.cart.remove}
-                  >{t.cart.remove}</button>
+                  ><span className="inline-flex items-center gap-1"><Icon name="trash" size={12} />{t.cart.remove}</span></button>
                 </div>
               </div>
             </li>
