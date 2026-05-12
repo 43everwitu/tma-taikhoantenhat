@@ -9,6 +9,7 @@ import { useCart } from '@/lib/cart'
 import { pushRecentlyViewed } from '@/lib/recentlyViewed'
 import { MiniAppShell } from '../../components/MiniAppShell'
 import { Icon } from '../../components/Icon'
+import { VariantPicker, type Variant } from '../../components/VariantPicker'
 import { formatPrice } from '@/lib/utils'
 import { t } from '@/i18n/vi'
 
@@ -19,6 +20,7 @@ interface ProductBase {
 }
 interface ProductDetail extends ProductBase {
   longDescription: string; description: string
+  variants?: Variant[]
 }
 
 export default function ProductDetailPage() {
@@ -26,6 +28,8 @@ export default function ProductDetailPage() {
   const router = useRouter()
   const cart = useCart()
   const [qty, setQty] = useState(1)
+  const [selectedVariantId, setSelectedVariantId] = useState<string | null>(null)
+  const [inputValue, setInputValue] = useState('')
 
   const { data: p, isLoading } = useQuery({
     queryKey: ['product', slug],
@@ -36,16 +40,32 @@ export default function ProductDetailPage() {
     if (p?.id) pushRecentlyViewed(String(p.id))
   }, [p?.id])
 
+  useEffect(() => {
+    if (!p?.variants?.length) { setSelectedVariantId(null); return }
+    const firstInStock = p.variants.find((v) => v.stock > 0)
+    setSelectedVariantId((firstInStock ?? p.variants[0]).id)
+  }, [p?.variants])
+
   if (isLoading) return <MiniAppShell><p className="opacity-60 text-sm">Đang tải…</p></MiniAppShell>
   if (!p) return <MiniAppShell><p>Không tìm thấy sản phẩm.</p></MiniAppShell>
 
-  const disabled = p.stock <= 0 || p.contactOnly
+  const variants = p?.variants ?? []
+  const selected = variants.find((v) => v.id === selectedVariantId) ?? null
+  const effectivePrice = selected?.price ?? p?.price ?? 0
+  const effectiveStock = variants.length > 0 ? (selected?.stock ?? 0) : (p?.stock ?? 0)
+  const requiresInput = !!selected?.requiresInput
+  const inputValid = !requiresInput || inputValue.trim().length >= 3
+
+  const disabled = effectiveStock <= 0 || p.contactOnly || !inputValid
   const addToCart = () => {
     cart.add({
       productId: p.id,
+      variantId: selected?.id ?? null,
+      variantName: selected?.name ?? null,
+      inputValue: requiresInput ? inputValue.trim() : null,
       slug: p.slug,
       name: p.name,
-      price: p.price,
+      price: effectivePrice,
       emoji: p.emoji,
       imageUrl: p.imageUrl,
       quantity: qty,
@@ -67,12 +87,23 @@ export default function ProductDetailPage() {
         </div>
 
         <div>
+          {variants.length > 0 && (
+            <div className="mb-3">
+              <VariantPicker
+                variants={variants}
+                selectedId={selectedVariantId}
+                onSelect={(id) => { setSelectedVariantId(id); setInputValue('') }}
+                inputValue={inputValue}
+                onInputChange={setInputValue}
+              />
+            </div>
+          )}
           <div className="flex items-end justify-between mb-2">
             <div>
-              <p className="text-2xl font-bold tracking-tight">{formatPrice(p.price)}</p>
+              <p className="text-2xl font-bold tracking-tight">{formatPrice(effectivePrice)}</p>
               <p className="text-xs mt-1">
-                {p.stock > 0
-                  ? <span style={{ color: '#16a34a' }}>● {t.product.inStock.replace('{n}', String(p.stock))}</span>
+                {effectiveStock > 0
+                  ? <span style={{ color: '#16a34a' }}>● {t.product.inStock.replace('{n}', String(effectiveStock))}</span>
                   : <span style={{ color: '#dc2626' }}>● {t.product.outOfStock}</span>}
               </p>
             </div>
@@ -88,7 +119,7 @@ export default function ProductDetailPage() {
                 <span className="w-6 text-center text-sm font-semibold">{qty}</span>
                 <button
                   type="button"
-                  onClick={() => setQty((q) => Math.min(p.stock || 99, q + 1))}
+                  onClick={() => setQty((q) => Math.min(effectiveStock || 99, q + 1))}
                   className="w-7 h-7 grid place-items-center rounded-full"
                   style={{ background: 'var(--tg-bg)' }}
                   aria-label="Tăng số lượng"
