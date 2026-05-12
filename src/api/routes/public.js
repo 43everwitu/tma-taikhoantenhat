@@ -1,6 +1,7 @@
 const { Router } = require('express');
 const db = require('../../database');
 const { sanitizeProductForClient } = require('../../services/productService');
+const variantService = require('../../services/variantService');
 const config = require('../../config');
 const messageTemplateService = require('../../services/messageTemplateService');
 
@@ -119,7 +120,41 @@ router.get('/products/:slug', (req, res) => {
     return res.status(404).json({ success: false, error: { code: 'NOT_FOUND', message: 'Sản phẩm không tìm thấy' } });
   }
 
-  res.json({ success: true, data: shapePublicProduct(product) });
+  const p = product;
+  const stock = (p.display_stock != null) ? p.display_stock : (p.stock_count || 0);
+  const variantRows = variantService.listByProduct(db, p.id);
+  const variants = variantRows.map(v => ({
+    id: String(v.id),
+    name: v.name,
+    description: v.description || '',
+    price: v.price,
+    sortOrder: v.sort_order,
+    stock: variantService.countAvailableStock(db, p.id, v.id),
+    requiresInput: !!v.requires_input,
+    inputLabel: v.input_label || null,
+    inputPlaceholder: v.input_placeholder || null,
+  }));
+
+  const shaped = {
+    id: String(p.id),
+    name: p.name,
+    slug: p.slug,
+    emoji: p.emoji || '📦',
+    imageUrl: p.image_url || '',
+    price: p.price,
+    stock,
+    description: p.description || '',
+    longDescription: p.long_description || '',
+    usageInstructions: p.usage_instructions || '',
+    promotion: p.promotion || null,
+    contactOnly: !!p.contact_only,
+    contactUrl: p.contact_url || '',
+    category: p.category_name || '',
+    categorySlug: p.category_slug || '',
+    categoryId: p.category_id,
+    variants,
+  };
+  res.json({ success: true, data: sanitizeProductForClient(shaped) });
 });
 
 // GET /announcements — recent public announcements (target = web | all)

@@ -2,11 +2,18 @@ const db = require('../database');
 const { sanitizeDescription } = require('../utils/richHtml');
 
 function sanitizeProductForClient(row) {
-    return {
+    const out = {
         ...row,
         description: sanitizeDescription(row.description),
         longDescription: sanitizeDescription(row.longDescription),
     };
+    if (Array.isArray(row.variants)) {
+        out.variants = row.variants.map(v => ({
+            ...v,
+            description: sanitizeDescription(v.description),
+        }));
+    }
+    return out;
 }
 
 const productService = {
