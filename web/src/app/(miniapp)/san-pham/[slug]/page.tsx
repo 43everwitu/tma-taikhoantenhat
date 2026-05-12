@@ -41,9 +41,15 @@ export default function ProductDetailPage() {
 
   const disabled = p.stock <= 0 || p.contactOnly
   const addToCart = () => {
-    for (let i = 0; i < qty; i++) {
-      cart.add({ id: p.id, slug: p.slug, name: p.name, price: p.price, emoji: p.emoji, imageUrl: p.imageUrl })
-    }
+    cart.add({
+      productId: p.id,
+      slug: p.slug,
+      name: p.name,
+      price: p.price,
+      emoji: p.emoji,
+      imageUrl: p.imageUrl,
+      quantity: qty,
+    })
   }
 
   return (

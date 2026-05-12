@@ -26,7 +26,7 @@ export default function CheckoutPage() {
       for (const it of cart.items) {
         const resp = await apiFetch<CreateOrderResp>('/orders', {
           method: 'POST',
-          body: JSON.stringify({ productId: Number(it.id), quantity: it.quantity, bankIndex: 0 }),
+          body: JSON.stringify({ productId: Number(it.productId), quantity: it.quantity, bankIndex: 0 }),
         })
         lastOrderId = resp.order.id
       }
@@ -54,7 +54,7 @@ export default function CheckoutPage() {
           <p className="text-xs uppercase tracking-wider opacity-60 mb-2">Đơn hàng của bạn</p>
           <ul className="space-y-2 mb-4">
             {cart.items.map((it) => (
-              <li key={it.id} className="rounded-2xl p-3 flex justify-between gap-2" style={{ background: 'var(--tg-bg-2)' }}>
+              <li key={it.lineKey} className="rounded-2xl p-3 flex justify-between gap-2" style={{ background: 'var(--tg-bg-2)' }}>
                 <div className="min-w-0">
                   <p className="text-sm font-medium truncate">{it.name}</p>
                   <p className="text-xs opacity-60">{formatPrice(it.price)} × {it.quantity}</p>

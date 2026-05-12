@@ -5,11 +5,43 @@ import { useCallback, useEffect, useState } from 'react'
 const STORAGE_KEY = 'taikhoantenhat:cart:v1'
 
 export interface CartItem {
-  id: string; slug: string; name: string; emoji: string;
-  imageUrl?: string; price: number; quantity: number;
+  id: string;
+  lineKey: string;
+  productId: string;
+  variantId?: string | null;
+  variantName?: string | null;
+  inputValue?: string | null;
+  slug: string;
+  name: string;
+  emoji: string;
+  imageUrl?: string;
+  price: number;
+  quantity: number;
 }
 
-interface Stored { items: Omit<CartItem, 'quantity'>[] | CartItem[] }
+interface Stored { items: CartItem[] }
+
+function lineKeyOf(productId: string, variantId?: string | null): string {
+  return `${productId}:${variantId ?? ''}`
+}
+
+function migrateLine(it: Partial<CartItem>): CartItem {
+  const productId = it.productId ?? it.id ?? ''
+  return {
+    id: productId,
+    productId,
+    lineKey: it.lineKey ?? lineKeyOf(productId, it.variantId ?? null),
+    variantId: it.variantId ?? null,
+    variantName: it.variantName ?? null,
+    inputValue: it.inputValue ?? null,
+    slug: it.slug ?? '',
+    name: it.name ?? '',
+    emoji: it.emoji ?? '',
+    imageUrl: it.imageUrl,
+    price: it.price ?? 0,
+    quantity: it.quantity ?? 1,
+  }
+}
 
 function read(): CartItem[] {
   if (typeof window === 'undefined') return []
@@ -17,7 +49,7 @@ function read(): CartItem[] {
     const raw = window.localStorage.getItem(STORAGE_KEY)
     if (!raw) return []
     const parsed = JSON.parse(raw) as Stored
-    return (parsed.items as CartItem[]).map((it) => ({ ...it, quantity: it.quantity || 1 }))
+    return (parsed.items as Partial<CartItem>[]).map(migrateLine).filter((it) => it.quantity > 0)
   } catch { return [] }
 }
 
@@ -36,23 +68,35 @@ export function useCart() {
     return () => window.removeEventListener('cart:updated', onUpdate)
   }, [])
 
-  const add = useCallback((p: Omit<CartItem, 'quantity'>) => {
+  type AddArg = Omit<CartItem, 'quantity' | 'lineKey' | 'id'> & { quantity?: number }
+
+  const add = useCallback((p: AddArg) => {
     const cur = read()
-    const existing = cur.find((it) => it.id === p.id)
-    if (existing) existing.quantity += 1
-    else cur.push({ ...p, quantity: 1 })
+    const key = lineKeyOf(p.productId, p.variantId ?? null)
+    const existing = cur.find((it) => it.lineKey === key)
+    if (existing) {
+      existing.quantity += p.quantity ?? 1
+      existing.inputValue = p.inputValue ?? existing.inputValue
+    } else {
+      cur.push(migrateLine({ ...p, lineKey: key, quantity: p.quantity ?? 1 }))
+    }
     write(cur)
   }, [])
-  const setQuantity = useCallback((id: string, q: number) => {
-    const cur = read().map((it) => it.id === id ? { ...it, quantity: Math.max(0, q) } : it).filter((it) => it.quantity > 0)
+
+  const setQuantity = useCallback((lineKey: string, q: number) => {
+    const cur = read().map((it) => it.lineKey === lineKey ? { ...it, quantity: Math.max(0, q) } : it).filter((it) => it.quantity > 0)
     write(cur)
   }, [])
-  const remove = useCallback((id: string) => {
-    write(read().filter((it) => it.id !== id))
+
+  const remove = useCallback((lineKey: string) => {
+    write(read().filter((it) => it.lineKey !== lineKey))
   }, [])
+
   const clear = useCallback(() => write([]), [])
 
   const total = items.reduce((s, it) => s + it.price * it.quantity, 0)
 
-  return { items, add, setQuantity, remove, clear, total }
+  return { items, add, setQuantity, remove, clear, total, lineKeyOf }
 }
+
+export { lineKeyOf }
