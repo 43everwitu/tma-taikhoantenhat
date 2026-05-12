@@ -1,20 +1,29 @@
 const db = require('../database');
 const userService = require('./userService');
 const eventBus = require('./eventBus');
+const { encryptString } = require('../utils/secrets');
 
 const DUPLICATE_WINDOW_SECONDS = 60;
 
 // Prepared statements (compiled once at module load)
 const insertOrder = db.prepare(`
-  INSERT INTO orders (user_id, product_id, quantity, total_price, payment_code, status, source, bank_name, expires_at, payment_method)
-  VALUES (?, ?, ?, ?, '', 'pending', ?, ?, datetime('now', '+' || ? || ' minutes'), ?)
+  INSERT INTO orders (user_id, product_id, variant_id, quantity, total_price, payment_code, status, source, bank_name, input_value, expires_at, payment_method)
+  VALUES (?, ?, ?, ?, ?, '', 'pending', ?, ?, ?, datetime('now', '+' || ? || ' minutes'), ?)
 `);
 const setPaymentCode = db.prepare(`UPDATE orders SET payment_code = ? WHERE id = ?`);
-const reserveStockBatch = db.prepare(`
+const reserveStockBatchByVariant = db.prepare(`
   UPDATE stock SET reserved_for_order_id = ?, reserved_at = CURRENT_TIMESTAMP
   WHERE id IN (
     SELECT id FROM stock
-    WHERE product_id = ? AND is_sold = 0 AND reserved_for_order_id IS NULL
+    WHERE product_id = ? AND variant_id = ? AND is_sold = 0 AND reserved_for_order_id IS NULL
+    LIMIT ?
+  )
+`);
+const reserveStockBatchNoVariant = db.prepare(`
+  UPDATE stock SET reserved_for_order_id = ?, reserved_at = CURRENT_TIMESTAMP
+  WHERE id IN (
+    SELECT id FROM stock
+    WHERE product_id = ? AND variant_id IS NULL AND is_sold = 0 AND reserved_for_order_id IS NULL
     LIMIT ?
   )
 `);
@@ -40,6 +49,8 @@ const orderService = {
     const source = opts.source || 'telegram';
     const bankName = opts.bankName || null;
     const paymentMethod = opts.paymentMethod || 'bank';
+    const variantId = opts.variantId ?? null;
+    const encryptedInput = opts.inputValue ? encryptString(String(opts.inputValue)) : null;
     let expiryMinutes = opts.expiryMinutes;
     if (!Number.isFinite(expiryMinutes) || expiryMinutes <= 0) {
       const row = db.prepare("SELECT value FROM settings WHERE key = 'order_expiry_minutes'").get();
@@ -65,15 +76,18 @@ const orderService = {
 
     const txn = db.transaction(() => {
       const r = insertOrder.run(
-        userId, productId, quantity, totalPrice,
-        source, bankName, expiryMinutes, paymentMethod
+        userId, productId, variantId, quantity, totalPrice,
+        source, bankName, encryptedInput, expiryMinutes, paymentMethod
       );
       const id = r.lastInsertRowid;
       setPaymentCode.run(`PNS${id}`, id);
 
-      // Reserve stock atomically. If we couldn't reserve enough, throw to
-      // rollback the whole transaction (insertion + any partial reservations).
-      const reserved = reserveStockBatch.run(id, productId, quantity);
+      // Reservation: if order has a variant_id, only pull keys with that variant_id.
+      // Otherwise pull product-level keys (variant_id IS NULL) to preserve legacy
+      // single-SKU semantics.
+      const reserved = variantId
+        ? reserveStockBatchByVariant.run(id, productId, variantId, quantity)
+        : reserveStockBatchNoVariant.run(id, productId, quantity);
       if (reserved.changes < quantity) {
         // Partial reserve happened — explicit release before throw, defensive
         // (transaction rollback should also handle, but explicit is safer).
