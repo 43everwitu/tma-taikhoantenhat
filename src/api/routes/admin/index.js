@@ -21,5 +21,7 @@ router.use('/sync', require('./sync'));
 router.use('/features', require('./features'));
 router.use('/upload', require('./upload'));
 router.use('/uploads', require('./upload'));
+router.use('/me', require('./me'));
+router.use('/admins', require('./admins'));
 
 module.exports = router;

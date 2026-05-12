@@ -51,4 +51,26 @@ function extractToken(req) {
   return req.cookies?.token || null;
 }
 
-module.exports = { requireAdmin, requireCustomer, optionalCustomer };
+const permissionService = require('../../services/permissionService');
+const db = require('../../database');
+
+function loadAdminPermissions(req, res, next) {
+  if (!req.admin?.adminId) return next();
+  const row = db.prepare('SELECT id, role, permissions FROM admins WHERE id = ? AND is_active = 1').get(req.admin.adminId);
+  if (!row) return res.status(401).json({ success: false, error: { code: 'ADMIN_INACTIVE' } });
+  req.admin.role = row.role;
+  req.admin.permissions = row.permissions;
+  req.admin.perms = permissionService.resolvePerms(row);
+  next();
+}
+
+function requirePermission(perm) {
+  return (req, res, next) => {
+    if (!permissionService.has(req.admin, perm)) {
+      return res.status(403).json({ success: false, error: { code: 'FORBIDDEN', message: `Yêu cầu quyền ${perm}` } });
+    }
+    next();
+  };
+}
+
+module.exports = { requireAdmin, requireCustomer, optionalCustomer, requirePermission, loadAdminPermissions };
