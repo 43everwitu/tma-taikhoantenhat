@@ -3,6 +3,7 @@
 import { useState } from 'react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { api } from '@/lib/api'
+import { MediaLibrary } from '@/components/admin/MediaLibrary'
 
 interface Variant {
   id: string
@@ -16,6 +17,7 @@ interface Variant {
   inputPlaceholder: string | null
   inputType: string
   stock: number
+  imageUrl: string | null
 }
 
 const INPUT_TYPES = [
@@ -110,8 +112,10 @@ function VariantEditModal({ productId, variant, onClose, onSaved }: {
     inputPlaceholder: variant?.inputPlaceholder ?? '',
     inputType: variant?.inputType ?? 'text',
     isActive: variant?.isActive ?? true,
+    imageUrl: variant?.imageUrl ?? '',
   })
   const [err, setErr] = useState<string | null>(null)
+  const [pickerOpen, setPickerOpen] = useState(false)
 
   const mutation = useMutation({
     mutationFn: () => {
@@ -124,6 +128,7 @@ function VariantEditModal({ productId, variant, onClose, onSaved }: {
         inputLabel: form.inputLabel || null,
         inputPlaceholder: form.inputPlaceholder || null,
         inputType: form.inputType,
+        imageUrl: form.imageUrl || null,
         ...(variant ? { isActive: form.isActive } : {}),
       }
       if (variant) return api.put(`/admin/products/${productId}/variants/${variant.id}`, payload)
@@ -161,6 +166,27 @@ function VariantEditModal({ productId, variant, onClose, onSaved }: {
             <input type="number" value={form.sortOrder} onChange={(e) => setForm({ ...form, sortOrder: Number(e.target.value) })} className="clay-input w-full text-sm" />
           </label>
         </div>
+
+        <label className="block text-sm">
+          <span className="text-xs opacity-70 mb-1 inline-block">Ảnh biến thể (tuỳ chọn — nếu trống dùng ảnh sản phẩm)</span>
+          <div className="flex items-center gap-2">
+            {form.imageUrl ? (
+              // eslint-disable-next-line @next/next/no-img-element
+              <img src={form.imageUrl} alt="" className="w-16 h-16 rounded-lg object-cover border border-gray-200" />
+            ) : (
+              <div className="w-16 h-16 rounded-lg bg-gray-100 grid place-items-center text-xs opacity-60">—</div>
+            )}
+            <button type="button" onClick={() => setPickerOpen(true)} className="clay-btn text-xs">Chọn ảnh</button>
+            {form.imageUrl && <button type="button" onClick={() => setForm({ ...form, imageUrl: '' })} className="text-xs text-red-600">Xoá</button>}
+          </div>
+        </label>
+
+        {pickerOpen && (
+          <MediaLibrary
+            onPick={(url) => { setForm({ ...form, imageUrl: url }); setPickerOpen(false) }}
+            onClose={() => setPickerOpen(false)}
+          />
+        )}
 
         <label className="flex items-center gap-2 text-sm">
           <input type="checkbox" checked={form.requiresInput} onChange={(e) => setForm({ ...form, requiresInput: e.target.checked })} />
