@@ -11,7 +11,21 @@ const { open, resetPreviousImport, loadCategories, loadProducts, loadStock, upda
 const { makeReport, writeReport, printSummary } = require('./wp-migration/report');
 const cfg = require('./wp-migration/config');
 
+async function runInlineImages() {
+  const Database = require('better-sqlite3');
+  const path = require('node:path');
+  const dbPath = path.resolve(__dirname, '..', 'data', 'shop.db');
+  console.log(`Running inline-image migration pass-2 against ${dbPath} …`);
+  const db = new Database(dbPath);
+  const { migrateInlineImages } = require('./wp-migration/inline-images');
+  const summary = await migrateInlineImages(db);
+  console.log('Done:', summary);
+}
+
 async function main() {
+  if (process.argv.includes('--inline-images')) {
+    return runInlineImages();
+  }
   const report = makeReport();
   console.log('1/6 extracting categories…');
   const { terms, taxonomy } = await extractCategories();

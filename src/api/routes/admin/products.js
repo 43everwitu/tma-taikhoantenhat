@@ -6,7 +6,7 @@ const auditService = require('../../../services/auditService');
 const eventBus = require('../../../services/eventBus');
 const { slugify } = require('../../../utils/slugify');
 const { validate } = require('../../middleware/validate');
-const { sanitizeRich } = require('../../../utils/richHtml');
+const { sanitizeRich, sanitizeDescription } = require('../../../utils/richHtml');
 
 const router = Router();
 
@@ -131,10 +131,10 @@ router.post('/', validate(z.object({
     INSERT INTO products (category_id, name, price, description, emoji, slug, image_url, long_description, low_stock_threshold, usage_instructions, promotion, contact_only, contact_url)
     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
   `).run(categoryId, d.name, d.price,
-    d.description ? sanitizeRich(d.description) : null,
+    d.description ? sanitizeDescription(d.description) : null,
     d.emoji, slug,
     d.imageUrl || null,
-    d.longDescription ? sanitizeRich(d.longDescription) : null,
+    d.longDescription ? sanitizeDescription(d.longDescription) : null,
     d.lowStockThreshold,
     d.usageInstructions ? sanitizeRich(d.usageInstructions) : null,
     d.promotion || null, d.contactOnly ? 1 : 0, d.contactUrl || null);
@@ -185,13 +185,13 @@ router.put('/:id', validate(z.object({
     }
     sets.push('category_id = ?'); params.push(catId);
   }
-  if (d.description !== undefined) { sets.push('description = ?'); params.push(d.description == null ? null : sanitizeRich(d.description)); }
+  if (d.description !== undefined) { sets.push('description = ?'); params.push(d.description == null ? null : sanitizeDescription(d.description)); }
   if (d.emoji !== undefined) { sets.push('emoji = ?'); params.push(d.emoji); }
   if (d.promotion !== undefined) { sets.push('promotion = ?'); params.push(d.promotion); }
   if (d.contactOnly !== undefined) { sets.push('contact_only = ?'); params.push(d.contactOnly ? 1 : 0); }
   if (d.contactUrl !== undefined) { sets.push('contact_url = ?'); params.push(d.contactUrl); }
   if (d.imageUrl !== undefined) { sets.push('image_url = ?'); params.push(d.imageUrl); }
-  if (d.longDescription !== undefined) { sets.push('long_description = ?'); params.push(d.longDescription == null ? null : sanitizeRich(d.longDescription)); }
+  if (d.longDescription !== undefined) { sets.push('long_description = ?'); params.push(d.longDescription == null ? null : sanitizeDescription(d.longDescription)); }
   if (d.usageInstructions !== undefined) { sets.push('usage_instructions = ?'); params.push(d.usageInstructions == null ? null : sanitizeRich(d.usageInstructions)); }
   if (d.lowStockThreshold !== undefined) { sets.push('low_stock_threshold = ?'); params.push(d.lowStockThreshold); }
   if (d.sortOrder !== undefined) { sets.push('sort_order = ?'); params.push(d.sortOrder); }

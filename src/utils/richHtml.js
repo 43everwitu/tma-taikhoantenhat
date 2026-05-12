@@ -25,6 +25,39 @@ function sanitizeRich(html) {
   return sanitizeHtml(String(html), SANITIZE_OPTS).trim();
 }
 
+const DESCRIPTION_TAGS = [
+  'p', 'br', 'span', 'div',
+  'h2', 'h3', 'h4',
+  'b', 'strong', 'i', 'em', 'u', 's',
+  'a',
+  'ul', 'ol', 'li',
+  'code', 'pre', 'blockquote',
+  'img',
+];
+const DESCRIPTION_ATTR = {
+  a: ['href', 'title', 'rel'],
+  img: ['src', 'alt', 'width', 'height', 'loading'],
+  span: ['class'],
+  div: ['class'],
+};
+const DESCRIPTION_OPTS = {
+  allowedTags: DESCRIPTION_TAGS,
+  allowedAttributes: DESCRIPTION_ATTR,
+  allowedSchemes: ['http', 'https'],
+  selfClosing: ['br', 'img'],
+  transformTags: {
+    img: (tagName, attribs) => ({
+      tagName: 'img',
+      attribs: { ...attribs, loading: attribs.loading || 'lazy' },
+    }),
+  },
+};
+
+function sanitizeDescription(html) {
+  if (html == null) return '';
+  return sanitizeHtml(String(html), DESCRIPTION_OPTS).trim();
+}
+
 /**
  * Convert sanitized rich HTML to Telegram-ready HTML. The sanitized form is
  * already Telegram-compatible; the only extra step is auto-linking bare URLs
@@ -55,4 +88,4 @@ function toTelegramHtml(html) {
   return linked.replace(/<br\s*\/?>/gi, '\n');
 }
 
-module.exports = { sanitizeRich, toTelegramHtml, ALLOWED_TAGS };
+module.exports = { sanitizeRich, sanitizeDescription, toTelegramHtml, ALLOWED_TAGS };
