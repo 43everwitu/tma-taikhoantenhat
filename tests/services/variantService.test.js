@@ -19,7 +19,8 @@ function makeDb() {
       input_placeholder TEXT,
       input_type TEXT DEFAULT 'text',
       created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
-      updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
+      updated_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+      image_url TEXT
     );
     CREATE TABLE stock (
       id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -86,6 +87,13 @@ test('create with inputType email persists it', () => {
   const v = variantService.create(db, { productId: 1, name: 'X', price: 100, requiresInput: true, inputLabel: 'Email', inputType: 'email' });
   const row = variantService.getById(db, v.id);
   assert.equal(row.input_type, 'email');
+});
+
+test('create with imageUrl persists; listByProduct surfaces it', () => {
+  const db = makeDb();
+  variantService.create(db, { productId: 1, name: 'Z', price: 100, imageUrl: '/uploads/x.webp' });
+  const row = variantService.listByProduct(db, 1)[0];
+  assert.equal(row.image_url, '/uploads/x.webp');
 });
 
 test('reorder sets sort_order in one transaction', () => {

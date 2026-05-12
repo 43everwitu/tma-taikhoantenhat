@@ -51,6 +51,7 @@ export default function ProductDetailPage() {
 
   const variants = p?.variants ?? []
   const selected = variants.find((v) => v.id === selectedVariantId) ?? null
+  const effectiveImage = (selected?.imageUrl && selected.imageUrl.length > 0) ? selected.imageUrl : p.imageUrl
   const effectivePrice = selected?.price ?? p?.price ?? 0
   const effectiveStock = variants.length > 0 ? (selected?.stock ?? 0) : (p?.stock ?? 0)
   const requiresInput = !!selected?.requiresInput
@@ -78,11 +79,13 @@ export default function ProductDetailPage() {
         <div className="rounded-2xl overflow-hidden mb-4 md:mb-0 md:sticky md:top-20" style={{ background: 'var(--brand-gold-soft)' }}>
           <div className="aspect-square" style={{ position: 'relative' }}>
             {p.promotion && <span className="miniapp-product-badge" style={{ top: 12, left: 12 }}>{p.promotion}</span>}
-            {p.imageUrl
-              ? <Image src={p.imageUrl} alt={p.name} fill sizes="100vw" style={{ objectFit: 'cover' }} />
-              : <div className="absolute inset-0 grid place-items-center" style={{ color: 'var(--brand-gold-deep)' }}>
-                  <Icon name="package" size={88} strokeWidth={1.25} />
-                </div>}
+            {effectiveImage ? (
+              <Image src={effectiveImage} alt={p.name} fill sizes="100vw" style={{ objectFit: 'cover' }} />
+            ) : (
+              <div className="absolute inset-0 grid place-items-center" style={{ color: 'var(--brand-gold-deep)' }}>
+                <Icon name="package" size={88} strokeWidth={1.25} />
+              </div>
+            )}
           </div>
         </div>
 

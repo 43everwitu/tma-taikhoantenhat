@@ -12,6 +12,7 @@ export interface Variant {
   inputLabel: string | null
   inputPlaceholder: string | null
   inputType?: string
+  imageUrl?: string
 }
 
 interface Props {

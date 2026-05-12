@@ -234,6 +234,7 @@ router.get('/products/:slug', (req, res) => {
     inputLabel: v.input_label || null,
     inputPlaceholder: v.input_placeholder || null,
     inputType: v.input_type || 'text',
+    imageUrl: v.image_url || p.image_url || '',
   }));
 
   const shaped = {
