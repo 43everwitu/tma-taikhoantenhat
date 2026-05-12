@@ -38,6 +38,14 @@ export default function CartPage() {
               </div>
               <div className="flex-1 min-w-0">
                 <p className="text-sm font-medium line-clamp-2">{it.name}</p>
+                {it.variantName && (
+                  <p className="text-xs opacity-60 mt-0.5">{it.variantName}</p>
+                )}
+                {it.inputValue && (
+                  <p className="text-xs opacity-50 mt-0.5 inline-flex items-center gap-1">
+                    <Icon name="check" size={12} /> Đã ghi nhận thông tin
+                  </p>
+                )}
                 <p className="text-sm font-bold mt-0.5">{formatPrice(it.price * it.quantity)}</p>
                 <div className="mt-2 flex items-center gap-1">
                   <button
