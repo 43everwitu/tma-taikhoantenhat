@@ -1,7 +1,7 @@
 'use client'
 
 import { useMemo, useState } from 'react'
-import { useQuery } from '@tanstack/react-query'
+import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { api } from '@/lib/api'
 import Link from 'next/link'
 import { ResponsiveTable, Column } from '@/components/ResponsiveTable'
@@ -91,17 +91,6 @@ const columns: Column<ProductStock>[] = [
   },
 ]
 
-function cardActions(p: ProductStock) {
-  return (
-    <Link
-      href={`/admin/stock/${p.id}`}
-      className="clay-btn clay-btn--ink text-xs py-1 px-3"
-    >
-      Xem kho
-    </Link>
-  )
-}
-
 export default function StockIndexPage() {
   const { data, isLoading } = useQuery({
     queryKey: ['admin', 'products'],
@@ -112,6 +101,25 @@ export default function StockIndexPage() {
   const [statusFilter, setStatusFilter] = useState<'all' | 'in' | 'out' | 'low'>('all')
   const [sort, setSort] = useState<'default' | 'stock_asc' | 'stock_desc'>('default')
   const [quickAddOpen, setQuickAddOpen] = useState(false)
+  const [expanded, setExpanded] = useState<string | null>(null)
+
+  const cardActionsFor = (p: ProductStock) => (
+    <div className="flex gap-2">
+      <Link
+        href={`/admin/stock/${p.id}`}
+        className="clay-btn clay-btn--ink text-xs py-1 px-3"
+      >
+        Xem kho
+      </Link>
+      <button
+        type="button"
+        onClick={() => setExpanded(expanded === p.id ? null : p.id)}
+        className="clay-btn text-xs py-1 px-3"
+      >
+        {expanded === p.id ? 'Đóng' : 'Biến thể'}
+      </button>
+    </div>
+  )
 
   const products = data?.data ?? []
 
@@ -188,11 +196,101 @@ export default function StockIndexPage() {
         rowKey={(p) => p.id}
         loading={isLoading}
         emptyText="Không tìm thấy sản phẩm phù hợp"
-        cardActions={cardActions}
+        cardActions={cardActionsFor}
       />
+
+      {expanded && (
+        <VariantBreakdownPanel productId={expanded} onClose={() => setExpanded(null)} />
+      )}
 
       {quickAddOpen && (
         <QuickAddKeysModal products={products} onClose={() => setQuickAddOpen(false)} />
+      )}
+    </div>
+  )
+}
+
+function VariantBreakdownPanel({ productId, onClose }: { productId: string; onClose: () => void }) {
+  const qc = useQueryClient()
+  const { data, isLoading } = useQuery({
+    queryKey: ['admin', 'variants', productId, 'panel'],
+    queryFn: () => api.get<{ id: string; name: string; stock: number }[]>(`/admin/products/${productId}/variants`),
+  })
+  const variants = data?.data ?? []
+  const [addVar, setAddVar] = useState<string | null>(null)
+  const [keyText, setKeyText] = useState('')
+
+  const addMut = useMutation({
+    mutationFn: async () => {
+      const items = keyText.split('\n').map((s) => s.trim()).filter(Boolean)
+      const payload: { items: string[]; variantId?: number } = { items }
+      if (addVar) payload.variantId = Number(addVar)
+      return api.post(`/admin/stock/${productId}`, payload)
+    },
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ['admin', 'variants', productId] })
+      qc.invalidateQueries({ queryKey: ['admin', 'variants', productId, 'panel'] })
+      qc.invalidateQueries({ queryKey: ['admin', 'products'] })
+      setAddVar(null)
+      setKeyText('')
+    },
+  })
+
+  return (
+    <div className="rounded-2xl border border-purple-200 bg-purple-50 p-4 space-y-3">
+      <div className="flex items-center justify-between">
+        <h3 className="font-semibold text-sm">Biến thể của sản phẩm #{productId}</h3>
+        <button onClick={onClose} className="text-xs opacity-60">Đóng ×</button>
+      </div>
+
+      {isLoading && <p className="text-xs opacity-60">Đang tải…</p>}
+
+      {!isLoading && variants.length === 0 && (
+        <p className="text-xs opacity-60">Sản phẩm này chưa có biến thể.</p>
+      )}
+
+      <ul className="space-y-1.5">
+        {variants.map((v) => (
+          <li key={v.id} className="rounded-lg bg-white border border-purple-100 p-2 text-sm flex items-center gap-2">
+            <span className="flex-1 min-w-0 truncate font-medium">{v.name}</span>
+            <span className="text-xs opacity-70">kho {v.stock}</span>
+            <button
+              type="button"
+              onClick={() => setAddVar(v.id)}
+              className="text-xs px-2 py-1 rounded bg-yellow-100 hover:bg-yellow-200"
+            >
+              + Thêm key
+            </button>
+          </li>
+        ))}
+      </ul>
+
+      {addVar && (
+        <div className="bg-white rounded-lg p-3 space-y-2 border border-purple-100">
+          <p className="text-xs opacity-70">Nhập keys (mỗi key một dòng) cho biến thể đã chọn:</p>
+          <textarea
+            value={keyText}
+            onChange={(e) => setKeyText(e.target.value)}
+            rows={6}
+            className="clay-input w-full text-xs font-mono"
+            placeholder={"key1\nkey2"}
+          />
+          <div className="flex justify-end gap-2">
+            <button
+              onClick={() => { setAddVar(null); setKeyText('') }}
+              className="clay-btn text-xs"
+            >
+              Huỷ
+            </button>
+            <button
+              onClick={() => addMut.mutate()}
+              disabled={addMut.isPending || !keyText.trim()}
+              className="clay-btn clay-btn--lemon text-xs"
+            >
+              {addMut.isPending ? 'Đang thêm…' : 'Thêm'}
+            </button>
+          </div>
+        </div>
       )}
     </div>
   )

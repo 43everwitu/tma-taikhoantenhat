@@ -1,26 +1,37 @@
 'use client'
 
 import { useState } from 'react'
-import { useMutation, useQueryClient } from '@tanstack/react-query'
+import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { api } from '@/lib/api'
 
 interface Product { id: string; name: string }
 
 export function QuickAddKeysModal({ products, onClose }: { products: Product[]; onClose: () => void }) {
   const [productId, setProductId] = useState<string>(products[0]?.id ?? '')
+  const [variantId, setVariantId] = useState<string>('')
   const [text, setText] = useState('')
   const [err, setErr] = useState<string | null>(null)
   const qc = useQueryClient()
+
+  const variantsQuery = useQuery({
+    queryKey: ['admin', 'variants', productId],
+    queryFn: () => api.get<{ id: string; name: string; stock: number }[]>(`/admin/products/${productId}/variants`),
+    enabled: !!productId,
+  })
+  const variants = variantsQuery.data?.data ?? []
 
   const mutation = useMutation({
     mutationFn: async () => {
       const items = text.split('\n').map((s) => s.trim()).filter(Boolean)
       if (items.length === 0) throw new Error('Chưa nhập key nào')
       if (!productId) throw new Error('Chưa chọn sản phẩm')
-      return api.post(`/admin/stock/${productId}`, { items })
+      const payload: { items: string[]; variantId?: number } = { items }
+      if (variantId) payload.variantId = Number(variantId)
+      return api.post(`/admin/stock/${productId}`, payload)
     },
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ['admin', 'products'] })
+      qc.invalidateQueries({ queryKey: ['admin', 'variants', productId] })
       onClose()
     },
     onError: (e) => setErr(e instanceof Error ? e.message : 'Lỗi'),
@@ -38,7 +49,7 @@ export function QuickAddKeysModal({ products, onClose }: { products: Product[]; 
           <span className="text-xs text-clay-charcoal mb-1 inline-block">Sản phẩm</span>
           <select
             value={productId}
-            onChange={(e) => setProductId(e.target.value)}
+            onChange={(e) => { setProductId(e.target.value); setVariantId('') }}
             className="clay-input w-full text-sm"
           >
             {products.map((p) => (
@@ -46,6 +57,22 @@ export function QuickAddKeysModal({ products, onClose }: { products: Product[]; 
             ))}
           </select>
         </label>
+
+        {variants.length > 0 && (
+          <label className="block text-sm">
+            <span className="text-xs text-clay-charcoal mb-1 inline-block">Biến thể</span>
+            <select
+              value={variantId}
+              onChange={(e) => setVariantId(e.target.value)}
+              className="clay-input w-full text-sm"
+            >
+              <option value="">(Không biến thể — sản phẩm chung)</option>
+              {variants.map((v) => (
+                <option key={v.id} value={v.id}>{v.name} (kho {v.stock})</option>
+              ))}
+            </select>
+          </label>
+        )}
 
         <label className="block text-sm">
           <span className="text-xs text-clay-charcoal mb-1 inline-block">Keys (mỗi key một dòng)</span>
