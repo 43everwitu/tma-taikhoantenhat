@@ -14,6 +14,7 @@ module.exports = {
   WP_UPLOADS_ROOT: path.join(BACKUP_ROOT, 'files/wp-content/uploads'),
   LMFWC_CSV_PATH: path.resolve(__dirname, '../../data/wp-imports/lmfwc-export.csv'),
   PRODUCT_IMAGES_OUT: path.resolve(__dirname, '../../data/uploads/products'),
+  PRODUCT_INLINE_IMAGES_OUT: path.resolve(__dirname, '../../data/uploads/products-inline'),
   REPORT_PATH: path.resolve(__dirname, '../../data/wp-imports/migration-report.json'),
   IMAGE_VARIANTS: [
     { name: 'original', width: 800, formats: ['avif', 'webp'] },
