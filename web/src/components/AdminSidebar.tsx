@@ -3,7 +3,8 @@
 import Link from 'next/link'
 import { usePathname, useRouter } from 'next/navigation'
 import { useEffect } from 'react'
-import { clearAdminToken } from '@/lib/api'
+import { useQuery } from '@tanstack/react-query'
+import { api, clearAdminToken } from '@/lib/api'
 import { BarChart3, Receipt, Package, Boxes, Megaphone, Settings, LogOut, Users, Wallet, X, MessageSquare } from '@/lib/icons'
 import { MascotBadge } from '@/components/MascotBadge'
 import { t } from '@/i18n/vi'
@@ -14,9 +15,9 @@ const NAV = [
   { href: '/admin/products', label: 'Sản phẩm', icon: Package },
   { href: '/admin/stock', label: 'Kho', icon: Boxes },
   { href: '/admin/users', label: 'Người dùng', icon: Users },
-  { href: '/admin/topups', label: 'Nạp tiền', icon: Wallet },
+  { href: '/admin/topups', label: 'Nạp tiền', icon: Wallet, feature: 'topups' as const },
   { href: '/admin/announcements', label: 'Thông báo', icon: Megaphone },
-  { href: '/admin/messages', label: 'Tin nhắn', icon: MessageSquare },
+  { href: '/admin/messages', label: 'Tin nhắn', icon: MessageSquare, feature: 'broadcast' as const },
   { href: '/admin/settings', label: 'Cài đặt', icon: Settings },
 ]
 
@@ -28,6 +29,13 @@ interface Props {
 export function AdminSidebar({ open, onClose }: Props) {
   const router = useRouter()
   const pathname = usePathname()
+
+  const featuresQuery = useQuery({
+    queryKey: ['admin', 'features'],
+    queryFn: () => api.get<{ topups: boolean; broadcast: boolean }>('/admin/features'),
+    staleTime: 5 * 60 * 1000,
+  })
+  const features = featuresQuery.data?.data ?? { topups: false, broadcast: false }
 
   // Close drawer on navigation (mobile) — desktop stays static so this is a no-op there.
   useEffect(() => { onClose() }, [pathname]) // eslint-disable-line react-hooks/exhaustive-deps
@@ -58,7 +66,7 @@ export function AdminSidebar({ open, onClose }: Props) {
           </button>
         </div>
         <nav className="flex flex-col gap-1 flex-1">
-          {NAV.map(item => {
+          {NAV.filter((it) => !('feature' in it) || features[it.feature as keyof typeof features]).map(item => {
             const active = pathname === item.href || pathname?.startsWith(item.href + '/')
             const Icon = item.icon
             return (
