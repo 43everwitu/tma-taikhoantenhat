@@ -6,6 +6,8 @@ import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { apiFetch } from '@/lib/miniappApi'
 import { MiniAppShell } from '../../components/MiniAppShell'
 import { QrPanel } from '../../components/QrPanel'
+import { Icon } from '../../components/Icon'
+import { StatusBadge } from '../../components/StatusBadge'
 import { formatPrice } from '@/lib/utils'
 import { t } from '@/i18n/vi'
 
@@ -15,11 +17,6 @@ interface OrderStatus {
   totalPrice: number; paymentCode: string; qrUrl: string; bankName: string; expiresAt: string
   productName: string; quantity: number
   accounts?: string[]; usageInstructions?: string | null
-}
-
-const STATUS_LABEL: Record<OrderStatus['status'], string> = {
-  pending: t.order.waiting, paid: t.order.paid, delivered: t.order.delivered,
-  cancelled: t.order.cancelled, expired: t.order.expired,
 }
 
 export default function OrderDetailPage() {
@@ -65,9 +62,7 @@ export default function OrderDetailPage() {
             <p className="text-base font-semibold leading-tight line-clamp-2">{order.productName}</p>
             <p className="text-xs opacity-60 mt-0.5">Số lượng: {order.quantity}</p>
           </div>
-          <span className={`miniapp-status miniapp-status--${order.status}`}>
-            {STATUS_LABEL[order.status]}
-          </span>
+          <StatusBadge status={order.status} />
         </div>
         <div className="flex items-baseline justify-between border-t pt-3" style={{ borderColor: 'color-mix(in srgb, var(--brand-ink) 8%, transparent)' }}>
           <span className="text-xs opacity-60">Tổng thanh toán</span>
@@ -86,7 +81,9 @@ export default function OrderDetailPage() {
 
       {order.status === 'paid' && (
         <div className="rounded-2xl p-4 text-center" style={{ background: '#dbeafe', color: '#1e40af' }}>
-          <div className="text-3xl mb-1">⏳</div>
+          <div className="mb-2 inline-flex p-2.5 rounded-full" style={{ background: 'var(--brand-gold-soft)', color: 'var(--brand-gold-deep)' }}>
+            <Icon name="clock" size={22} strokeWidth={1.5} />
+          </div>
           <p className="text-sm font-medium">Đang xử lý đơn hàng…</p>
           <p className="text-xs opacity-80 mt-1">Key sẽ giao trong giây lát.</p>
         </div>
