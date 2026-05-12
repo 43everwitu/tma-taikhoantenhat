@@ -39,6 +39,9 @@ module.exports = {
     JWT_SECRET: process.env.JWT_SECRET || '',
     ADMIN_INITIAL_PASSWORD: process.env.ADMIN_INITIAL_PASSWORD || '',
 
+    // Encryption (AES-256-GCM, 32 bytes / 64 hex chars)
+    ENCRYPTION_KEY: process.env.ENCRYPTION_KEY || '',
+
     // Legacy
     WEBHOOK_PORT: parseInt(process.env.WEBHOOK_PORT) || 3000,
     SEPAY_API_KEY: process.env.SEPAY_API_KEY || '',
