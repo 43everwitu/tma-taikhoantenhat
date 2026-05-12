@@ -17,6 +17,7 @@ function makeDb() {
       requires_input INTEGER DEFAULT 0,
       input_label TEXT,
       input_placeholder TEXT,
+      input_type TEXT DEFAULT 'text',
       created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
       updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
     );
@@ -78,6 +79,13 @@ test('countAvailableStock counts only matching variant_id', () => {
   db.prepare("INSERT INTO stock (product_id, variant_id, data, is_sold) VALUES (1, NULL, 'k4', 0)").run();
   assert.equal(variantService.countAvailableStock(db, 1, v1.id), 2);
   assert.equal(variantService.countAvailableStock(db, 1, v2.id), 1);
+});
+
+test('create with inputType email persists it', () => {
+  const db = makeDb();
+  const v = variantService.create(db, { productId: 1, name: 'X', price: 100, requiresInput: true, inputLabel: 'Email', inputType: 'email' });
+  const row = variantService.getById(db, v.id);
+  assert.equal(row.input_type, 'email');
 });
 
 test('reorder sets sort_order in one transaction', () => {

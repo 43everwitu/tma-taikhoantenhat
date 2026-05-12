@@ -207,6 +207,7 @@ router.get('/products/:slug', (req, res) => {
     requiresInput: !!v.requires_input,
     inputLabel: v.input_label || null,
     inputPlaceholder: v.input_placeholder || null,
+    inputType: v.input_type || 'text',
   }));
 
   const shaped = {
