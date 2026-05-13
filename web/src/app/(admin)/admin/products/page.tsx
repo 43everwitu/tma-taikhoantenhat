@@ -84,6 +84,8 @@ export default function ProductsPage() {
   const { data: catsData } = useQuery({
     queryKey: ['categories'],
     queryFn: () => api.get<Category[]>('/categories'),
+    staleTime: 5 * 60_000,
+    refetchOnWindowFocus: false,
   })
   const categories = catsData?.data ?? []
 
@@ -94,6 +96,8 @@ export default function ProductsPage() {
       if (debouncedSearch) url += `?q=${encodeURIComponent(debouncedSearch)}`
       return api.get<Product[]>(url)
     },
+    staleTime: 30_000,
+    refetchOnWindowFocus: false,
   })
 
   const createMutation = useMutation({

@@ -35,6 +35,7 @@ export function AdminSidebar({ open, onClose }: Props) {
     queryKey: ['admin', 'features'],
     queryFn: () => api.get<{ topups: boolean; broadcast: boolean }>('/admin/features'),
     staleTime: 5 * 60 * 1000,
+    refetchOnWindowFocus: false,
   })
   const features = featuresQuery.data?.data ?? { topups: false, broadcast: false }
 
@@ -42,6 +43,7 @@ export function AdminSidebar({ open, onClose }: Props) {
     queryKey: ['admin', 'me'],
     queryFn: () => api.get<{ permissions: string[] }>('/admin/me'),
     staleTime: 5 * 60 * 1000,
+    refetchOnWindowFocus: false,
   })
   const perms = meQuery.data?.data.permissions ?? []
   const hasPerm = (p?: string) => !p || perms.includes('*') || perms.includes(p)
