@@ -99,6 +99,8 @@ Ports: api `:3000`, web `:3001`, mbbank `:8000`.
 | `v0.12-feature-gating` | D — `FEATURE_TOPUPS`/`FEATURE_BROADCAST` env flags |
 | `v0.13-admin-modal` | G — TipTap rich + Media Library + multer upload |
 | `v0.14-rbac` | B — RBAC: roles, permissions, `/admin/admins` |
+| `v0.18-variants-stock-images` | variants stock breakdown + per-variant images + WP variation migration + UI polish |
+| `v0.19-rail-slider-filter` | UX — horizontal rail sliders, category strip, compact filter dropdown, search-shake fix |
 
 ## Pending follow-ups
 
