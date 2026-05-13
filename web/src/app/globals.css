@@ -323,32 +323,6 @@ body {
     color: var(--brand-gold-deep);
   }
 
-  /* Category tile */
-  .miniapp-cat-tile {
-    display: block; position: relative;
-    padding: 1.125rem 1rem;
-    border-radius: 16px;
-    background: var(--tg-bg-2, #fff);
-    border: 1px solid color-mix(in srgb, var(--brand-ink) 6%, transparent);
-    transition: transform .15s, box-shadow .2s;
-    overflow: hidden;
-  }
-  .miniapp-cat-tile::before {
-    content: ''; position: absolute; left: 0; right: 0; bottom: 0; height: 3px;
-    background: linear-gradient(90deg, var(--brand-gold) 0%, var(--brand-gold-deep) 100%);
-    opacity: .8;
-  }
-  .miniapp-cat-tile:active { transform: scale(.97); }
-  .miniapp-cat-emoji {
-    display: inline-grid; place-items: center;
-    width: 44px; height: 44px;
-    border-radius: 12px;
-    background: var(--brand-gold-soft);
-    font-size: 24px;
-    margin-bottom: .5rem;
-  }
-  .miniapp-cat-name { font-size: .875rem; font-weight: 600; line-height: 1.2; }
-
   /* Announcement card */
   .miniapp-ann {
     padding: .875rem;
@@ -782,14 +756,6 @@ body {
     color: var(--brand-ink);
     cursor: pointer;
   }
-
-  /* Category grid scales the same way but caps at 6 — categories are coarse */
-  .miniapp-cat-grid {
-    display: grid; grid-template-columns: repeat(2, 1fr); gap: .75rem;
-  }
-  @media (min-width: 640px) { .miniapp-cat-grid { grid-template-columns: repeat(3, 1fr); } }
-  @media (min-width: 1024px) { .miniapp-cat-grid { grid-template-columns: repeat(4, 1fr); } }
-  @media (min-width: 1280px) { .miniapp-cat-grid { grid-template-columns: repeat(6, 1fr); } }
 
   /* Desktop: hide bottom nav, show top-bar nav actions */
   @media (min-width: 768px) {

@@ -39,7 +39,7 @@ export function HScroll({ children, ariaLabel }: Props) {
   }
 
   return (
-    <div className="miniapp-hscroll" aria-label={ariaLabel}>
+    <div className="miniapp-hscroll" role={ariaLabel ? 'region' : undefined} aria-label={ariaLabel}>
       <button
         type="button"
         className="miniapp-hscroll-arrow miniapp-hscroll-arrow--left"
