@@ -2,6 +2,7 @@ import {
   Home, ShoppingCart, ClipboardList, Search, Package, Megaphone, Sparkles,
   BookOpen, Film, Wrench, Zap, Plus, Minus, Trash2, Inbox, Clock, CheckCircle2,
   XCircle, AlertCircle, Copy, ArrowRight, ChevronRight, Menu, X, SlidersHorizontal,
+  MessageCircle, Headphones,
   type LucideIcon,
 } from 'lucide-react'
 
@@ -31,6 +32,8 @@ export const miniappIcons = {
   menu: Menu,
   close: X,
   filter: SlidersHorizontal,
+  support: MessageCircle,
+  headphones: Headphones,
 } satisfies Record<string, LucideIcon>
 
 export type MiniappIconName = keyof typeof miniappIcons

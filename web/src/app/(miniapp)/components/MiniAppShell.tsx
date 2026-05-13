@@ -59,6 +59,17 @@ export function MiniAppShell({
                   {it.label}
                 </Link>
               ))}
+              {supportUrl && (
+                <a
+                  href={supportUrl}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="miniapp-topnav-link"
+                >
+                  <Icon name="support" size={18} />
+                  Hỗ trợ
+                </a>
+              )}
             </nav>
 
             <div className="md:hidden flex items-center gap-2">
@@ -71,7 +82,7 @@ export function MiniAppShell({
                   className="inline-flex items-center justify-center w-9 h-9 rounded-full"
                   style={{ background: 'var(--brand-gold-soft)', color: 'var(--brand-ink)' }}
                 >
-                  <Icon name="megaphone" size={18} />
+                  <Icon name="support" size={18} />
                 </a>
               )}
               <Link
