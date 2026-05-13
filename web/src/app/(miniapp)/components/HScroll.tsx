@@ -47,7 +47,7 @@ export function HScroll({ children, ariaLabel }: Props) {
         disabled={atStart}
         aria-label="Cuộn trái"
       >
-        <Icon name="arrowRight" size={16} className="rotate-180" />
+        <Icon name="arrowRight" size={20} className="rotate-180" />
       </button>
       <div ref={trackRef} className="miniapp-hscroll-track">
         {children}
@@ -59,7 +59,7 @@ export function HScroll({ children, ariaLabel }: Props) {
         disabled={atEnd}
         aria-label="Cuộn phải"
       >
-        <Icon name="arrowRight" size={16} />
+        <Icon name="arrowRight" size={20} />
       </button>
     </div>
   )
