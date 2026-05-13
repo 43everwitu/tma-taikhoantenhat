@@ -159,6 +159,15 @@ const orderService = {
       FROM orders o JOIN products p ON o.product_id = p.id
       WHERE o.id = ?
     `);
+    const getVariantBackorder = db.prepare(
+      `SELECT is_backorder FROM product_variants WHERE id = ?`
+    );
+    const markPaidPending = db.prepare(`
+      UPDATE orders SET status = 'paid',
+        paid_at = COALESCE(paid_at, CURRENT_TIMESTAMP),
+        auto_confirmed = ?
+      WHERE id = ?
+    `);
     const getReserved = db.prepare(
       `SELECT * FROM stock WHERE reserved_for_order_id = ? AND is_sold = 0 LIMIT ?`
     );
@@ -196,6 +205,16 @@ const orderService = {
         return { success: false, error: 'Đơn hàng đã được xử lý' };
       }
 
+      // Back-order variant: mark paid, skip stock + delivery. Admin handles
+      // fulfilment via /admin/orders/:id/manual-deliver.
+      if (order.variant_id) {
+        const v = getVariantBackorder.get(order.variant_id);
+        if (v && v.is_backorder) {
+          markPaidPending.run(autoConfirmed, orderId);
+          return { success: true, backorder: true, order };
+        }
+      }
+
       let stock = getReserved.all(orderId, order.quantity);
       if (stock.length < order.quantity) {
         // Reservation incomplete — top up from free pool. Defensive path for
@@ -222,7 +241,11 @@ const orderService = {
 
     return function confirmAndDeliver(orderId, autoConfirmed = 0) {
       const r = atomicDeliver(orderId, autoConfirmed);
-      if (r.success) eventBus.publish({ type: 'order.delivered', orderId, status: 'delivered' });
+      if (r.success && r.backorder) {
+        eventBus.publish({ type: 'order.backorder_paid', orderId });
+      } else if (r.success) {
+        eventBus.publish({ type: 'order.delivered', orderId, status: 'delivered' });
+      }
       return r;
     };
   })(),

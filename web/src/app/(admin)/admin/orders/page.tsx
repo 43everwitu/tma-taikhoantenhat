@@ -175,9 +175,47 @@ export default function OrdersPage() {
     },
   })
 
+  const manualDeliverMutation = useMutation({
+    mutationFn: ({ id, accounts }: { id: string; accounts: string[] }) =>
+      api.post(`/admin/orders/${id}/manual-deliver`, { accounts }),
+    onSuccess: () => {
+      alert('✅ Đã giao thủ công + gửi key cho khách.')
+      queryClient.invalidateQueries({ queryKey: ['admin', 'orders'] })
+      setManualOrderId(null)
+      setManualText('')
+    },
+    onError: (e) => alert(`❌ ${e instanceof Error ? e.message : 'Giao thất bại'}`),
+  })
+
+  const editKeysMutation = useMutation({
+    mutationFn: ({ id, accounts }: { id: string; accounts: string[] }) =>
+      api.patch(`/admin/orders/${id}/keys`, { accounts }),
+    onSuccess: () => {
+      alert('✅ Đã cập nhật key.')
+      queryClient.invalidateQueries({ queryKey: ['admin', 'orders'] })
+      setEditOrderId(null)
+      setEditText('')
+    },
+    onError: (e) => alert(`❌ ${e instanceof Error ? e.message : 'Cập nhật thất bại'}`),
+  })
+
   function handleResend(id: string) {
     if (!confirm(`Gửi lại key đơn #${id} cho khách qua Telegram?`)) return
     resendMutation.mutate(id)
+  }
+
+  const [manualOrderId, setManualOrderId] = useState<string | null>(null)
+  const [manualText, setManualText] = useState('')
+  const [editOrderId, setEditOrderId] = useState<string | null>(null)
+  const [editText, setEditText] = useState('')
+
+  async function openEditKeys(order: Order) {
+    setEditOrderId(order.id)
+    setEditText('')
+    try {
+      const r = await api.get<OrderDetail>(`/admin/orders/${order.id}`)
+      setEditText((r.data.accounts || []).join('\n'))
+    } catch {}
   }
 
   const orders = data?.data?.orders ?? []
@@ -219,6 +257,10 @@ export default function OrdersPage() {
             className="clay-btn clay-btn--matcha text-xs py-1 px-2 disabled:opacity-50"
           >Xác nhận</button>
           <button
+            onClick={() => { setManualOrderId(order.id); setManualText('') }}
+            className="clay-btn clay-btn--lemon text-xs py-1 px-2"
+          >Giao thủ công</button>
+          <button
             onClick={() => cancelMutation.mutate(order.id)}
             disabled={cancelMutation.isPending}
             className="clay-btn clay-btn--pomegranate text-xs py-1 px-2 disabled:opacity-50"
@@ -228,13 +270,19 @@ export default function OrdersPage() {
     }
     if (order.status === 'delivered') {
       return (
-        <button
-          onClick={() => handleResend(order.id)}
-          disabled={resendMutation.isPending}
-          className="clay-btn clay-btn--ube text-xs py-1 px-2 disabled:opacity-50 flex items-center gap-1"
-        >
-          <Send size={12} />Gửi lại
-        </button>
+        <>
+          <button
+            onClick={() => handleResend(order.id)}
+            disabled={resendMutation.isPending}
+            className="clay-btn clay-btn--ube text-xs py-1 px-2 disabled:opacity-50 flex items-center gap-1"
+          >
+            <Send size={12} />Gửi lại
+          </button>
+          <button
+            onClick={() => openEditKeys(order)}
+            className="clay-btn text-xs py-1 px-2"
+          >Sửa key</button>
+        </>
       )
     }
     return null
@@ -303,6 +351,67 @@ export default function OrdersPage() {
             >
               Sau
             </button>
+          </div>
+        </div>
+      )}
+
+      {manualOrderId && (
+        <div className="fixed inset-0 z-50 bg-black/40 backdrop-blur-sm flex items-center justify-center p-4" onClick={() => setManualOrderId(null)}>
+          <div onClick={(e) => e.stopPropagation()} className="bg-white rounded-2xl shadow-xl w-full max-w-md p-5 space-y-3">
+            <div className="flex items-center justify-between">
+              <h3 className="text-lg font-semibold">Giao thủ công đơn #{manualOrderId}</h3>
+              <button onClick={() => setManualOrderId(null)} className="opacity-60 text-xl leading-none">×</button>
+            </div>
+            <p className="text-xs opacity-70">Mỗi dòng là 1 key. Bot sẽ gửi danh sách này cho khách kèm hướng dẫn sản phẩm.</p>
+            <textarea
+              value={manualText}
+              onChange={(e) => setManualText(e.target.value)}
+              rows={8}
+              placeholder={"key1\nkey2\nkey3"}
+              className="clay-input w-full font-mono text-sm"
+            />
+            <div className="flex justify-end gap-2">
+              <button onClick={() => setManualOrderId(null)} className="clay-btn text-sm">Huỷ</button>
+              <button
+                onClick={() => {
+                  const accounts = manualText.split('\n').map((s) => s.trim()).filter(Boolean)
+                  if (accounts.length === 0) { alert('Chưa nhập key nào'); return }
+                  manualDeliverMutation.mutate({ id: manualOrderId, accounts })
+                }}
+                disabled={manualDeliverMutation.isPending}
+                className="clay-btn clay-btn--lemon text-sm"
+              >{manualDeliverMutation.isPending ? 'Đang giao…' : 'Giao + gửi tin nhắn'}</button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {editOrderId && (
+        <div className="fixed inset-0 z-50 bg-black/40 backdrop-blur-sm flex items-center justify-center p-4" onClick={() => setEditOrderId(null)}>
+          <div onClick={(e) => e.stopPropagation()} className="bg-white rounded-2xl shadow-xl w-full max-w-md p-5 space-y-3">
+            <div className="flex items-center justify-between">
+              <h3 className="text-lg font-semibold">Sửa key đơn #{editOrderId}</h3>
+              <button onClick={() => setEditOrderId(null)} className="opacity-60 text-xl leading-none">×</button>
+            </div>
+            <p className="text-xs opacity-70">Sửa danh sách key (mỗi dòng 1 key). Không tự động gửi lại — bấm Gửi lại key sau khi lưu nếu cần.</p>
+            <textarea
+              value={editText}
+              onChange={(e) => setEditText(e.target.value)}
+              rows={8}
+              className="clay-input w-full font-mono text-sm"
+            />
+            <div className="flex justify-end gap-2">
+              <button onClick={() => setEditOrderId(null)} className="clay-btn text-sm">Huỷ</button>
+              <button
+                onClick={() => {
+                  const accounts = editText.split('\n').map((s) => s.trim()).filter(Boolean)
+                  if (accounts.length === 0) { alert('Cần ít nhất 1 key'); return }
+                  editKeysMutation.mutate({ id: editOrderId, accounts })
+                }}
+                disabled={editKeysMutation.isPending}
+                className="clay-btn clay-btn--lemon text-sm"
+              >{editKeysMutation.isPending ? 'Đang lưu…' : 'Lưu'}</button>
+            </div>
           </div>
         </div>
       )}

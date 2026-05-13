@@ -327,6 +327,26 @@ class PaymentPoller {
     // Try auto-deliver
     const result = orderService.confirmAndDeliver(order.id, 1);
 
+    if (result.success && result.backorder) {
+      this.matchCount++;
+      const inputBlock = order.input_value
+        ? `\n📝 Thông tin: <code>${(() => {
+            try { const { decryptString } = require('../utils/secrets'); return decryptString(order.input_value); } catch { return '(decode err)'; }
+          })()}</code>`
+        : '';
+      adminNotifyService.notify('backorder_paid',
+        `🛎 Đơn đặt trước cần xử lý: #${order.id}\n` +
+        `📦 ${result.order.product_name} (×${order.quantity})\n` +
+        `💰 ${formatPrice(order.total_price)}${inputBlock}\n` +
+        `→ /admin/orders để giao thủ công.`,
+        { parse_mode: 'HTML', order_id: order.id });
+      this._notifyCustomer(order.user_id,
+        `💳 Đã nhận thanh toán đơn #${order.id}.\n` +
+        `Đơn này được giao thủ công, shop sẽ xử lý trong ít phút.`,
+        'HTML');
+      return result;
+    }
+
     if (result.success) {
       this.matchCount++;
       await this._notifyCustomerDelivered(order, result.accounts);

@@ -2,8 +2,8 @@
   "welcome": {
     "channel": "bot",
     "label": "Chào mừng (/start)",
-    "variables": ["name", "username", "balance"],
-    "body": "Xin chào {{name}}!\n\nChào mừng đến với Taikhoantenhat.\nSố dư hiện tại: {{balance}} ₫\n\nBấm nút \"Mở cửa hàng\" bên dưới để bắt đầu."
+    "variables": ["name", "username", "supportContact"],
+    "body": "Xin chào {{name}}!\n\nChào mừng đến với Taikhoantenhat.\n\nBấm nút \"Mở cửa hàng\" bên dưới để bắt đầu.\n\n💬 Cần hỗ trợ? Liên hệ {{supportContact}}"
   },
   "order_created": {
     "channel": "bot",
@@ -45,7 +45,7 @@
     "channel": "bot",
     "label": "Giao sản phẩm (keys)",
     "variables": ["orderCode", "productName", "quantity", "keysBlock", "usageInstructions"],
-    "body": "Đây là sản phẩm onii-chan vừa mua~ ✨\n\n📦 {{productName}} × {{quantity}}\n🔑 Mã đơn: <b>{{orderCode}}</b>\n\n<b>Sản phẩm:</b>\n{{keysBlock}}\n\n<b>📖 Hướng dẫn sử dụng:</b>\n{{usageInstructions}}\n\nArigathank onii-chan đã mua hàng!"
+    "body": "✅ Đơn #{{orderCode}} — {{productName}} (×{{quantity}})\n\n🔑 Key:\n{{keysBlock}}\n\n📘 Hướng dẫn:\n{{usageInstructions}}\n\nCảm ơn bạn đã mua hàng!"
   },
   "low_stock_user": {
     "channel": "bot",

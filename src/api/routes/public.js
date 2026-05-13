@@ -19,6 +19,7 @@ router.get('/shop/info', (req, res) => {
     data: {
       shopName: settings.shop_name || config.SHOP_NAME,
       supportContact: settings.support_contact || config.SUPPORT_CONTACT,
+      supportUrl: settings.support_url || '',
     },
   });
 });
@@ -234,7 +235,8 @@ router.get('/products/:slug', (req, res) => {
       description: v.description || '',
       price: v.price,
       sortOrder: v.sort_order,
-      stock: variantService.countAvailableStock(db, p.id, v.id),
+      stock: v.is_backorder ? 9999 : variantService.countAvailableStock(db, p.id, v.id),
+      isBackorder: !!v.is_backorder,
       requiresInput: !!v.requires_input,
       inputLabel: v.input_label || null,
       inputPlaceholder: v.input_placeholder || null,

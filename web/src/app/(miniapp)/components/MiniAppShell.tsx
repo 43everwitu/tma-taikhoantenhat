@@ -3,6 +3,8 @@
 import Link from 'next/link'
 import { ReactNode } from 'react'
 import { usePathname } from 'next/navigation'
+import { useQuery } from '@tanstack/react-query'
+import { apiFetch } from '@/lib/miniappApi'
 import { Icon } from './Icon'
 import type { MiniappIconName } from '@/lib/miniappIcons'
 import { t } from '@/i18n/vi'
@@ -29,6 +31,12 @@ export function MiniAppShell({
   hasBottombar?: boolean
 }) {
   const pathname = usePathname()
+  const shopInfo = useQuery({
+    queryKey: ['shop', 'info'],
+    queryFn: () => apiFetch<{ supportUrl?: string }>('/shop/info'),
+    staleTime: 5 * 60_000,
+  })
+  const supportUrl = shopInfo.data?.supportUrl?.trim() || ''
   return (
     <div className="miniapp-root">
       {showHeader && (
@@ -53,14 +61,28 @@ export function MiniAppShell({
               ))}
             </nav>
 
-            <Link
-              href="/gio-hang"
-              aria-label={t.nav.cart}
-              className="md:hidden inline-flex items-center justify-center w-9 h-9 rounded-full"
-              style={{ background: 'var(--brand-gold-soft)', color: 'var(--brand-ink)' }}
-            >
-              <Icon name="cart" size={18} />
-            </Link>
+            <div className="md:hidden flex items-center gap-2">
+              {supportUrl && (
+                <a
+                  href={supportUrl}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  aria-label="Hỗ trợ"
+                  className="inline-flex items-center justify-center w-9 h-9 rounded-full"
+                  style={{ background: 'var(--brand-gold-soft)', color: 'var(--brand-ink)' }}
+                >
+                  <Icon name="megaphone" size={18} />
+                </a>
+              )}
+              <Link
+                href="/gio-hang"
+                aria-label={t.nav.cart}
+                className="inline-flex items-center justify-center w-9 h-9 rounded-full"
+                style={{ background: 'var(--brand-gold-soft)', color: 'var(--brand-ink)' }}
+              >
+                <Icon name="cart" size={18} />
+              </Link>
+            </div>
           </div>
           {subtitle && (
             <div className="miniapp-container px-4">

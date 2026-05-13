@@ -28,6 +28,7 @@ interface Variant {
   inputPlaceholder: string | null
   inputType: string
   inputFields: InputField[] | null
+  isBackorder: boolean
   stock: number
   imageUrl: string | null
 }
@@ -173,6 +174,7 @@ function VariantEditModal({ productId, variant, onClose, onSaved }: {
     inputType: variant?.inputType ?? 'text',
     isActive: variant?.isActive ?? true,
     imageUrl: variant?.imageUrl ?? '',
+    isBackorder: variant?.isBackorder ?? false,
   })
   const [inputFields, setInputFields] = useState<InputField[]>(initialFields)
   const [err, setErr] = useState<string | null>(null)
@@ -194,6 +196,7 @@ function VariantEditModal({ productId, variant, onClose, onSaved }: {
           ? inputFields.filter((f) => f.label.trim().length > 0)
           : null,
         imageUrl: form.imageUrl || null,
+        isBackorder: form.isBackorder,
         ...(variant ? { isActive: form.isActive } : {}),
       }
       if (variant) return api.put(`/admin/products/${productId}/variants/${variant.id}`, payload)
@@ -263,6 +266,14 @@ function VariantEditModal({ productId, variant, onClose, onSaved }: {
         <label className="flex items-center gap-2 text-sm">
           <input type="checkbox" checked={form.requiresInput} onChange={(e) => setForm({ ...form, requiresInput: e.target.checked })} />
           <span>Yêu cầu khách nhập thông tin khi mua</span>
+        </label>
+
+        <label className="flex items-start gap-2 text-sm">
+          <input type="checkbox" className="mt-0.5" checked={form.isBackorder} onChange={(e) => setForm({ ...form, isBackorder: e.target.checked })} />
+          <span>
+            <span>Đặt trước (admin xử lý thủ công)</span>
+            <span className="block text-xs opacity-60">Không cần stock key sẵn. Khách thanh toán xong, bot báo admin để giao thủ công.</span>
+          </span>
         </label>
 
         {form.requiresInput && (

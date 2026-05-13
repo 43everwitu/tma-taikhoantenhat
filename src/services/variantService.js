@@ -3,7 +3,7 @@ const variantService = {
     const where = includeInactive ? '' : ' AND is_active = 1';
     return db.prepare(
       `SELECT id, product_id, name, description, price, sort_order, is_active,
-              requires_input, input_label, input_placeholder, input_type, input_fields_json, image_url, created_at, updated_at
+              requires_input, input_label, input_placeholder, input_type, input_fields_json, image_url, is_backorder, created_at, updated_at
          FROM product_variants
         WHERE product_id = ?${where}
         ORDER BY sort_order ASC, id ASC`
@@ -13,7 +13,7 @@ const variantService = {
   getById(db, variantId) {
     return db.prepare(
       `SELECT id, product_id, name, description, price, sort_order, is_active,
-              requires_input, input_label, input_placeholder, input_type, input_fields_json, image_url
+              requires_input, input_label, input_placeholder, input_type, input_fields_json, image_url, is_backorder
          FROM product_variants
         WHERE id = ?`
     ).get(variantId) || null;
@@ -21,15 +21,17 @@ const variantService = {
 
   create(db, { productId, name, description = null, price, sortOrder = 0,
                requiresInput = false, inputLabel = null, inputPlaceholder = null,
-               inputType = 'text', inputFields = null, imageUrl = null }) {
+               inputType = 'text', inputFields = null, imageUrl = null,
+               isBackorder = false }) {
     const r = db.prepare(
       `INSERT INTO product_variants
-         (product_id, name, description, price, sort_order, requires_input, input_label, input_placeholder, input_type, input_fields_json, image_url)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
+         (product_id, name, description, price, sort_order, requires_input, input_label, input_placeholder, input_type, input_fields_json, image_url, is_backorder)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
     ).run(productId, name, description, price, sortOrder,
           requiresInput ? 1 : 0, inputLabel, inputPlaceholder, inputType,
           inputFields ? JSON.stringify(inputFields) : null,
-          imageUrl);
+          imageUrl,
+          isBackorder ? 1 : 0);
     return { id: r.lastInsertRowid };
   },
 
@@ -42,6 +44,7 @@ const variantService = {
       inputType: 'input_type',
       inputFields: 'input_fields_json',
       imageUrl: 'image_url',
+      isBackorder: 'is_backorder',
     };
     const sets = [];
     const params = [];

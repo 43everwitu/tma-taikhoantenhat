@@ -24,6 +24,7 @@ const variantBody = z.object({
     required: z.boolean(),
   })).max(10).nullable().optional(),
   imageUrl: z.string().max(500).nullable().optional(),
+  isBackorder: z.boolean().optional(),
 });
 
 const variantPatch = variantBody.partial().extend({
@@ -53,6 +54,7 @@ function shapeVariant(v) {
     inputType: v.input_type || 'text',
     inputFields,
     imageUrl: v.image_url || null,
+    isBackorder: !!v.is_backorder,
     stock: variantService.countAvailableStock(db, v.product_id, v.id),
   };
 }

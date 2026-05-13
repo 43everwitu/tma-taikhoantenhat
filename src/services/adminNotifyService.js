@@ -4,7 +4,7 @@ const config = require('../config');
 const CACHE_TTL_MS = 30_000;
 const KEY_PREFIX = 'notify_admin_';
 
-const VALID_EVENTS = ['new_order', 'payment_short', 'no_stock', 'delivered', 'low_stock'];
+const VALID_EVENTS = ['new_order', 'payment_short', 'no_stock', 'delivered', 'low_stock', 'backorder_paid'];
 
 let cache = null;
 let cacheAt = 0;
@@ -27,7 +27,7 @@ function isEnabled(eventType) {
   const toggles = loadToggles();
   // Default ON for delivered + low_stock if no explicit setting yet
   if (toggles[eventType] === undefined) {
-    return eventType === 'delivered' || eventType === 'low_stock';
+    return eventType === 'delivered' || eventType === 'low_stock' || eventType === 'backorder_paid';
   }
   return toggles[eventType];
 }

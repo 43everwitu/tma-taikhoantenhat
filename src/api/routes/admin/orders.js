@@ -118,7 +118,7 @@ router.post('/:id/confirm', async (req, res) => {
 // POST /admin/orders/:id/manual-deliver
 router.post('/:id/manual-deliver', validate(z.object({
   accounts: z.array(z.string().min(1)).min(1),
-})), (req, res) => {
+})), async (req, res) => {
   const orderId = parseInt(req.params.id);
   const order = orderService.getById(orderId);
 
@@ -128,18 +128,38 @@ router.post('/:id/manual-deliver', validate(z.object({
   }
 
   orderService.markPaid(orderId);
-  db.prepare("UPDATE orders SET status = 'delivered', delivered_at = CURRENT_TIMESTAMP WHERE id = ?").run(orderId);
+  db.prepare(`UPDATE orders SET status = 'delivered', delivered_at = CURRENT_TIMESTAMP, delivered_keys_json = ? WHERE id = ?`)
+    .run(JSON.stringify(req.validated.accounts), orderId);
 
   auditService.log(req.admin.adminId, 'order.manual_deliver', 'order', orderId, { accountCount: req.validated.accounts.length }, req.ip);
 
-  // Send accounts to customer
+  // Fire normal Telegram delivery message via notificationService (compact + usage instructions + txt fallback)
   const bot = req.app.get('bot');
   if (bot) {
-    const accountList = req.validated.accounts.map((a, i) => `${i + 1}. ${a}`).join('\n');
-    const msg = `✅ Đơn #${orderId} đã được giao!\n\n🔑 Thông tin tài khoản:\n${accountList}`;
-    bot.telegram.sendMessage(order.user_id, msg).catch(() => {});
+    try {
+      const productService = require('../../../services/productService');
+      const product = productService.getById(order.product_id);
+      const { sendDelivery } = require('../../../services/notificationService');
+      const { richifyText } = require('../../../utils/messages');
+      const usageInstructions = product?.usage_instructions ? richifyText(product.usage_instructions) : '(không có)';
+      await sendDelivery(bot, { ...order, product_name: product?.name }, req.validated.accounts, { usageInstructions });
+    } catch (err) {
+      console.error('manual-deliver notify failed:', err.message || err);
+    }
   }
 
+  res.json({ success: true, data: { orderId } });
+});
+
+// PATCH /admin/orders/:id/keys — replace delivered keys (already delivered orders)
+router.patch('/:id/keys', validate(z.object({
+  accounts: z.array(z.string().min(1)).min(1),
+})), (req, res) => {
+  const orderId = parseInt(req.params.id);
+  const order = orderService.getById(orderId);
+  if (!order) return res.status(404).json({ success: false, error: { code: 'NOT_FOUND' } });
+  db.prepare(`UPDATE orders SET delivered_keys_json = ? WHERE id = ?`).run(JSON.stringify(req.validated.accounts), orderId);
+  auditService.log(req.admin.adminId, 'order.keys_edit', 'order', orderId, { count: req.validated.accounts.length }, req.ip);
   res.json({ success: true, data: { orderId } });
 });
 

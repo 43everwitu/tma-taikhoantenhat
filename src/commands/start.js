@@ -20,12 +20,14 @@ async function handleStart(ctx) {
 
     const name = user.full_name || ctx.from?.first_name || ctx.from?.username || 'bạn';
     const username = user.username || ctx.from?.username || '';
-    const balance = user.balance ?? 0;
+    const db = require('../database');
+    const supportRow = db.prepare(`SELECT value FROM settings WHERE key = 'support_contact'`).get();
+    const supportContact = supportRow?.value || process.env.SUPPORT_CONTACT || '@admin';
 
     const text = messageTemplateService.render('welcome', {
         name,
         username,
-        balance: String(balance),
+        supportContact,
     });
 
     const url = buildStartLink(ctx.botInfo?.username, ctx.startPayload);

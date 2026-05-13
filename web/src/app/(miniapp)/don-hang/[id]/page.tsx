@@ -1,6 +1,6 @@
 'use client'
 
-import { useEffect } from 'react'
+import { useEffect, useState } from 'react'
 import { useParams } from 'next/navigation'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { apiFetch } from '@/lib/miniappApi'
@@ -96,17 +96,67 @@ export default function OrderDetailPage() {
           </div>
           <ul className="space-y-2">
             {order.accounts.map((k, i) => (
-              <li key={i} className="miniapp-key">{k}</li>
+              <KeyRow key={i} value={k} />
             ))}
           </ul>
           {order.usageInstructions && (
             <div className="mt-3 rounded-xl p-3 text-sm whitespace-pre-line" style={{ background: 'var(--tg-bg-2)' }}>
               <p className="font-medium mb-1">📘 Hướng dẫn sử dụng</p>
-              <p className="opacity-85">{order.usageInstructions}</p>
+              <p className="opacity-85">{linkifyText(order.usageInstructions)}</p>
             </div>
           )}
         </section>
       )}
     </MiniAppShell>
+  )
+}
+
+function linkifyText(text: string): React.ReactNode[] {
+  const parts: React.ReactNode[] = []
+  const regex = /(https?:\/\/[^\s<>"']+)/g
+  let lastIndex = 0
+  let m: RegExpExecArray | null
+  let idx = 0
+  while ((m = regex.exec(text)) !== null) {
+    if (m.index > lastIndex) parts.push(text.slice(lastIndex, m.index))
+    const href = m[0]
+    parts.push(
+      <a
+        key={`u-${idx++}`}
+        href={href}
+        target="_blank"
+        rel="noopener noreferrer"
+        className="underline"
+        style={{ color: 'var(--brand-gold-deep)' }}
+      >{href}</a>
+    )
+    lastIndex = m.index + href.length
+  }
+  if (lastIndex < text.length) parts.push(text.slice(lastIndex))
+  return parts
+}
+
+function KeyRow({ value }: { value: string }) {
+  const [copied, setCopied] = useState(false)
+  async function copy() {
+    try {
+      await navigator.clipboard.writeText(value)
+      setCopied(true)
+      setTimeout(() => setCopied(false), 1400)
+    } catch {}
+  }
+  return (
+    <li className="miniapp-key flex items-start gap-2">
+      <span className="flex-1 break-all">{linkifyText(value)}</span>
+      <button
+        type="button"
+        onClick={copy}
+        aria-label="Sao chép"
+        className="text-xs px-2 py-1 rounded-md shrink-0"
+        style={{ background: 'var(--brand-gold)', color: 'var(--brand-ink)' }}
+      >
+        {copied ? 'Đã sao chép' : 'Sao chép'}
+      </button>
+    </li>
   )
 }
