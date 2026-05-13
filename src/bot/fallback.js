@@ -2,10 +2,11 @@ const NUDGE_TEXT =
   'Mọi tính năng đã chuyển vào Mini App.\nBấm nút bên dưới để mở cửa hàng.';
 
 async function handleFallback(ctx) {
-  const url = process.env.MINIAPP_URL;
+  const username = ctx.botInfo?.username;
+  const url = username ? `https://t.me/${username}?startapp` : process.env.MINIAPP_URL;
   await ctx.reply(NUDGE_TEXT, {
     reply_markup: {
-      inline_keyboard: [[{ text: 'Mở cửa hàng', web_app: { url } }]],
+      inline_keyboard: [[{ text: 'Mở cửa hàng', url }]],
     },
   });
 }
