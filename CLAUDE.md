@@ -101,6 +101,7 @@ Ports: api `:3000`, web `:3001`, mbbank `:8000`.
 | `v0.14-rbac` | B — RBAC: roles, permissions, `/admin/admins` |
 | `v0.18-variants-stock-images` | variants stock breakdown + per-variant images + WP variation migration + UI polish |
 | `v0.19-rail-slider-filter` | UX — horizontal rail sliders, category strip, compact filter dropdown, search-shake fix |
+| `v0.20-search-position-variant-ux` | SearchBox below categories, variant grid on detail, fix variant-delete visibility, /stock requires variant when present |
 
 ## Pending follow-ups
 
