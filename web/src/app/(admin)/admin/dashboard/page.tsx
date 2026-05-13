@@ -106,9 +106,11 @@ export default function DashboardPage() {
       {/* Revenue Chart */}
       <div className="clay-card p-6">
         <h3 className="font-semibold mb-4">Doanh thu 30 ngày</h3>
-        <div style={{ width: '100%', height: 300 }}>
-          {revenueData?.data ? (
-            <ResponsiveContainer width="100%" height="100%">
+        {revenueData?.data ? (
+          revenueData.data.length === 0 ? (
+            <div className="text-clay-charcoal text-center py-12">Chưa có doanh thu trong 30 ngày.</div>
+          ) : (
+            <ResponsiveContainer width="100%" height={300} minWidth={0}>
               <LineChart data={revenueData.data}>
                 <CartesianGrid strokeDasharray="3 3" stroke="#f0f0f0" />
                 <XAxis
@@ -137,12 +139,10 @@ export default function DashboardPage() {
                 />
               </LineChart>
             </ResponsiveContainer>
-          ) : (
-            <div className="h-full flex items-center justify-center text-clay-charcoal">
-              Đang tải biểu đồ...
-            </div>
-          )}
-        </div>
+          )
+        ) : (
+          <div className="text-clay-charcoal text-center py-12">Đang tải biểu đồ...</div>
+        )}
       </div>
 
       {/* Top Products */}
