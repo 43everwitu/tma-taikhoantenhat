@@ -4,6 +4,7 @@ import { useState } from 'react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { api } from '@/lib/api'
 import { MediaLibrary } from '@/components/admin/MediaLibrary'
+import { useToast } from '@/components/Toast'
 
 interface Variant {
   id: string
@@ -32,6 +33,7 @@ const INPUT_TYPES = [
 
 export function VariantsManager({ productId }: { productId: string | null }) {
   const qc = useQueryClient()
+  const t = useToast()
   const [showInactive, setShowInactive] = useState(false)
   const { data, isLoading } = useQuery({
     queryKey: ['admin', 'variants', productId, showInactive],
@@ -54,7 +56,10 @@ export function VariantsManager({ productId }: { productId: string | null }) {
     },
     onError: (_e, _id, ctx) => {
       ctx?.snapshots.forEach(([key, prev]) => prev && qc.setQueryData(key, prev))
-      alert('Xoá biến thể thất bại — đã khôi phục danh sách.')
+      t.error('Xoá biến thể thất bại')
+    },
+    onSuccess: () => {
+      t.success('Đã xoá biến thể')
     },
     onSettled: () => {
       qc.invalidateQueries({ queryKey: ['admin', 'variants', productId] })
@@ -89,9 +94,19 @@ export function VariantsManager({ productId }: { productId: string | null }) {
 
       <ul className="space-y-1.5">
         {variants.map((v) => (
-          <li key={v.id} className={`rounded-lg border p-2 text-sm flex items-center gap-2 ${v.isActive ? 'bg-white' : 'bg-gray-50 opacity-70'}`}>
+          <li
+            key={v.id}
+            className={`rounded-lg border p-2 text-sm flex items-center gap-2 ${v.isActive ? 'bg-white' : 'bg-red-50 border-red-200'}`}
+          >
             <div className="flex-1 min-w-0">
-              <p className="font-medium truncate">{v.name}</p>
+              <p className={`font-medium truncate ${v.isActive ? '' : 'line-through opacity-60'}`}>
+                {v.name}
+                {!v.isActive && (
+                  <span className="ml-2 text-[10px] uppercase tracking-wide bg-red-600 text-white px-1.5 py-0.5 rounded">
+                    Đã xoá
+                  </span>
+                )}
+              </p>
               <p className="text-xs opacity-60">{v.price.toLocaleString('vi-VN')}đ · kho {v.stock} {v.requiresInput && `· cần ${v.inputLabel || v.inputType}`}</p>
             </div>
             <button
@@ -99,13 +114,15 @@ export function VariantsManager({ productId }: { productId: string | null }) {
               onClick={() => setEditing(v)}
               className="text-xs opacity-70 hover:opacity-100 px-2"
             >Sửa</button>
-            <button
-              type="button"
-              onClick={() => {
-                if (confirm(`Xoá biến thể "${v.name}"?`)) deleteMut.mutate(v.id)
-              }}
-              className="text-xs text-red-600 px-2"
-            >Xoá</button>
+            {v.isActive && (
+              <button
+                type="button"
+                onClick={() => {
+                  if (confirm(`Xoá biến thể "${v.name}"?`)) deleteMut.mutate(v.id)
+                }}
+                className="text-xs text-red-600 px-2"
+              >Xoá</button>
+            )}
           </li>
         ))}
       </ul>
@@ -142,6 +159,7 @@ function VariantEditModal({ productId, variant, onClose, onSaved }: {
   })
   const [err, setErr] = useState<string | null>(null)
   const [pickerOpen, setPickerOpen] = useState(false)
+  const t = useToast()
 
   const mutation = useMutation({
     mutationFn: () => {
@@ -160,8 +178,15 @@ function VariantEditModal({ productId, variant, onClose, onSaved }: {
       if (variant) return api.put(`/admin/products/${productId}/variants/${variant.id}`, payload)
       return api.post(`/admin/products/${productId}/variants`, payload)
     },
-    onSuccess: onSaved,
-    onError: (e) => setErr(e instanceof Error ? e.message : 'Lỗi'),
+    onSuccess: () => {
+      t.success(variant ? 'Đã cập nhật biến thể' : 'Đã thêm biến thể')
+      onSaved()
+    },
+    onError: (e) => {
+      const msg = e instanceof Error ? e.message : 'Lỗi'
+      setErr(msg)
+      t.error(`Lỗi: ${msg}`)
+    },
   })
 
   return (

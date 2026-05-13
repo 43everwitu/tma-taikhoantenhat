@@ -3,6 +3,7 @@
 import { useState, useEffect } from 'react'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { api } from '@/lib/api'
+import { useToast } from '@/components/Toast'
 
 interface Product { id: string; name: string }
 
@@ -12,6 +13,7 @@ export function QuickAddKeysModal({ products, onClose }: { products: Product[]; 
   const [text, setText] = useState('')
   const [err, setErr] = useState<string | null>(null)
   const qc = useQueryClient()
+  const t = useToast()
 
   const variantsQuery = useQuery({
     queryKey: ['admin', 'variants', productId],
@@ -35,13 +37,19 @@ export function QuickAddKeysModal({ products, onClose }: { products: Product[]; 
       if (variantId) payload.variantId = Number(variantId)
       return api.post(`/admin/stock/${productId}`, payload)
     },
-    onSuccess: () => {
+    onSuccess: (res) => {
       qc.invalidateQueries({ queryKey: ['admin', 'products'] })
       qc.invalidateQueries({ queryKey: ['admin', 'variants', productId] })
       qc.invalidateQueries({ queryKey: ['admin', 'variants', productId, 'panel'] })
+      const added = (res?.data as { added?: number } | undefined)?.added ?? 0
+      t.success(`Đã thêm ${added} key`)
       onClose()
     },
-    onError: (e) => setErr(e instanceof Error ? e.message : 'Lỗi'),
+    onError: (e) => {
+      const msg = e instanceof Error ? e.message : 'Lỗi'
+      setErr(msg)
+      t.error(`Lỗi: ${msg}`)
+    },
   })
 
   return (

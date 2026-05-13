@@ -105,6 +105,7 @@ Ports: api `:3000`, web `:3001`, mbbank `:8000`.
 | `v0.21-modal-refetch-fix` | Turbopack CSS delivery for variant grid + staleTime/refetchOnWindowFocus on admin queries to stop modal-open refetch storm |
 | `v0.22-stock-variant-delete-fix` | /admin/stock/[id] variant select on add-stock + optimistic variant delete with rollback + idempotent backend variant delete |
 | `v0.23-detail-rails` | center rich-text inline images + related-products + recently-viewed rails at bottom of `/san-pham/[slug]` |
+| `v0.24-admin-toast` | minimal Toast provider + success/error toasts for variant/product/stock CRUD; soft-deleted variants get red bg + strikethrough + "Đã xoá" badge |
 
 ## Pending follow-ups
 

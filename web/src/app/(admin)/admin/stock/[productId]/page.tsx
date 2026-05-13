@@ -7,6 +7,7 @@ import { api } from '@/lib/api'
 import { formatDate } from '@/lib/utils'
 import { Pencil, Trash2, Search } from '@/lib/icons'
 import { ResponsiveTable, Column } from '@/components/ResponsiveTable'
+import { useToast } from '@/components/Toast'
 
 interface StockItem {
   id: string
@@ -65,24 +66,32 @@ export default function StockPage() {
     if (hasVariants && !variantId) setVariantId(variants[0].id)
   }, [hasVariants, variantId, variants])
 
+  const t = useToast()
+
   const addMutation = useMutation({
     mutationFn: (items: string[]) => {
       const payload: { items: string[]; variantId?: number } = { items }
       if (variantId) payload.variantId = Number(variantId)
       return api.post(`/admin/stock/${productId}`, payload)
     },
-    onSuccess: () => {
+    onSuccess: (res) => {
       queryClient.invalidateQueries({ queryKey: ['admin', 'stock', productId] })
       queryClient.invalidateQueries({ queryKey: ['admin', 'variants', productId] })
       setNewItems('')
+      const added = (res?.data as { added?: number } | undefined)?.added ?? 0
+      t.success(`Đã thêm ${added} key`)
     },
+    onError: (e) => t.error(`Lỗi: ${e instanceof Error ? e.message : 'thêm thất bại'}`),
   })
 
   const clearUnsoldMutation = useMutation({
     mutationFn: () => api.delete(`/admin/stock/${productId}/unsold`),
-    onSuccess: () => {
+    onSuccess: (res) => {
       queryClient.invalidateQueries({ queryKey: ['admin', 'stock', productId] })
+      const deleted = (res?.data as { deleted?: number } | undefined)?.deleted ?? 0
+      t.success(`Đã xoá ${deleted} key chưa bán`)
     },
+    onError: (e) => t.error(`Lỗi: ${e instanceof Error ? e.message : 'xoá thất bại'}`),
   })
 
   const editMutation = useMutation({
@@ -92,14 +101,18 @@ export default function StockPage() {
       queryClient.invalidateQueries({ queryKey: ['admin', 'stock', productId] })
       setEditingId(null)
       setEditDraft('')
+      t.success('Đã cập nhật key')
     },
+    onError: (e) => t.error(`Lỗi: ${e instanceof Error ? e.message : 'cập nhật thất bại'}`),
   })
 
   const deleteItemMutation = useMutation({
     mutationFn: (id: string) => api.delete(`/admin/stock/${productId}/${id}`),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['admin', 'stock', productId] })
+      t.success('Đã xoá key')
     },
+    onError: (e) => t.error(`Lỗi: ${e instanceof Error ? e.message : 'xoá thất bại'}`),
   })
 
   const [editingId, setEditingId] = useState<string | null>(null)

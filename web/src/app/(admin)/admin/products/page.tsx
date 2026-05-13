@@ -10,6 +10,7 @@ import { ResponsiveTable, Column } from '@/components/ResponsiveTable'
 import { RichEditor } from '@/components/RichEditor'
 import { RichEditorRich } from '@/components/RichEditorRich'
 import { VariantsManager } from './VariantsManager'
+import { useToast } from '@/components/Toast'
 
 interface Product {
   id: string
@@ -100,12 +101,16 @@ export default function ProductsPage() {
     refetchOnWindowFocus: false,
   })
 
+  const t = useToast()
+
   const createMutation = useMutation({
     mutationFn: (body: ProductForm) => api.post('/admin/products', body),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['admin', 'products'] })
       closeModal()
+      t.success('Đã thêm sản phẩm')
     },
+    onError: (e) => t.error(`Lỗi: ${e instanceof Error ? e.message : 'thêm thất bại'}`),
   })
 
   const updateMutation = useMutation({
@@ -114,22 +119,36 @@ export default function ProductsPage() {
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['admin', 'products'] })
       closeModal()
+      t.success('Đã cập nhật sản phẩm')
     },
+    onError: (e) => t.error(`Lỗi: ${e instanceof Error ? e.message : 'cập nhật thất bại'}`),
   })
 
   const toggleMutation = useMutation({
     mutationFn: (id: string) => api.patch(`/admin/products/${id}/toggle`),
-    onSuccess: () => queryClient.invalidateQueries({ queryKey: ['admin', 'products'] }),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['admin', 'products'] })
+      t.success('Đã đổi trạng thái')
+    },
+    onError: (e) => t.error(`Lỗi: ${e instanceof Error ? e.message : 'đổi trạng thái thất bại'}`),
   })
 
   const deleteMutation = useMutation({
     mutationFn: (id: string) => api.delete(`/admin/products/${id}`),
-    onSuccess: () => queryClient.invalidateQueries({ queryKey: ['admin', 'products'] }),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['admin', 'products'] })
+      t.success('Đã xoá sản phẩm')
+    },
+    onError: (e) => t.error(`Lỗi: ${e instanceof Error ? e.message : 'xoá thất bại'}`),
   })
 
   const duplicateMutation = useMutation({
     mutationFn: (id: string) => api.post(`/admin/products/${id}/duplicate`),
-    onSuccess: () => queryClient.invalidateQueries({ queryKey: ['admin', 'products'] }),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['admin', 'products'] })
+      t.success('Đã nhân đôi sản phẩm')
+    },
+    onError: (e) => t.error(`Lỗi: ${e instanceof Error ? e.message : 'nhân đôi thất bại'}`),
   })
 
   const reorderMutation = useMutation({

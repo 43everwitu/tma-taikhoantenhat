@@ -4,6 +4,7 @@ import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { useState } from 'react'
 import { usePathname } from 'next/navigation'
 import { AnnouncementBar } from '@/components/AnnouncementBar'
+import { ToastProvider } from '@/components/Toast'
 
 export function Providers({ children }: { children: React.ReactNode }) {
   const [queryClient] = useState(() => new QueryClient({
@@ -26,8 +27,10 @@ export function Providers({ children }: { children: React.ReactNode }) {
 
   return (
     <QueryClientProvider client={queryClient}>
-      {showBar && <AnnouncementBar />}
-      {children}
+      <ToastProvider>
+        {showBar && <AnnouncementBar />}
+        {children}
+      </ToastProvider>
     </QueryClientProvider>
   )
 }
