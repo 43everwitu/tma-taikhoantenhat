@@ -111,24 +111,19 @@ export default function OrderDetailPage() {
   )
 }
 
+const URL_REGEX = /(https?:\/\/[^\s<>"']+)/g
+
 function linkifyText(text: string): React.ReactNode[] {
   const parts: React.ReactNode[] = []
-  const regex = /(https?:\/\/[^\s<>"']+)/g
   let lastIndex = 0
   let m: RegExpExecArray | null
   let idx = 0
-  while ((m = regex.exec(text)) !== null) {
+  URL_REGEX.lastIndex = 0
+  while ((m = URL_REGEX.exec(text)) !== null) {
     if (m.index > lastIndex) parts.push(text.slice(lastIndex, m.index))
     const href = m[0]
     parts.push(
-      <a
-        key={`u-${idx++}`}
-        href={href}
-        target="_blank"
-        rel="noopener noreferrer"
-        className="underline"
-        style={{ color: 'var(--brand-gold-deep)' }}
-      >{href}</a>
+      <a key={`u-${idx++}`} href={href} target="_blank" rel="noopener noreferrer">{href}</a>
     )
     lastIndex = m.index + href.length
   }
@@ -136,27 +131,61 @@ function linkifyText(text: string): React.ReactNode[] {
   return parts
 }
 
+function extractUrls(text: string): string[] {
+  const out: string[] = []
+  let m: RegExpExecArray | null
+  URL_REGEX.lastIndex = 0
+  while ((m = URL_REGEX.exec(text)) !== null) {
+    if (!out.includes(m[0])) out.push(m[0])
+  }
+  return out
+}
+
+function shortenUrl(u: string): string {
+  try {
+    const url = new URL(u)
+    const host = url.hostname.replace(/^www\./, '')
+    const path = url.pathname.length > 24 ? url.pathname.slice(0, 22) + '…' : url.pathname
+    return host + (path === '/' ? '' : path)
+  } catch {
+    return u
+  }
+}
+
 function KeyRow({ value }: { value: string }) {
   const [copied, setCopied] = useState(false)
+  const urls = extractUrls(value)
+
   async function copy() {
     try {
       await navigator.clipboard.writeText(value)
       setCopied(true)
-      setTimeout(() => setCopied(false), 1400)
+      setTimeout(() => setCopied(false), 1600)
     } catch {}
   }
+
   return (
-    <li className="miniapp-key flex items-start gap-2">
-      <span className="flex-1 break-all">{linkifyText(value)}</span>
+    <li className="miniapp-key-card">
       <button
         type="button"
         onClick={copy}
-        aria-label="Sao chép"
-        className="text-xs px-2 py-1 rounded-md shrink-0"
-        style={{ background: 'var(--brand-gold)', color: 'var(--brand-ink)' }}
+        data-copied={copied ? 'true' : 'false'}
+        aria-label={copied ? 'Đã sao chép' : 'Sao chép'}
+        className="miniapp-key-copy-btn"
       >
-        {copied ? 'Đã sao chép' : 'Sao chép'}
+        <Icon name={copied ? 'check' : 'copy'} size={14} />
       </button>
+      <div>{linkifyText(value)}</div>
+      {urls.length > 0 && (
+        <div className="miniapp-key-links">
+          {urls.map((u, i) => (
+            <a key={`l-${i}`} href={u} target="_blank" rel="noopener noreferrer" className="miniapp-key-link">
+              <Icon name="arrowRight" size={12} />
+              {shortenUrl(u)}
+            </a>
+          ))}
+        </div>
+      )}
     </li>
   )
 }
