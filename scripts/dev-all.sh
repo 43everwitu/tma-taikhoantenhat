@@ -55,6 +55,6 @@ npx concurrently \
   -c yellow,green,cyan \
   --restart-tries=-1 \
   --restart-after=2000 \
-  "bash -c 'cd mbbank-api && \"\$PYTHON_BIN\" -m uvicorn app.main:app --port 8000 --reload --no-use-colors 2>&1 | tee -a ../logs/mbbank.log'" \
+  "bash -c 'cd mbbank-api && [ -f .env ] && { set -a; . ./.env; set +a; }; \"\$PYTHON_BIN\" -m uvicorn app.main:app --port 8000 --reload --no-use-colors 2>&1 | tee -a ../logs/mbbank.log'" \
   "bash -c 'node --watch src/index.js 2>&1 | tee -a logs/api.log'" \
   "bash -c 'cd web && npm run dev 2>&1 | tee -a ../logs/web.log'"
