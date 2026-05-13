@@ -223,19 +223,26 @@ router.get('/products/:slug', (req, res) => {
   const p = product;
   const stock = (p.display_stock != null) ? p.display_stock : (p.stock_count || 0);
   const variantRows = variantService.listByProduct(db, p.id);
-  const variants = variantRows.map(v => ({
-    id: String(v.id),
-    name: v.name,
-    description: v.description || '',
-    price: v.price,
-    sortOrder: v.sort_order,
-    stock: variantService.countAvailableStock(db, p.id, v.id),
-    requiresInput: !!v.requires_input,
-    inputLabel: v.input_label || null,
-    inputPlaceholder: v.input_placeholder || null,
-    inputType: v.input_type || 'text',
-    imageUrl: v.image_url || p.image_url || '',
-  }));
+  const variants = variantRows.map(v => {
+    let inputFields = null;
+    if (v.input_fields_json) {
+      try { inputFields = JSON.parse(v.input_fields_json); } catch { inputFields = null; }
+    }
+    return {
+      id: String(v.id),
+      name: v.name,
+      description: v.description || '',
+      price: v.price,
+      sortOrder: v.sort_order,
+      stock: variantService.countAvailableStock(db, p.id, v.id),
+      requiresInput: !!v.requires_input,
+      inputLabel: v.input_label || null,
+      inputPlaceholder: v.input_placeholder || null,
+      inputType: v.input_type || 'text',
+      inputFields,
+      imageUrl: v.image_url || p.image_url || '',
+    };
+  });
 
   const shaped = {
     id: String(p.id),

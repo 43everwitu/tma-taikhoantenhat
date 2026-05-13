@@ -5,6 +5,16 @@ import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { api } from '@/lib/api'
 import { MediaLibrary } from '@/components/admin/MediaLibrary'
 import { useToast } from '@/components/Toast'
+import { DndContext, closestCenter, KeyboardSensor, PointerSensor, useSensor, useSensors, type DragEndEvent } from '@dnd-kit/core'
+import { arrayMove, SortableContext, sortableKeyboardCoordinates, useSortable, verticalListSortingStrategy } from '@dnd-kit/sortable'
+import { CSS } from '@dnd-kit/utilities'
+
+interface InputField {
+  label: string
+  placeholder?: string | null
+  type: 'text' | 'email' | 'password' | 'tel' | 'url' | 'number' | 'textarea'
+  required: boolean
+}
 
 interface Variant {
   id: string
@@ -17,6 +27,7 @@ interface Variant {
   inputLabel: string | null
   inputPlaceholder: string | null
   inputType: string
+  inputFields: InputField[] | null
   stock: number
   imageUrl: string | null
 }
@@ -34,11 +45,12 @@ const INPUT_TYPES = [
 export function VariantsManager({ productId }: { productId: string | null }) {
   const qc = useQueryClient()
   const t = useToast()
-  const [showInactive, setShowInactive] = useState(false)
   const { data, isLoading } = useQuery({
-    queryKey: ['admin', 'variants', productId, showInactive],
-    queryFn: () => api.get<Variant[]>(`/admin/products/${productId}/variants${showInactive ? '?includeInactive=1' : ''}`),
+    queryKey: ['admin', 'variants', productId],
+    queryFn: () => api.get<Variant[]>(`/admin/products/${productId}/variants?includeInactive=1`),
     enabled: !!productId,
+    staleTime: 30_000,
+    refetchOnWindowFocus: false,
   })
   const variants = data?.data ?? []
   const [editing, setEditing] = useState<Variant | 'new' | null>(null)
@@ -59,13 +71,39 @@ export function VariantsManager({ productId }: { productId: string | null }) {
       t.error('Xoá biến thể thất bại')
     },
     onSuccess: () => {
-      t.success('Đã xoá biến thể')
+      t.success('Đã xoá biến thể vĩnh viễn')
     },
     onSettled: () => {
       qc.invalidateQueries({ queryKey: ['admin', 'variants', productId] })
       qc.invalidateQueries({ queryKey: ['admin', 'variants', productId, 'panel'] })
     },
   })
+
+  const reorderMut = useMutation({
+    mutationFn: (items: { id: number; sortOrder: number }[]) =>
+      api.patch(`/admin/products/${productId}/variants/reorder`, { items }),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ['admin', 'variants', productId] })
+      t.success('Đã sắp xếp lại biến thể')
+    },
+    onError: (e) => t.error(`Lỗi: ${e instanceof Error ? e.message : 'sắp xếp thất bại'}`),
+  })
+
+  const sensors = useSensors(
+    useSensor(PointerSensor, { activationConstraint: { distance: 4 } }),
+    useSensor(KeyboardSensor, { coordinateGetter: sortableKeyboardCoordinates }),
+  )
+
+  function handleDragEnd(e: DragEndEvent) {
+    const { active, over } = e
+    if (!over || active.id === over.id) return
+    const oldIdx = variants.findIndex((v) => v.id === active.id)
+    const newIdx = variants.findIndex((v) => v.id === over.id)
+    if (oldIdx < 0 || newIdx < 0) return
+    const next = arrayMove(variants, oldIdx, newIdx)
+    qc.setQueryData<{ data: Variant[] }>(['admin', 'variants', productId], (prev) => prev ? { ...prev, data: next } : prev)
+    reorderMut.mutate(next.map((v, i) => ({ id: Number(v.id), sortOrder: i })))
+  }
 
   if (!productId) return <p className="text-xs opacity-60">Lưu sản phẩm trước khi thêm biến thể.</p>
   if (isLoading) return <p className="text-xs opacity-60">Đang tải biến thể…</p>
@@ -74,58 +112,31 @@ export function VariantsManager({ productId }: { productId: string | null }) {
     <div className="space-y-2">
       <div className="flex items-center justify-between gap-2">
         <span className="text-xs uppercase tracking-wider opacity-60">Biến thể ({variants.length})</span>
-        <div className="flex items-center gap-2">
-          <label className="text-xs opacity-70 inline-flex items-center gap-1">
-            <input
-              type="checkbox"
-              checked={showInactive}
-              onChange={(e) => setShowInactive(e.target.checked)}
-            /> Hiện đã xoá
-          </label>
-          <button
-            type="button"
-            onClick={() => setEditing('new')}
-            className="text-xs px-2 py-1 rounded bg-yellow-100 hover:bg-yellow-200"
-          >+ Thêm biến thể</button>
-        </div>
+        <button
+          type="button"
+          onClick={() => setEditing('new')}
+          className="text-xs px-2 py-1 rounded bg-yellow-100 hover:bg-yellow-200"
+        >+ Thêm biến thể</button>
       </div>
 
       {variants.length === 0 && <p className="text-xs opacity-60">Chưa có biến thể.</p>}
 
-      <ul className="space-y-1.5">
-        {variants.map((v) => (
-          <li
-            key={v.id}
-            className={`rounded-lg border p-2 text-sm flex items-center gap-2 ${v.isActive ? 'bg-white' : 'bg-red-50 border-red-200'}`}
-          >
-            <div className="flex-1 min-w-0">
-              <p className={`font-medium truncate ${v.isActive ? '' : 'line-through opacity-60'}`}>
-                {v.name}
-                {!v.isActive && (
-                  <span className="ml-2 text-[10px] uppercase tracking-wide bg-red-600 text-white px-1.5 py-0.5 rounded">
-                    Đã xoá
-                  </span>
-                )}
-              </p>
-              <p className="text-xs opacity-60">{v.price.toLocaleString('vi-VN')}đ · kho {v.stock} {v.requiresInput && `· cần ${v.inputLabel || v.inputType}`}</p>
-            </div>
-            <button
-              type="button"
-              onClick={() => setEditing(v)}
-              className="text-xs opacity-70 hover:opacity-100 px-2"
-            >Sửa</button>
-            {v.isActive && (
-              <button
-                type="button"
-                onClick={() => {
-                  if (confirm(`Xoá biến thể "${v.name}"?`)) deleteMut.mutate(v.id)
+      <DndContext sensors={sensors} collisionDetection={closestCenter} onDragEnd={handleDragEnd}>
+        <SortableContext items={variants.map((v) => v.id)} strategy={verticalListSortingStrategy}>
+          <ul className="space-y-1.5">
+            {variants.map((v) => (
+              <SortableVariantRow
+                key={v.id}
+                v={v}
+                onEdit={() => setEditing(v)}
+                onDelete={() => {
+                  if (confirm(`Xoá vĩnh viễn biến thể "${v.name}"? Không thể hoàn tác.`)) deleteMut.mutate(v.id)
                 }}
-                className="text-xs text-red-600 px-2"
-              >Xoá</button>
-            )}
-          </li>
-        ))}
-      </ul>
+              />
+            ))}
+          </ul>
+        </SortableContext>
+      </DndContext>
 
       {editing && (
         <VariantEditModal
@@ -145,6 +156,12 @@ function VariantEditModal({ productId, variant, onClose, onSaved }: {
   onClose: () => void
   onSaved: () => void
 }) {
+  const initialFields: InputField[] = variant?.inputFields && variant.inputFields.length > 0
+    ? variant.inputFields
+    : variant?.requiresInput
+      ? [{ label: variant.inputLabel || 'Thông tin', placeholder: variant.inputPlaceholder || '', type: (variant.inputType as InputField['type']) || 'text', required: true }]
+      : []
+
   const [form, setForm] = useState({
     name: variant?.name ?? '',
     description: variant?.description ?? '',
@@ -157,6 +174,7 @@ function VariantEditModal({ productId, variant, onClose, onSaved }: {
     isActive: variant?.isActive ?? true,
     imageUrl: variant?.imageUrl ?? '',
   })
+  const [inputFields, setInputFields] = useState<InputField[]>(initialFields)
   const [err, setErr] = useState<string | null>(null)
   const [pickerOpen, setPickerOpen] = useState(false)
   const t = useToast()
@@ -172,6 +190,9 @@ function VariantEditModal({ productId, variant, onClose, onSaved }: {
         inputLabel: form.inputLabel || null,
         inputPlaceholder: form.inputPlaceholder || null,
         inputType: form.inputType,
+        inputFields: form.requiresInput && inputFields.length > 0
+          ? inputFields.filter((f) => f.label.trim().length > 0)
+          : null,
         imageUrl: form.imageUrl || null,
         ...(variant ? { isActive: form.isActive } : {}),
       }
@@ -245,21 +266,71 @@ function VariantEditModal({ productId, variant, onClose, onSaved }: {
         </label>
 
         {form.requiresInput && (
-          <div className="pl-5 space-y-2 border-l-2 border-yellow-200">
-            <label className="block text-sm">
-              <span className="text-xs opacity-70 mb-1 inline-block">Loại input</span>
-              <select value={form.inputType} onChange={(e) => setForm({ ...form, inputType: e.target.value })} className="clay-input w-full text-sm">
-                {INPUT_TYPES.map((t) => <option key={t.value} value={t.value}>{t.label}</option>)}
-              </select>
-            </label>
-            <label className="block text-sm">
-              <span className="text-xs opacity-70 mb-1 inline-block">Label</span>
-              <input value={form.inputLabel} onChange={(e) => setForm({ ...form, inputLabel: e.target.value })} placeholder="vd: Email tài khoản" className="clay-input w-full text-sm" />
-            </label>
-            <label className="block text-sm">
-              <span className="text-xs opacity-70 mb-1 inline-block">Placeholder</span>
-              <input value={form.inputPlaceholder} onChange={(e) => setForm({ ...form, inputPlaceholder: e.target.value })} placeholder="vd: you@example.com" className="clay-input w-full text-sm" />
-            </label>
+          <div className="pl-5 space-y-3 border-l-2 border-yellow-200">
+            {inputFields.length === 0 && (
+              <p className="text-xs opacity-60">Chưa có trường nào — bấm + Thêm trường.</p>
+            )}
+            {inputFields.map((f, idx) => (
+              <div key={idx} className="space-y-1 p-2 rounded border border-gray-200 bg-gray-50">
+                <div className="grid grid-cols-2 gap-2">
+                  <label className="block text-sm">
+                    <span className="text-xs opacity-70 mb-1 inline-block">Label</span>
+                    <input
+                      value={f.label}
+                      onChange={(e) => {
+                        const next = [...inputFields]; next[idx] = { ...f, label: e.target.value }; setInputFields(next)
+                      }}
+                      placeholder="vd: Email tài khoản"
+                      className="clay-input w-full text-sm"
+                    />
+                  </label>
+                  <label className="block text-sm">
+                    <span className="text-xs opacity-70 mb-1 inline-block">Loại</span>
+                    <select
+                      value={f.type}
+                      onChange={(e) => {
+                        const next = [...inputFields]; next[idx] = { ...f, type: e.target.value as InputField['type'] }; setInputFields(next)
+                      }}
+                      className="clay-input w-full text-sm"
+                    >
+                      {INPUT_TYPES.map((t) => <option key={t.value} value={t.value}>{t.label}</option>)}
+                    </select>
+                  </label>
+                </div>
+                <label className="block text-sm">
+                  <span className="text-xs opacity-70 mb-1 inline-block">Placeholder</span>
+                  <input
+                    value={f.placeholder ?? ''}
+                    onChange={(e) => {
+                      const next = [...inputFields]; next[idx] = { ...f, placeholder: e.target.value }; setInputFields(next)
+                    }}
+                    placeholder="vd: you@example.com"
+                    className="clay-input w-full text-sm"
+                  />
+                </label>
+                <div className="flex items-center justify-between">
+                  <label className="flex items-center gap-1 text-xs">
+                    <input
+                      type="checkbox"
+                      checked={f.required}
+                      onChange={(e) => {
+                        const next = [...inputFields]; next[idx] = { ...f, required: e.target.checked }; setInputFields(next)
+                      }}
+                    /> Bắt buộc
+                  </label>
+                  <button
+                    type="button"
+                    onClick={() => setInputFields(inputFields.filter((_, i) => i !== idx))}
+                    className="text-xs text-red-600"
+                  >Xoá trường</button>
+                </div>
+              </div>
+            ))}
+            <button
+              type="button"
+              onClick={() => setInputFields([...inputFields, { label: '', placeholder: '', type: 'text', required: true }])}
+              className="text-xs px-2 py-1 rounded bg-yellow-100 hover:bg-yellow-200"
+            >+ Thêm trường</button>
           </div>
         )}
 
@@ -282,5 +353,46 @@ function VariantEditModal({ productId, variant, onClose, onSaved }: {
         </div>
       </div>
     </div>
+  )
+}
+
+function SortableVariantRow({ v, onEdit, onDelete }: {
+  v: Variant
+  onEdit: () => void
+  onDelete: () => void
+}) {
+  const { attributes, listeners, setNodeRef, transform, transition, isDragging } = useSortable({ id: v.id })
+  const style: React.CSSProperties = {
+    transform: CSS.Transform.toString(transform),
+    transition,
+    opacity: isDragging ? 0.6 : 1,
+  }
+  return (
+    <li
+      ref={setNodeRef}
+      style={style}
+      className={`rounded-lg border p-2 text-sm flex items-center gap-2 ${v.isActive ? 'bg-white' : 'bg-gray-50'}`}
+    >
+      <button
+        type="button"
+        {...attributes}
+        {...listeners}
+        className="cursor-grab opacity-50 hover:opacity-100 px-1"
+        aria-label="Kéo để sắp xếp"
+      >⋮⋮</button>
+      <div className="flex-1 min-w-0">
+        <p className="font-medium truncate">
+          {v.name}
+          {!v.isActive && (
+            <span className="ml-2 text-[10px] uppercase tracking-wide bg-gray-500 text-white px-1.5 py-0.5 rounded">
+              Tạm ẩn
+            </span>
+          )}
+        </p>
+        <p className="text-xs opacity-60">{v.price.toLocaleString('vi-VN')}đ · kho {v.stock} {v.requiresInput && '· cần nhập'}</p>
+      </div>
+      <button type="button" onClick={onEdit} className="text-xs opacity-70 hover:opacity-100 px-2">Sửa</button>
+      <button type="button" onClick={onDelete} className="text-xs text-red-600 px-2">Xoá</button>
+    </li>
   )
 }

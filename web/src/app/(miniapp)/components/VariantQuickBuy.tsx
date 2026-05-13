@@ -22,7 +22,7 @@ interface Props {
 export function VariantQuickBuy({ slug, onClose }: Props) {
   const cart = useCart()
   const [selectedVariantId, setSelectedVariantId] = useState<string | null>(null)
-  const [inputValue, setInputValue] = useState('')
+  const [inputValues, setInputValues] = useState<Record<string, string>>({})
   const [busy, setBusy] = useState(false)
 
   const { data: p, isLoading } = useQuery({
@@ -51,17 +51,29 @@ export function VariantQuickBuy({ slug, onClose }: Props) {
   const effectivePrice = selected?.price ?? p.price
   const effectiveStock = variants.length > 0 ? (selected?.stock ?? 0) : p.stock
   const requiresInput = !!selected?.requiresInput
-  const inputValid = !requiresInput || inputValue.trim().length >= 3
+  const fields = selected?.inputFields && selected.inputFields.length > 0
+    ? selected.inputFields
+    : (requiresInput
+        ? [{ label: selected!.inputLabel || 'Thông tin', placeholder: '', type: 'text' as const, required: true }]
+        : [])
+  const inputValid = !requiresInput || fields.every((f) => !f.required || (inputValues[f.label] ?? '').trim().length >= 1)
   const disabled = effectiveStock <= 0 || p.contactOnly || !inputValid || busy
 
   const product = p
   function addAndClose() {
     setBusy(true)
+    const trimmed: Record<string, string> = {}
+    if (requiresInput) {
+      for (const f of fields) {
+        const v = (inputValues[f.label] ?? '').trim()
+        if (v) trimmed[f.label] = v
+      }
+    }
     cart.add({
       productId: product.id,
       variantId: selected?.id ?? null,
       variantName: selected?.name ?? null,
-      inputValue: requiresInput ? inputValue.trim() : null,
+      inputValue: requiresInput ? JSON.stringify(trimmed) : null,
       slug: product.slug,
       name: product.name,
       price: effectivePrice,
@@ -85,9 +97,9 @@ export function VariantQuickBuy({ slug, onClose }: Props) {
           <VariantPicker
             variants={variants}
             selectedId={selectedVariantId}
-            onSelect={(id) => { setSelectedVariantId(id); setInputValue('') }}
-            inputValue={inputValue}
-            onInputChange={setInputValue}
+            onSelect={(id) => { setSelectedVariantId(id); setInputValues({}) }}
+            inputValues={inputValues}
+            onInputChange={setInputValues}
           />
         ) : (
           <p className="text-xs opacity-70">Sản phẩm không có biến thể.</p>

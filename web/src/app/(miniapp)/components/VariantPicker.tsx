@@ -2,6 +2,13 @@
 
 import { formatPrice } from '@/lib/utils'
 
+export interface VariantInputField {
+  label: string
+  placeholder?: string | null
+  type: 'text' | 'email' | 'password' | 'tel' | 'url' | 'number' | 'textarea'
+  required: boolean
+}
+
 export interface Variant {
   id: string
   name: string
@@ -12,6 +19,7 @@ export interface Variant {
   inputLabel: string | null
   inputPlaceholder: string | null
   inputType?: string
+  inputFields?: VariantInputField[] | null
   imageUrl?: string
 }
 
@@ -19,11 +27,11 @@ interface Props {
   variants: Variant[]
   selectedId: string | null
   onSelect: (id: string) => void
-  inputValue: string
-  onInputChange: (v: string) => void
+  inputValues: Record<string, string>
+  onInputChange: (values: Record<string, string>) => void
 }
 
-export function VariantPicker({ variants, selectedId, onSelect, inputValue, onInputChange }: Props) {
+export function VariantPicker({ variants, selectedId, onSelect, inputValues, onInputChange }: Props) {
   const selected = variants.find((v) => v.id === selectedId) ?? null
 
   return (
@@ -59,39 +67,57 @@ export function VariantPicker({ variants, selectedId, onSelect, inputValue, onIn
         />
       )}
       {selected?.requiresInput && (
-        <div>
-          <label className="block text-xs opacity-70 mb-1">{selected.inputLabel || 'Thông tin'}</label>
-          {selected.inputType === 'textarea' ? (
-            <textarea
-              value={inputValue}
-              onChange={(e) => onInputChange(e.target.value)}
-              placeholder={selected.inputPlaceholder || ''}
-              rows={3}
-              className="w-full rounded-xl px-3 py-2 text-sm"
-              style={{
-                background: 'var(--tg-bg-2, #fff)',
-                border: '1px solid color-mix(in srgb, var(--brand-ink) 14%, transparent)',
-              }}
-              minLength={3}
-              maxLength={500}
-              required
-            />
-          ) : (
-            <input
-              type={selected.inputType || 'text'}
-              value={inputValue}
-              onChange={(e) => onInputChange(e.target.value)}
-              placeholder={selected.inputPlaceholder || ''}
-              className="w-full rounded-xl px-3 py-2 text-sm"
-              style={{
-                background: 'var(--tg-bg-2, #fff)',
-                border: '1px solid color-mix(in srgb, var(--brand-ink) 14%, transparent)',
-              }}
-              minLength={3}
-              maxLength={200}
-              required
-            />
-          )}
+        <div className="space-y-2">
+          {(() => {
+            const fields: VariantInputField[] =
+              selected.inputFields && selected.inputFields.length > 0
+                ? selected.inputFields
+                : [{
+                    label: selected.inputLabel || 'Thông tin',
+                    placeholder: selected.inputPlaceholder || '',
+                    type: (selected.inputType as VariantInputField['type']) || 'text',
+                    required: true,
+                  }]
+
+            return fields.map((f, idx) => (
+              <div key={`${f.label}-${idx}`}>
+                <label className="block text-xs opacity-70 mb-1">
+                  {f.label}{f.required && <span className="text-red-500"> *</span>}
+                </label>
+                {f.type === 'textarea' ? (
+                  <textarea
+                    value={inputValues[f.label] ?? ''}
+                    onChange={(e) => onInputChange({ ...inputValues, [f.label]: e.target.value })}
+                    placeholder={f.placeholder ?? ''}
+                    rows={3}
+                    className="w-full rounded-xl px-3 py-2 text-sm"
+                    style={{
+                      background: 'var(--tg-bg-2, #fff)',
+                      border: '1px solid color-mix(in srgb, var(--brand-ink) 14%, transparent)',
+                    }}
+                    minLength={f.required ? 1 : 0}
+                    maxLength={500}
+                    required={f.required}
+                  />
+                ) : (
+                  <input
+                    type={f.type}
+                    value={inputValues[f.label] ?? ''}
+                    onChange={(e) => onInputChange({ ...inputValues, [f.label]: e.target.value })}
+                    placeholder={f.placeholder ?? ''}
+                    className="w-full rounded-xl px-3 py-2 text-sm"
+                    style={{
+                      background: 'var(--tg-bg-2, #fff)',
+                      border: '1px solid color-mix(in srgb, var(--brand-ink) 14%, transparent)',
+                    }}
+                    minLength={f.required ? 1 : 0}
+                    maxLength={200}
+                    required={f.required}
+                  />
+                )}
+              </div>
+            ))
+          })()}
         </div>
       )}
     </div>

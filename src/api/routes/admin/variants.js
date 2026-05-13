@@ -17,6 +17,12 @@ const variantBody = z.object({
   inputLabel: z.string().max(80).nullable().optional(),
   inputPlaceholder: z.string().max(200).nullable().optional(),
   inputType: z.enum(['text', 'email', 'password', 'tel', 'url', 'number', 'textarea']).optional(),
+  inputFields: z.array(z.object({
+    label: z.string().min(1).max(80),
+    placeholder: z.string().max(200).nullable().optional(),
+    type: z.enum(['text', 'email', 'password', 'tel', 'url', 'number', 'textarea']),
+    required: z.boolean(),
+  })).max(10).nullable().optional(),
   imageUrl: z.string().max(500).nullable().optional(),
 });
 
@@ -29,6 +35,10 @@ const reorderBody = z.object({
 });
 
 function shapeVariant(v) {
+  let inputFields = null;
+  if (v.input_fields_json) {
+    try { inputFields = JSON.parse(v.input_fields_json); } catch { inputFields = null; }
+  }
   return {
     id: String(v.id),
     productId: String(v.product_id),
@@ -41,6 +51,7 @@ function shapeVariant(v) {
     inputLabel: v.input_label || null,
     inputPlaceholder: v.input_placeholder || null,
     inputType: v.input_type || 'text',
+    inputFields,
     imageUrl: v.image_url || null,
     stock: variantService.countAvailableStock(db, v.product_id, v.id),
   };
@@ -74,10 +85,10 @@ router.put('/:id', validate(variantPatch), (req, res) => {
 router.delete('/:id', (req, res) => {
   const productId = parseInt(req.params.productId);
   const variantId = parseInt(req.params.id);
-  const existing = db.prepare('SELECT id, is_active FROM product_variants WHERE id = ? AND product_id = ?').get(variantId, productId);
+  const existing = db.prepare('SELECT id FROM product_variants WHERE id = ? AND product_id = ?').get(variantId, productId);
   if (!existing) return res.status(404).json({ success: false, error: { code: 'NOT_FOUND' } });
-  if (existing.is_active) variantService.softDelete(db, productId, variantId);
-  auditService.log(req.admin?.adminId, 'variant.delete', 'variant', variantId, { productId, alreadyInactive: !existing.is_active }, req.ip);
+  variantService.hardDelete(db, productId, variantId);
+  auditService.log(req.admin?.adminId, 'variant.delete', 'variant', variantId, { productId, hard: true }, req.ip);
   res.json({ success: true });
 });
 

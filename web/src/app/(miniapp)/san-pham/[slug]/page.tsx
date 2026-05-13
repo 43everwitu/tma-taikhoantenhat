@@ -32,7 +32,7 @@ export default function ProductDetailPage() {
   const cart = useCart()
   const [qty, setQty] = useState(1)
   const [selectedVariantId, setSelectedVariantId] = useState<string | null>(null)
-  const [inputValue, setInputValue] = useState('')
+  const [inputValues, setInputValues] = useState<Record<string, string>>({})
 
   const { data: p, isLoading } = useQuery({
     queryKey: ['product', slug],
@@ -78,15 +78,27 @@ export default function ProductDetailPage() {
   const effectivePrice = selected?.price ?? p?.price ?? 0
   const effectiveStock = variants.length > 0 ? (selected?.stock ?? 0) : (p?.stock ?? 0)
   const requiresInput = !!selected?.requiresInput
-  const inputValid = !requiresInput || inputValue.trim().length >= 3
+  const fields = selected?.inputFields && selected.inputFields.length > 0
+    ? selected.inputFields
+    : (requiresInput
+        ? [{ label: selected!.inputLabel || 'Thông tin', placeholder: '', type: 'text' as const, required: true }]
+        : [])
+  const inputValid = !requiresInput || fields.every((f) => !f.required || (inputValues[f.label] ?? '').trim().length >= 1)
 
   const disabled = effectiveStock <= 0 || p.contactOnly || !inputValid
   const addToCart = () => {
+    const trimmed: Record<string, string> = {}
+    if (requiresInput) {
+      for (const f of fields) {
+        const v = (inputValues[f.label] ?? '').trim()
+        if (v) trimmed[f.label] = v
+      }
+    }
     cart.add({
       productId: p.id,
       variantId: selected?.id ?? null,
       variantName: selected?.name ?? null,
-      inputValue: requiresInput ? inputValue.trim() : null,
+      inputValue: requiresInput ? JSON.stringify(trimmed) : null,
       slug: p.slug,
       name: p.name,
       price: effectivePrice,
@@ -118,9 +130,9 @@ export default function ProductDetailPage() {
               <VariantPicker
                 variants={variants}
                 selectedId={selectedVariantId}
-                onSelect={(id) => { setSelectedVariantId(id); setInputValue('') }}
-                inputValue={inputValue}
-                onInputChange={setInputValue}
+                onSelect={(id) => { setSelectedVariantId(id); setInputValues({}) }}
+                inputValues={inputValues}
+                onInputChange={setInputValues}
               />
             </div>
           )}
