@@ -636,6 +636,44 @@ body {
     .miniapp-rail-cell { flex: 0 0 calc((100% - 4rem) / 5); }
   }
 
+  /* Category strip tile (uses HScroll) */
+  .miniapp-cat-strip-tile {
+    flex: 0 0 96px;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: .375rem;
+    padding: .625rem .5rem;
+    border-radius: 14px;
+    background: var(--brand-gold-soft, #fff7e0);
+    color: var(--brand-ink);
+    text-align: center;
+    text-decoration: none;
+    list-style: none;
+  }
+  .miniapp-cat-strip-tile .miniapp-cat-strip-icon {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 36px;
+    height: 36px;
+    border-radius: 999px;
+    background: var(--tg-bg-2, #fff);
+    color: var(--brand-gold-deep, #b88500);
+  }
+  .miniapp-cat-strip-tile .miniapp-cat-strip-name {
+    font-size: .75rem;
+    line-height: 1.1;
+    font-weight: 500;
+    display: -webkit-box;
+    -webkit-line-clamp: 2;
+    -webkit-box-orient: vertical;
+    overflow: hidden;
+  }
+  @media (min-width: 768px) {
+    .miniapp-cat-strip-tile { flex: 0 0 112px; }
+  }
+
   /* Category grid scales the same way but caps at 6 — categories are coarse */
   .miniapp-cat-grid {
     display: grid; grid-template-columns: repeat(2, 1fr); gap: .75rem;

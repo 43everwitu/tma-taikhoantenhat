@@ -8,8 +8,8 @@ import { MiniAppShell } from './components/MiniAppShell'
 import { ProductSummary } from './components/ProductCard'
 import { ProductRail } from './components/ProductRail'
 import { SearchBox } from './components/SearchBox'
+import { CategoryStrip } from './components/CategoryStrip'
 import { Icon } from './components/Icon'
-import { categoryIcons } from '@/lib/miniappIcons'
 import { getRecentlyViewedIds } from '@/lib/recentlyViewed'
 import { t } from '@/i18n/vi'
 
@@ -71,18 +71,7 @@ export default function MiniAppHome() {
           <p className="opacity-60 text-sm">{t.home.emptyCategories}</p>
         )}
         {cats.data && cats.data.length > 0 && (
-          <ul className="miniapp-cat-grid">
-            {cats.data.map((c) => (
-              <li key={c.id}>
-                <Link href={`/danh-muc/${c.slug}`} className="miniapp-cat-tile">
-                  <span className="miniapp-cat-emoji">
-                    <Icon name={categoryIcons[c.slug] ?? 'package'} size={22} strokeWidth={1.75} />
-                  </span>
-                  <p className="miniapp-cat-name">{c.name}</p>
-                </Link>
-              </li>
-            ))}
-          </ul>
+          <CategoryStrip items={cats.data} />
         )}
       </section>
 
