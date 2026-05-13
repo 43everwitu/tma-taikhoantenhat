@@ -669,11 +669,11 @@ export default function ProductsPage() {
               <div className="space-y-2">
                 <div className="flex gap-2">
                   <input
-                    type="url"
+                    type="text"
                     value={form.imageUrl}
                     onChange={e => setForm({ ...form, imageUrl: e.target.value })}
                     className="flex-1 px-3 py-2 border border-gray-300 rounded-lg"
-                    placeholder="https://... hoặc tạo bằng AI →"
+                    placeholder="https://... hoặc /uploads/... hoặc tạo bằng AI →"
                   />
                   <button
                     type="button"

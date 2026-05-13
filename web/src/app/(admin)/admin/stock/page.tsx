@@ -95,7 +95,8 @@ export default function StockIndexPage() {
   const { data, isLoading } = useQuery({
     queryKey: ['admin', 'products'],
     queryFn: () => api.get<ProductStock[]>('/admin/products'),
-    refetchInterval: 10000,
+    refetchInterval: 30000,
+    refetchOnWindowFocus: false,
   })
   const [q, setQ] = useState('')
   const [statusFilter, setStatusFilter] = useState<'all' | 'in' | 'out' | 'low'>('all')
