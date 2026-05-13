@@ -1,7 +1,8 @@
 import {
   Home, ShoppingCart, ClipboardList, Search, Package, Megaphone, Sparkles,
   BookOpen, Film, Wrench, Zap, Plus, Minus, Trash2, Inbox, Clock, CheckCircle2,
-  XCircle, AlertCircle, Copy, ArrowRight, ChevronRight, Menu, X, type LucideIcon,
+  XCircle, AlertCircle, Copy, ArrowRight, ChevronRight, Menu, X, SlidersHorizontal,
+  type LucideIcon,
 } from 'lucide-react'
 
 export const miniappIcons = {
@@ -29,6 +30,7 @@ export const miniappIcons = {
   chevronRight: ChevronRight,
   menu: Menu,
   close: X,
+  filter: SlidersHorizontal,
 } satisfies Record<string, LucideIcon>
 
 export type MiniappIconName = keyof typeof miniappIcons
