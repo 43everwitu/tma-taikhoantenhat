@@ -25,6 +25,7 @@ const nextConfig: NextConfig = {
     '*.ngrok-free.app',
     '*.ngrok.app',
     '*.ngrok.io',
+    '*.taikhoantenhat.me',
     ...(tunnelHost ? [tunnelHost] : []),
   ],
   async rewrites() {
@@ -38,6 +39,7 @@ const nextConfig: NextConfig = {
       { protocol: 'http', hostname: 'localhost' },
       { protocol: 'https', hostname: '**.trycloudflare.com' },
       { protocol: 'https', hostname: '**.ngrok-free.app' },
+      { protocol: 'https', hostname: '**.taikhoantenhat.me' },
     ],
   },
 }

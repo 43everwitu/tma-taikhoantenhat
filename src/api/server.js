@@ -8,9 +8,25 @@ const { auditLog } = require('./middleware/audit');
 function createApiRouter() {
   const router = Router();
 
-  // CORS
+  // CORS. Build the allow-list: explicit localhost, the configured WEB_URL
+  // (trailing slash stripped — browsers send Origin without one), and any
+  // *.taikhoantenhat.me subdomain so the public tunnel works even when
+  // WEB_URL is misconfigured.
+  const webOrigin = (config.WEB_URL || '').replace(/\/$/, '');
   router.use(cors({
-    origin: [config.WEB_URL, 'http://localhost:3001', 'http://localhost:3000'],
+    origin: (origin, cb) => {
+      if (!origin) return cb(null, true);
+      const allowed = [
+        webOrigin,
+        'http://localhost:3001',
+        'http://localhost:3000',
+      ];
+      if (allowed.includes(origin)) return cb(null, true);
+      if (/\.taikhoantenhat\.me$/.test(new URL(origin).hostname)) return cb(null, true);
+      if (/\.trycloudflare\.com$/.test(new URL(origin).hostname)) return cb(null, true);
+      if (/\.ngrok(-free)?\.(app|io)$/.test(new URL(origin).hostname)) return cb(null, true);
+      return cb(new Error(`CORS: origin ${origin} not allowed`));
+    },
     credentials: true,
   }));
 
