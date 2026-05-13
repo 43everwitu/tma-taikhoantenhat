@@ -51,11 +51,29 @@ export default function StockPage() {
     refetchInterval: 10000,
   })
 
+  const variantsQuery = useQuery({
+    queryKey: ['admin', 'variants', productId],
+    queryFn: () => api.get<{ id: string; name: string; stock: number }[]>(`/admin/products/${productId}/variants`),
+    staleTime: 30_000,
+    refetchOnWindowFocus: false,
+  })
+  const variants = variantsQuery.data?.data ?? []
+  const hasVariants = variants.length > 0
+  const [variantId, setVariantId] = useState<string>('')
+
+  useEffect(() => {
+    if (hasVariants && !variantId) setVariantId(variants[0].id)
+  }, [hasVariants, variantId, variants])
+
   const addMutation = useMutation({
-    mutationFn: (items: string[]) =>
-      api.post(`/admin/stock/${productId}`, { items }),
+    mutationFn: (items: string[]) => {
+      const payload: { items: string[]; variantId?: number } = { items }
+      if (variantId) payload.variantId = Number(variantId)
+      return api.post(`/admin/stock/${productId}`, payload)
+    },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['admin', 'stock', productId] })
+      queryClient.invalidateQueries({ queryKey: ['admin', 'variants', productId] })
       setNewItems('')
     },
   })
@@ -93,6 +111,10 @@ export default function StockPage() {
   const totalPages = Math.ceil(total / limit)
 
   function handleAdd() {
+    if (hasVariants && !variantId) {
+      alert('Sản phẩm có biến thể — vui lòng chọn biến thể trước khi thêm key.')
+      return
+    }
     const lines = newItems
       .split('\n')
       .map((l) => l.trim())
@@ -239,6 +261,27 @@ export default function StockPage() {
       {/* Thêm hàng */}
       <div className="clay-card p-6">
         <h3 className="text-lg font-semibold mb-3">Thêm hàng mới</h3>
+        {hasVariants && (
+          <div className="mb-3">
+            <label className="block text-sm font-medium text-clay-charcoal mb-1">
+              Biến thể <span className="text-red-500">*</span>
+            </label>
+            <select
+              value={variantId}
+              onChange={(e) => setVariantId(e.target.value)}
+              className="clay-input w-full text-sm"
+              required
+            >
+              <option value="">— Chọn biến thể —</option>
+              {variants.map((v) => (
+                <option key={v.id} value={v.id}>{v.name} (kho {v.stock})</option>
+              ))}
+            </select>
+            {!variantId && (
+              <p className="text-xs text-red-600 mt-1">Sản phẩm này có biến thể, phải chọn biến thể trước khi thêm key.</p>
+            )}
+          </div>
+        )}
         <p className="text-sm text-clay-silver mb-3">Mỗi dòng là 1 mục (key, code, link...)</p>
         <textarea
           value={newItems}

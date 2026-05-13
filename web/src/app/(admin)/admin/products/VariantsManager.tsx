@@ -43,7 +43,20 @@ export function VariantsManager({ productId }: { productId: string | null }) {
 
   const deleteMut = useMutation({
     mutationFn: (id: string) => api.delete(`/admin/products/${productId}/variants/${id}`),
-    onSuccess: () => {
+    onMutate: async (id: string) => {
+      await qc.cancelQueries({ queryKey: ['admin', 'variants', productId] })
+      const snapshots = qc.getQueriesData<{ data: Variant[] }>({ queryKey: ['admin', 'variants', productId] })
+      snapshots.forEach(([key, prev]) => {
+        if (!prev) return
+        qc.setQueryData(key, { ...prev, data: prev.data.filter((v) => v.id !== id) })
+      })
+      return { snapshots }
+    },
+    onError: (_e, _id, ctx) => {
+      ctx?.snapshots.forEach(([key, prev]) => prev && qc.setQueryData(key, prev))
+      alert('Xoá biến thể thất bại — đã khôi phục danh sách.')
+    },
+    onSettled: () => {
       qc.invalidateQueries({ queryKey: ['admin', 'variants', productId] })
       qc.invalidateQueries({ queryKey: ['admin', 'variants', productId, 'panel'] })
     },
