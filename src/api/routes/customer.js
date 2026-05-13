@@ -162,13 +162,21 @@ router.get('/orders/:id/status', (req, res) => {
   const bank = banks.find(b => b.NAME === order.bank_name) || banks[0];
   const qrUrl = paymentService.generateQRUrl(order.total_price, order.payment_code, bank);
 
-  const accounts = order.status === 'delivered' && order.delivered_at
-    ? db.prepare(`
+  // Prefer per-order snapshot in delivered_keys_json (admin edits + manual
+  // delivery write here); fall back to stock scan for legacy orders.
+  let accounts;
+  if (order.status === 'delivered') {
+    const snapshot = orderService.getDeliveredKeys(order.id);
+    if (snapshot && snapshot.length > 0) {
+      accounts = snapshot;
+    } else if (order.delivered_at) {
+      accounts = db.prepare(`
         SELECT data FROM stock
         WHERE sold_to = ? AND product_id = ? AND sold_at <= ?
         ORDER BY sold_at DESC LIMIT ?
-      `).all(order.user_id, order.product_id, order.delivered_at, order.quantity).map(r => r.data)
-    : undefined;
+      `).all(order.user_id, order.product_id, order.delivered_at, order.quantity).map(r => r.data);
+    }
+  }
 
   res.json({ success: true, data: {
     id: String(order.id),

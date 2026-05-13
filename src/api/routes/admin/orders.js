@@ -90,15 +90,21 @@ router.get('/:id', (req, res) => {
 
   const shaped = shapeOrder(order);
 
-  // Include delivered accounts scoped to this order's delivery window so
-  // repeat purchases of the same product show the right keys per order.
-  if (order.status === 'delivered' && order.delivered_at) {
-    const accounts = db.prepare(`
-      SELECT data FROM stock
-      WHERE sold_to = ? AND product_id = ? AND sold_at <= ?
-      ORDER BY sold_at DESC LIMIT ?
-    `).all(order.user_id, order.product_id, order.delivered_at, order.quantity);
-    shaped.accounts = accounts.map(a => a.data);
+  // Include delivered accounts. Prefer the per-order snapshot in
+  // delivered_keys_json (admin edits + manual-deliver write here), fall back
+  // to scanning stock for legacy orders missing the snapshot.
+  if (order.status === 'delivered') {
+    const snapshot = orderService.getDeliveredKeys(order.id);
+    if (snapshot && snapshot.length > 0) {
+      shaped.accounts = snapshot;
+    } else if (order.delivered_at) {
+      const accounts = db.prepare(`
+        SELECT data FROM stock
+        WHERE sold_to = ? AND product_id = ? AND sold_at <= ?
+        ORDER BY sold_at DESC LIMIT ?
+      `).all(order.user_id, order.product_id, order.delivered_at, order.quantity);
+      shaped.accounts = accounts.map(a => a.data);
+    }
   }
 
   res.json({ success: true, data: shaped });
