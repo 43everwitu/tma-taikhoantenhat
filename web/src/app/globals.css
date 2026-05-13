@@ -196,7 +196,7 @@ body {
   .rich-text a { text-decoration: underline; color: var(--brand-gold-deep, var(--color-clay-ink)); }
   .rich-text code { background: var(--color-clay-oat-light); padding: 0 .25rem; border-radius: 4px; font-family: var(--font-mono); font-size: .9em; }
   .rich-text pre { background: var(--color-clay-oat-light); padding: .75rem; border-radius: 8px; font-family: var(--font-mono); font-size: .85em; overflow-x: auto; }
-  .rich-text img { display: block; max-width: 100%; height: auto; border-radius: 12px; margin: .75rem 0; }
+  .rich-text img { display: block; max-width: 100%; height: auto; border-radius: 12px; margin: .75rem auto; }
   .rich-text table { width: 100%; border-collapse: collapse; margin: .75rem 0; font-size: .875rem; }
   .rich-text caption { font-size: .8125rem; color: var(--color-clay-charcoal, #55534e); margin-bottom: .25rem; text-align: left; }
   .rich-text th, .rich-text td { border: 1px solid color-mix(in srgb, var(--brand-ink, #000) 12%, transparent); padding: .5rem .625rem; text-align: left; vertical-align: top; }

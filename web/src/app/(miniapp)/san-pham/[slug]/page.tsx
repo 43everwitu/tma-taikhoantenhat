@@ -6,10 +6,12 @@ import { useParams, useRouter } from 'next/navigation'
 import Image from 'next/image'
 import { apiFetch } from '@/lib/miniappApi'
 import { useCart } from '@/lib/cart'
-import { pushRecentlyViewed } from '@/lib/recentlyViewed'
+import { pushRecentlyViewed, getRecentlyViewedIds } from '@/lib/recentlyViewed'
 import { MiniAppShell } from '../../components/MiniAppShell'
 import { Icon } from '../../components/Icon'
 import { VariantPicker, type Variant } from '../../components/VariantPicker'
+import { ProductRail } from '../../components/ProductRail'
+import type { ProductSummary } from '../../components/ProductCard'
 import { formatPrice } from '@/lib/utils'
 import { t } from '@/i18n/vi'
 
@@ -17,6 +19,7 @@ interface ProductBase {
   id: string; slug: string; name: string; emoji: string; imageUrl?: string
   price: number; stock: number; contactOnly: boolean; contactUrl?: string
   promotion?: string | null
+  categorySlug?: string
 }
 interface ProductDetail extends ProductBase {
   longDescription: string; description: string
@@ -39,6 +42,26 @@ export default function ProductDetailPage() {
   useEffect(() => {
     if (p?.id) pushRecentlyViewed(String(p.id))
   }, [p?.id])
+
+  const related = useQuery({
+    queryKey: ['products', 'related', p?.categorySlug, p?.id],
+    queryFn: () => apiFetch<ProductSummary[]>(`/products?category=${encodeURIComponent(p!.categorySlug!)}&limit=12`),
+    enabled: !!p?.categorySlug && !!p?.id,
+    select: (rows) => rows.filter((r) => r.id !== p?.id).slice(0, 10),
+  })
+
+  const [recentIds, setRecentIds] = useState<string[]>([])
+  useEffect(() => {
+    if (!p?.id) return
+    const ids = getRecentlyViewedIds().filter((id) => id !== String(p.id))
+    setRecentIds(ids)
+  }, [p?.id])
+
+  const recently = useQuery({
+    queryKey: ['products', 'recently-detail', recentIds.join(',')],
+    queryFn: () => apiFetch<ProductSummary[]>(`/products?ids=${recentIds.join(',')}`),
+    enabled: recentIds.length > 0,
+  })
 
   useEffect(() => {
     if (!p?.variants?.length) { setSelectedVariantId(null); return }
@@ -149,6 +172,30 @@ export default function ProductDetailPage() {
           )}
         </div>
       </div>
+
+      {related.data && related.data.length > 0 && (
+        <section className="miniapp-section mt-6">
+          <div className="miniapp-section-title">
+            <span className="inline-flex items-center gap-1.5">
+              <Icon name="sparkles" size={16} />
+              Sản phẩm liên quan
+            </span>
+          </div>
+          <ProductRail items={related.data} />
+        </section>
+      )}
+
+      {recently.data && recently.data.length > 0 && (
+        <section className="miniapp-section mt-4">
+          <div className="miniapp-section-title">
+            <span className="inline-flex items-center gap-1.5">
+              <Icon name="clock" size={16} />
+              Sản phẩm đã xem
+            </span>
+          </div>
+          <ProductRail items={recently.data} />
+        </section>
+      )}
 
       <div className="miniapp-bottombar">
         <button
