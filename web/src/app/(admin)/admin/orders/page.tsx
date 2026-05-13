@@ -178,9 +178,10 @@ export default function OrdersPage() {
   const manualDeliverMutation = useMutation({
     mutationFn: ({ id, accounts }: { id: string; accounts: string[] }) =>
       api.post(`/admin/orders/${id}/manual-deliver`, { accounts }),
-    onSuccess: () => {
+    onSuccess: (_res, vars) => {
       alert('✅ Đã giao thủ công + gửi key cho khách.')
       queryClient.invalidateQueries({ queryKey: ['admin', 'orders'] })
+      queryClient.removeQueries({ queryKey: ['admin', 'order', vars.id, 'detail'] })
       setManualOrderId(null)
       setManualText('')
     },
@@ -190,9 +191,11 @@ export default function OrdersPage() {
   const editKeysMutation = useMutation({
     mutationFn: ({ id, accounts }: { id: string; accounts: string[] }) =>
       api.patch(`/admin/orders/${id}/keys`, { accounts }),
-    onSuccess: () => {
+    onSuccess: (_res, vars) => {
       alert('✅ Đã cập nhật key.')
       queryClient.invalidateQueries({ queryKey: ['admin', 'orders'] })
+      queryClient.invalidateQueries({ queryKey: ['admin', 'order', vars.id, 'detail'] })
+      queryClient.removeQueries({ queryKey: ['admin', 'order', vars.id, 'detail'] })
       setEditOrderId(null)
       setEditText('')
     },
