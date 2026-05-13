@@ -149,7 +149,8 @@ export default function OrdersPage() {
       if (debouncedSearch) url += `&q=${encodeURIComponent(debouncedSearch)}`
       return api.get<OrdersResponse>(url)
     },
-    refetchInterval: 10000,
+    refetchInterval: 30000,
+    refetchOnWindowFocus: false,
   })
 
   const confirmMutation = useMutation({

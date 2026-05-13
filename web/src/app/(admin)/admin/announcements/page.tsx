@@ -33,7 +33,8 @@ export default function AnnouncementsPage() {
   const { data, isLoading } = useQuery({
     queryKey: ['admin', 'announcements'],
     queryFn: () => api.get<Announcement[]>('/admin/announcements'),
-    refetchInterval: 15000,
+    refetchInterval: 60000,
+    refetchOnWindowFocus: false,
   })
 
   const createMutation = useMutation({

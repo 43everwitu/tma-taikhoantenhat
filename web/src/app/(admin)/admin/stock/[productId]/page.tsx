@@ -49,7 +49,8 @@ export default function StockPage() {
       if (debouncedSearch) url += `&q=${encodeURIComponent(debouncedSearch)}`
       return api.get<StockResponse>(url)
     },
-    refetchInterval: 10000,
+    refetchInterval: 30000,
+    refetchOnWindowFocus: false,
   })
 
   const variantsQuery = useQuery({

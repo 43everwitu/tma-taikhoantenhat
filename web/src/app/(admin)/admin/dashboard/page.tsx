@@ -33,19 +33,22 @@ export default function DashboardPage() {
   const { data: stats, isLoading: statsLoading } = useQuery({
     queryKey: ['admin', 'dashboard', 'stats'],
     queryFn: () => api.get<DashboardStats>('/admin/dashboard/stats'),
-    refetchInterval: 10000,
+    refetchInterval: 30000,
+    refetchOnWindowFocus: false,
   })
 
   const { data: revenueData } = useQuery({
     queryKey: ['admin', 'dashboard', 'revenue'],
     queryFn: () => api.get<RevenuePoint[]>('/admin/dashboard/revenue?period=30'),
     refetchInterval: 30000,
+    refetchOnWindowFocus: false,
   })
 
   const { data: topProducts } = useQuery({
     queryKey: ['admin', 'dashboard', 'top-products'],
     queryFn: () => api.get<TopProduct[]>('/admin/dashboard/top-products'),
     refetchInterval: 30000,
+    refetchOnWindowFocus: false,
   })
 
   const s = stats?.data
