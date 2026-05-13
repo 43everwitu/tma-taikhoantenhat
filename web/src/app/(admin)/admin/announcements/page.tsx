@@ -38,6 +38,11 @@ export default function AnnouncementsPage() {
   const [errorView, setErrorView] = useState<Announcement | null>(null)
   const [target, setTarget] = useState<'all' | 'telegram' | 'web'>('all')
   const [pinned, setPinned] = useState(false)
+  const [editing, setEditing] = useState<Announcement | null>(null)
+  const [editTitle, setEditTitle] = useState('')
+  const [editBody, setEditBody] = useState('')
+  const [editTarget, setEditTarget] = useState<'all' | 'telegram' | 'web'>('all')
+  const [editPinned, setEditPinned] = useState(false)
 
   const { data, isLoading } = useQuery({
     queryKey: ['admin', 'announcements'],
@@ -57,6 +62,36 @@ export default function AnnouncementsPage() {
       setPinned(false)
     },
   })
+
+  const updateMutation = useMutation({
+    mutationFn: ({ id, body }: { id: string; body: object }) => api.patch(`/admin/announcements/${id}`, body),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['admin', 'announcements'] })
+      setEditing(null)
+    },
+  })
+
+  const deleteMutation = useMutation({
+    mutationFn: (id: string) => api.delete(`/admin/announcements/${id}`),
+    onSuccess: () => queryClient.invalidateQueries({ queryKey: ['admin', 'announcements'] }),
+  })
+
+  const resendMutation = useMutation({
+    mutationFn: (id: string) => api.post<{ sent: number; failed: number }>(`/admin/announcements/${id}/resend`),
+    onSuccess: (r) => {
+      alert(`✅ Đã gửi lại: ${r.data.sent} thành công, ${r.data.failed} lỗi.`)
+      queryClient.invalidateQueries({ queryKey: ['admin', 'announcements'] })
+    },
+    onError: (e) => alert(`❌ ${e instanceof Error ? e.message : 'Gửi lại thất bại'}`),
+  })
+
+  function openEdit(ann: Announcement) {
+    setEditing(ann)
+    setEditTitle(ann.title)
+    setEditBody(ann.body)
+    setEditTarget(ann.target)
+    setEditPinned(ann.pinned)
+  }
 
   const announcements = data?.data ?? []
 
@@ -170,6 +205,7 @@ export default function AnnouncementsPage() {
                 <th className="text-right text-xs uppercase tracking-wider text-clay-charcoal py-3 px-4">Đã gửi</th>
                 <th className="text-right text-xs uppercase tracking-wider text-clay-charcoal py-3 px-4">Lỗi</th>
                 <th className="text-left text-xs uppercase tracking-wider text-clay-charcoal py-3 px-4">Thời gian</th>
+                <th className="text-right text-xs uppercase tracking-wider text-clay-charcoal py-3 px-4">Thao tác</th>
               </tr>
             </thead>
             <tbody>
@@ -207,12 +243,73 @@ export default function AnnouncementsPage() {
                   <td className="py-3 px-4 text-clay-silver text-xs">
                     {formatDate(ann.createdAt)}
                   </td>
+                  <td className="py-3 px-4 text-right">
+                    <div className="inline-flex gap-1">
+                      <button
+                        onClick={() => openEdit(ann)}
+                        className="clay-btn text-xs py-1 px-2"
+                      >Sửa</button>
+                      <button
+                        onClick={() => { if (confirm(`Gửi lại "${ann.title}" cho tất cả user?`)) resendMutation.mutate(ann.id) }}
+                        disabled={resendMutation.isPending}
+                        className="clay-btn clay-btn--ube text-xs py-1 px-2 disabled:opacity-50"
+                      >Gửi lại</button>
+                      <button
+                        onClick={() => { if (confirm(`Xoá "${ann.title}"?`)) deleteMutation.mutate(ann.id) }}
+                        disabled={deleteMutation.isPending}
+                        className="clay-btn clay-btn--pomegranate text-xs py-1 px-2 disabled:opacity-50"
+                      >Xoá</button>
+                    </div>
+                  </td>
                 </tr>
               ))}
             </tbody>
           </table>
         )}
       </div>
+
+      {editing && (
+        <div className="fixed inset-0 z-50 bg-black/40 backdrop-blur-sm flex items-center justify-center p-4" onClick={() => setEditing(null)}>
+          <div onClick={(e) => e.stopPropagation()} className="bg-white rounded-2xl shadow-xl w-full max-w-lg p-5 space-y-3 max-h-[90vh] overflow-y-auto">
+            <div className="flex items-center justify-between">
+              <h3 className="text-lg font-semibold">Sửa thông báo #{editing.id}</h3>
+              <button type="button" onClick={() => setEditing(null)} className="opacity-60 text-xl leading-none">×</button>
+            </div>
+            <p className="text-xs opacity-70">Chỉ cập nhật nội dung lưu trữ. Không gửi lại — bấm Gửi lại sau khi lưu nếu cần.</p>
+            <label className="block text-sm">
+              <span className="text-xs opacity-70 mb-1 inline-block">Tiêu đề</span>
+              <input value={editTitle} onChange={(e) => setEditTitle(e.target.value)} className="clay-input w-full text-sm" />
+            </label>
+            <label className="block text-sm">
+              <span className="text-xs opacity-70 mb-1 inline-block">Nội dung</span>
+              <textarea value={editBody} onChange={(e) => setEditBody(e.target.value)} rows={5} className="clay-input w-full text-sm resize-none" />
+            </label>
+            <div className="flex items-center gap-3">
+              <label className="block text-sm flex-1">
+                <span className="text-xs opacity-70 mb-1 inline-block">Đối tượng</span>
+                <select value={editTarget} onChange={(e) => setEditTarget(e.target.value as 'all' | 'telegram' | 'web')} className="clay-input w-full text-sm">
+                  <option value="all">Tất cả</option>
+                  <option value="telegram">Telegram</option>
+                  <option value="web">Web</option>
+                </select>
+              </label>
+              <label className="flex items-center gap-1 text-sm mt-5">
+                <input type="checkbox" checked={editPinned} onChange={(e) => setEditPinned(e.target.checked)} />
+                <span>Ghim</span>
+              </label>
+            </div>
+            <div className="flex justify-end gap-2 pt-1">
+              <button type="button" onClick={() => setEditing(null)} className="clay-btn text-sm">Huỷ</button>
+              <button
+                type="button"
+                onClick={() => updateMutation.mutate({ id: editing.id, body: { title: editTitle, body: editBody, target: editTarget, isPinned: editPinned } })}
+                disabled={updateMutation.isPending || !editTitle || !editBody}
+                className="clay-btn clay-btn--lemon text-sm"
+              >{updateMutation.isPending ? 'Đang lưu…' : 'Lưu'}</button>
+            </div>
+          </div>
+        </div>
+      )}
 
       {errorView && (
         <div className="fixed inset-0 z-50 bg-black/40 backdrop-blur-sm flex items-center justify-center p-4" onClick={() => setErrorView(null)}>
