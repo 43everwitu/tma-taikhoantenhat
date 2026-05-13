@@ -10,6 +10,7 @@ interface Product { id: string; name: string }
 export function QuickAddKeysModal({ products, onClose }: { products: Product[]; onClose: () => void }) {
   const [productId, setProductId] = useState<string>(products[0]?.id ?? '')
   const [variantId, setVariantId] = useState<string>('')
+  const [durationDays, setDurationDays] = useState<string>('')
   const [text, setText] = useState('')
   const [err, setErr] = useState<string | null>(null)
   const qc = useQueryClient()
@@ -33,8 +34,9 @@ export function QuickAddKeysModal({ products, onClose }: { products: Product[]; 
       if (items.length === 0) throw new Error('Chưa nhập key nào')
       if (!productId) throw new Error('Chưa chọn sản phẩm')
       if (hasVariants && !variantId) throw new Error('Sản phẩm có biến thể — phải chọn biến thể')
-      const payload: { items: string[]; variantId?: number } = { items }
+      const payload: { items: string[]; variantId?: number; durationDays?: number } = { items }
       if (variantId) payload.variantId = Number(variantId)
+      if (durationDays && Number(durationDays) > 0) payload.durationDays = Number(durationDays)
       return api.post(`/admin/stock/${productId}`, payload)
     },
     onSuccess: (res) => {
@@ -94,6 +96,18 @@ export function QuickAddKeysModal({ products, onClose }: { products: Product[]; 
             )}
           </label>
         )}
+
+        <label className="block text-sm">
+          <span className="text-xs text-clay-charcoal mb-1 inline-block">Thời hạn (ngày, trống = dùng mặc định)</span>
+          <input
+            type="number"
+            min={1}
+            value={durationDays}
+            onChange={(e) => setDurationDays(e.target.value)}
+            placeholder="VD: 30"
+            className="clay-input w-full text-sm"
+          />
+        </label>
 
         <label className="block text-sm">
           <span className="text-xs text-clay-charcoal mb-1 inline-block">Keys (mỗi key một dòng)</span>

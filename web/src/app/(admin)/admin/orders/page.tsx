@@ -18,6 +18,8 @@ interface Order {
   paymentCode?: string
   payment_code?: string
   createdAt: string
+  keyExpiresAt?: string | null
+  keyExpired?: boolean
 }
 
 interface OrderDetail extends Order {
@@ -38,6 +40,8 @@ function KeyCell({ orderId, status }: { orderId: string; status: string }) {
     return <span className="text-clay-silver text-xs">—</span>
   }
 
+  // Render KeyCell as a fixed-height anchor + popover so revealing the keys
+  // doesn't push the table rows below (no CLS).
   if (!revealed) {
     return (
       <button
@@ -56,48 +60,64 @@ function KeyCell({ orderId, status }: { orderId: string; status: string }) {
   }
 
   const accounts = data?.data?.accounts ?? []
-  if (accounts.length === 0) {
-    return <span className="text-clay-silver text-xs">(không có)</span>
+  if (accounts.length === 0 && !data?.data?.inputFields && !data?.data?.inputValueText) {
+    return (
+      <button
+        onClick={() => setRevealed(false)}
+        className="inline-flex items-center gap-1 text-xs text-clay-silver hover:text-clay-charcoal"
+      >
+        <EyeOff size={12} /> (không có)
+      </button>
+    )
   }
 
   const inputFields = data?.data?.inputFields
   const inputValueText = data?.data?.inputValueText
 
+  // Popover: button stays at original height; expanded content sits
+  // absolutely positioned so the table row height never changes.
   return (
-    <div className="space-y-1 max-w-md">
-      {(inputFields || inputValueText) && (
-        <div className="rounded-md bg-yellow-50 border border-yellow-200 px-2 py-1.5 mb-1 text-xs">
-          <p className="font-medium opacity-70 mb-0.5">Thông tin KH:</p>
-          {inputFields
-            ? <ul className="space-y-0.5">
-                {Object.entries(inputFields).filter(([, v]) => v).map(([label, v]) => (
-                  <li key={label}><b>{label}:</b> <code className="font-mono">{v}</code></li>
-                ))}
-              </ul>
-            : <p className="font-mono break-all">{inputValueText}</p>
-          }
-        </div>
-      )}
-      {accounts.map((acc, i) => (
-        <div key={i} className="flex items-center gap-2 group">
-          <code className="font-mono text-xs bg-clay-oat-light px-2 py-0.5 rounded flex-1 truncate" title={acc}>
-            {acc}
-          </code>
-          <button
-            onClick={() => navigator.clipboard.writeText(acc)}
-            className="opacity-50 hover:opacity-100 transition"
-            title="Copy"
-          >
-            <Copy size={12} />
-          </button>
-        </div>
-      ))}
+    <div className="relative inline-block">
       <button
         onClick={() => setRevealed(false)}
-        className="inline-flex items-center gap-1 text-xs text-clay-silver hover:text-clay-charcoal mt-1"
+        className="inline-flex items-center gap-1.5 text-xs text-clay-charcoal"
+        title="Ẩn"
       >
-        <EyeOff size={12} /> Ẩn
+        <EyeOff size={14} />
+        <span className="font-mono">{accounts.length > 0 ? `${accounts.length} key` : 'thông tin'}</span>
       </button>
+      <div
+        className="absolute z-30 top-full mt-1 left-0 min-w-[260px] max-w-md bg-white rounded-lg shadow-xl border border-clay-oat-light p-2 space-y-1"
+        onMouseDown={(e) => e.stopPropagation()}
+      >
+        {(inputFields || inputValueText) && (
+          <div className="rounded-md bg-yellow-50 border border-yellow-200 px-2 py-1.5 text-xs">
+            <p className="font-medium opacity-70 mb-0.5">Thông tin KH:</p>
+            {inputFields
+              ? <ul className="space-y-0.5">
+                  {Object.entries(inputFields).filter(([, v]) => v).map(([label, v]) => (
+                    <li key={label}><b>{label}:</b> <code className="font-mono">{v}</code></li>
+                  ))}
+                </ul>
+              : <p className="font-mono break-all">{inputValueText}</p>
+            }
+          </div>
+        )}
+        {accounts.map((acc, i) => (
+          <div key={i} className="flex items-center gap-2 group">
+            <code className="font-mono text-xs bg-clay-oat-light px-2 py-0.5 rounded flex-1 truncate" title={acc}>
+              {acc}
+            </code>
+            <button
+              onClick={() => navigator.clipboard.writeText(acc)}
+              className="opacity-50 hover:opacity-100 transition"
+              title="Copy"
+            >
+              <Copy size={12} />
+            </button>
+          </div>
+        ))}
+      </div>
     </div>
   )
 }
@@ -140,7 +160,8 @@ const statusOptions = [
   { value: 'paid', label: 'Đã trả (chờ giao)' },
   { value: 'delivered', label: 'Đã giao' },
   { value: 'cancelled', label: 'Đã hủy' },
-  { value: 'expired', label: 'Hết hạn' },
+  { value: 'expired', label: 'Hết hạn (chưa thanh toán)' },
+  { value: 'expired_key', label: 'Key đã hết hạn' },
   { value: 'refunded', label: 'Đã hoàn tiền' },
 ]
 
@@ -194,8 +215,8 @@ export default function OrdersPage() {
   })
 
   const manualDeliverMutation = useMutation({
-    mutationFn: ({ id, accounts }: { id: string; accounts: string[] }) =>
-      api.post(`/admin/orders/${id}/manual-deliver`, { accounts }),
+    mutationFn: ({ id, accounts, durationDays }: { id: string; accounts: string[]; durationDays?: number }) =>
+      api.post(`/admin/orders/${id}/manual-deliver`, { accounts, ...(durationDays ? { durationDays } : {}) }),
     onSuccess: (_res, vars) => {
       alert('✅ Đã giao thủ công + gửi key cho khách.')
       queryClient.invalidateQueries({ queryKey: ['admin', 'orders'] })
@@ -227,6 +248,7 @@ export default function OrdersPage() {
 
   const [manualOrderId, setManualOrderId] = useState<string | null>(null)
   const [manualText, setManualText] = useState('')
+  const [manualDuration, setManualDuration] = useState<string>('')
   const [editOrderId, setEditOrderId] = useState<string | null>(null)
   const [editText, setEditText] = useState('')
 
@@ -255,6 +277,10 @@ export default function OrdersPage() {
     { header: 'Tổng', cell: (o) => formatPrice(o.totalPrice), className: 'text-right font-medium' },
     { header: 'Trạng thái', cell: (o) => <StatusPill status={o.status} />, className: 'text-center' },
     { header: 'Key', cell: (o) => <KeyCell orderId={o.id} status={o.status} /> },
+    { header: 'Hết hạn', cell: (o) => o.keyExpiresAt
+        ? <span className={`text-xs whitespace-nowrap ${o.keyExpired ? 'text-red-600 font-medium' : 'text-clay-silver'}`}>{o.keyExpiresAt}{o.keyExpired ? ' ⚠' : ''}</span>
+        : <span className="text-xs text-clay-silver">—</span>,
+      className: 'text-center' },
     { header: 'Thời gian', cell: (o) => <span className="text-xs text-clay-silver whitespace-nowrap">{formatDate(o.createdAt)}</span> },
     {
       header: 'Thao tác',
@@ -384,6 +410,17 @@ export default function OrdersPage() {
               <button onClick={() => setManualOrderId(null)} className="opacity-60 text-xl leading-none">×</button>
             </div>
             <p className="text-xs opacity-70">Mỗi dòng là 1 key. Bot sẽ gửi danh sách này cho khách kèm hướng dẫn sản phẩm.</p>
+            <label className="block text-sm">
+              <span className="text-xs opacity-70 mb-1 inline-block">Thời hạn (ngày, trống = dùng mặc định)</span>
+              <input
+                type="number"
+                min={1}
+                value={manualDuration}
+                onChange={(e) => setManualDuration(e.target.value)}
+                placeholder="VD: 30"
+                className="clay-input w-full text-sm"
+              />
+            </label>
             <textarea
               value={manualText}
               onChange={(e) => setManualText(e.target.value)}
@@ -397,7 +434,8 @@ export default function OrdersPage() {
                 onClick={() => {
                   const accounts = manualText.split('\n').map((s) => s.trim()).filter(Boolean)
                   if (accounts.length === 0) { alert('Chưa nhập key nào'); return }
-                  manualDeliverMutation.mutate({ id: manualOrderId, accounts })
+                  const dur = manualDuration ? Number(manualDuration) : undefined
+                  manualDeliverMutation.mutate({ id: manualOrderId, accounts, durationDays: dur })
                 }}
                 disabled={manualDeliverMutation.isPending}
                 className="clay-btn clay-btn--lemon text-sm"

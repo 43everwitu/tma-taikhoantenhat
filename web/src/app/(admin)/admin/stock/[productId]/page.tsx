@@ -62,6 +62,7 @@ export default function StockPage() {
   const variants = variantsQuery.data?.data ?? []
   const hasVariants = variants.length > 0
   const [variantId, setVariantId] = useState<string>('')
+  const [durationDays, setDurationDays] = useState<string>('')
 
   useEffect(() => {
     if (hasVariants && !variantId) setVariantId(variants[0].id)
@@ -71,8 +72,9 @@ export default function StockPage() {
 
   const addMutation = useMutation({
     mutationFn: (items: string[]) => {
-      const payload: { items: string[]; variantId?: number } = { items }
+      const payload: { items: string[]; variantId?: number; durationDays?: number } = { items }
       if (variantId) payload.variantId = Number(variantId)
+      if (durationDays && Number(durationDays) > 0) payload.durationDays = Number(durationDays)
       return api.post(`/admin/stock/${productId}`, payload)
     },
     onSuccess: (res) => {
@@ -297,6 +299,17 @@ export default function StockPage() {
           </div>
         )}
         <p className="text-sm text-clay-silver mb-3">Mỗi dòng là 1 mục (key, code, link...)</p>
+        <label className="block text-sm mb-3">
+          <span className="text-xs opacity-70 mb-1 inline-block">Thời hạn (ngày, trống = không hết hạn / dùng mặc định của biến thể)</span>
+          <input
+            type="number"
+            min={1}
+            value={durationDays}
+            onChange={(e) => setDurationDays(e.target.value)}
+            placeholder="VD: 30"
+            className="clay-input w-full text-sm"
+          />
+        </label>
         <textarea
           value={newItems}
           onChange={(e) => setNewItems(e.target.value)}

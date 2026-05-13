@@ -9,6 +9,24 @@ const { deliverOrder } = require('../../../services/orderFulfillmentService');
 const router = Router();
 
 function shapeOrder(r) {
+  // Compute key expiry: earliest stock.sold_at+duration_days for this order's
+  // (user, product) pair. Cheap subquery per row; could be batched if list
+  // size grows large.
+  let keyExpiresAt = null;
+  let keyExpired = false;
+  if (r.status === 'delivered') {
+    const exp = db.prepare(`
+      SELECT MIN(DATE(sold_at, '+' || duration_days || ' days')) AS d
+      FROM stock
+      WHERE sold_to = ? AND product_id = ? AND is_sold = 1
+        AND duration_days IS NOT NULL
+    `).get(r.user_id, r.product_id);
+    if (exp?.d) {
+      keyExpiresAt = exp.d;
+      const today = new Date().toISOString().slice(0, 10);
+      keyExpired = keyExpiresAt < today;
+    }
+  }
   return {
     id: String(r.id),
     userId: String(r.user_id),
@@ -26,6 +44,8 @@ function shapeOrder(r) {
     paidAt: r.paid_at,
     deliveredAt: r.delivered_at,
     expiresAt: r.expires_at,
+    keyExpiresAt,
+    keyExpired,
   };
 }
 
@@ -40,7 +60,16 @@ router.get('/', (req, res) => {
   let where = '1=1';
   const params = [];
 
-  if (status) { where += ' AND o.status = ?'; params.push(status); }
+  if (status === 'expired_key') {
+    where += ` AND o.status = 'delivered' AND EXISTS (
+      SELECT 1 FROM stock s
+      WHERE s.sold_to = o.user_id AND s.product_id = o.product_id AND s.is_sold = 1
+        AND s.duration_days IS NOT NULL
+        AND DATE(s.sold_at, '+' || s.duration_days || ' days') < DATE('now')
+    )`;
+  } else if (status) {
+    where += ' AND o.status = ?'; params.push(status);
+  }
   if (from) { where += ' AND o.created_at >= ?'; params.push(from); }
   if (to) { where += " AND o.created_at <= (? || ' 23:59:59')"; params.push(to); }
   if (userId) { where += ' AND o.user_id = ?'; params.push(parseInt(userId)); }
@@ -148,6 +177,7 @@ router.post('/:id/confirm', async (req, res) => {
 // POST /admin/orders/:id/manual-deliver
 router.post('/:id/manual-deliver', validate(z.object({
   accounts: z.array(z.string().min(1)).min(1),
+  durationDays: z.number().int().min(1).max(36500).nullable().optional(),
 })), async (req, res) => {
   const orderId = parseInt(req.params.id);
   const order = orderService.getById(orderId);
@@ -161,7 +191,23 @@ router.post('/:id/manual-deliver', validate(z.object({
   db.prepare(`UPDATE orders SET status = 'delivered', delivered_at = CURRENT_TIMESTAMP, delivered_keys_json = ? WHERE id = ?`)
     .run(JSON.stringify(req.validated.accounts), orderId);
 
-  auditService.log(req.admin.adminId, 'order.manual_deliver', 'order', orderId, { accountCount: req.validated.accounts.length }, req.ip);
+  // Resolve duration: explicit override > variant default > null
+  let durationDays = req.validated.durationDays ?? null;
+  if (durationDays == null && order.variant_id) {
+    const v = db.prepare('SELECT default_duration_days FROM product_variants WHERE id = ?').get(order.variant_id);
+    durationDays = v?.default_duration_days ?? null;
+  }
+  // Insert sold stock rows so the expiry-reminder sweep can find them.
+  const insertSoldStock = db.prepare(`
+    INSERT INTO stock (product_id, variant_id, data, duration_days, is_sold, sold_to, sold_at)
+    VALUES (?, ?, ?, ?, 1, ?, CURRENT_TIMESTAMP)
+  `);
+  const tx = db.transaction(() => {
+    for (const acc of req.validated.accounts) insertSoldStock.run(order.product_id, order.variant_id ?? null, acc, durationDays, order.user_id);
+  });
+  tx();
+
+  auditService.log(req.admin.adminId, 'order.manual_deliver', 'order', orderId, { accountCount: req.validated.accounts.length, durationDays }, req.ip);
 
   // Fire normal Telegram delivery message via notificationService (compact + usage instructions + txt fallback)
   const bot = req.app.get('bot');

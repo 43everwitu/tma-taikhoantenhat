@@ -102,6 +102,8 @@ async function start() {
   // Wire admin notification dispatcher to the bot instance
   require('./services/adminNotifyService').init(bot);
   require('./services/orderChannelService').init(bot);
+  require('./services/keyExpiryReminderService').start(bot);
+  console.log('⏰ Key expiry reminder sweep armed (daily)');
 
   // Initialize notification service
   const { NotificationService } = require('./services/notificationService');

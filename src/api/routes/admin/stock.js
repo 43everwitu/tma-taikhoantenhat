@@ -65,12 +65,13 @@ router.get('/:productId', (req, res) => {
 router.post('/:productId', validate(z.object({
   items: z.array(z.string().min(1)).min(1).max(1000),
   variantId: z.number().int().positive().nullable().optional(),
+  durationDays: z.number().int().min(1).max(36500).nullable().optional(),
 })), (req, res) => {
   const productId = parseInt(req.params.productId);
   const product = db.prepare('SELECT id FROM products WHERE id = ?').get(productId);
   if (!product) return res.status(404).json({ success: false, error: { code: 'NOT_FOUND' } });
 
-  productService.addStock(productId, req.validated.items, req.validated.variantId ?? null);
+  productService.addStock(productId, req.validated.items, req.validated.variantId ?? null, req.validated.durationDays ?? null);
   auditService.log(req.admin.adminId, 'stock.add', 'product', productId, { count: req.validated.items.length, variant_id: req.validated.variantId ?? null }, req.ip);
 
   // Notify followers

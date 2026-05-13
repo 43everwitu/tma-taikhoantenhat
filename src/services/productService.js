@@ -78,12 +78,18 @@ const productService = {
     /**
      * Add stock items for a product
      */
-    addStock(productId, dataLines, variantId = null) {
-        const insert = db.prepare('INSERT INTO stock (product_id, variant_id, data) VALUES (?, ?, ?)');
+    addStock(productId, dataLines, variantId = null, durationDays = null) {
+        // Resolve duration: explicit override > variant default > null.
+        let effectiveDuration = durationDays;
+        if (effectiveDuration == null && variantId) {
+            const row = db.prepare('SELECT default_duration_days FROM product_variants WHERE id = ?').get(variantId);
+            effectiveDuration = row?.default_duration_days ?? null;
+        }
+        const insert = db.prepare('INSERT INTO stock (product_id, variant_id, data, duration_days) VALUES (?, ?, ?, ?)');
         const insertMany = db.transaction((lines) => {
             for (const line of lines) {
                 if (line.trim()) {
-                    insert.run(productId, variantId, line.trim());
+                    insert.run(productId, variantId, line.trim(), effectiveDuration);
                 }
             }
         });

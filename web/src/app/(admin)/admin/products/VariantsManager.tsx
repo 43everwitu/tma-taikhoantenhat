@@ -29,6 +29,7 @@ interface Variant {
   inputType: string
   inputFields: InputField[] | null
   isBackorder: boolean
+  defaultDurationDays: number | null
   stock: number
   imageUrl: string | null
 }
@@ -315,6 +316,7 @@ function VariantEditModal({ productId, variant, onClose, onSaved }: {
     isActive: variant?.isActive ?? true,
     imageUrl: variant?.imageUrl ?? '',
     isBackorder: variant?.isBackorder ?? false,
+    defaultDurationDays: variant?.defaultDurationDays ?? '',
   })
   const [inputFields, setInputFields] = useState<InputField[]>(initialFields)
   const [err, setErr] = useState<string | null>(null)
@@ -337,6 +339,7 @@ function VariantEditModal({ productId, variant, onClose, onSaved }: {
           : null,
         imageUrl: form.imageUrl || null,
         isBackorder: form.isBackorder,
+        defaultDurationDays: form.defaultDurationDays === '' ? null : Number(form.defaultDurationDays),
         ...(variant ? { isActive: form.isActive } : {}),
       }
       if (variant) return api.put(`/admin/products/${productId}/variants/${variant.id}`, payload)
@@ -381,6 +384,18 @@ function VariantEditModal({ productId, variant, onClose, onSaved }: {
             <input type="number" value={form.sortOrder} onChange={(e) => setForm({ ...form, sortOrder: Number(e.target.value) })} className="clay-input w-full text-sm" />
           </label>
         </div>
+
+        <label className="block text-sm">
+          <span className="text-xs opacity-70 mb-1 inline-block">Thời hạn mặc định (ngày, trống = không hết hạn)</span>
+          <input
+            type="number"
+            min={1}
+            value={form.defaultDurationDays}
+            onChange={(e) => setForm({ ...form, defaultDurationDays: e.target.value === '' ? '' : Number(e.target.value) })}
+            placeholder="VD: 30, 90, 365"
+            className="clay-input w-full text-sm"
+          />
+        </label>
 
         <label className="block text-sm">
           <span className="text-xs opacity-70 mb-1 inline-block">Ảnh biến thể (tuỳ chọn — nếu trống dùng ảnh sản phẩm)</span>
