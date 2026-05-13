@@ -621,6 +621,21 @@ body {
     .miniapp-hscroll-arrow { display: inline-flex; }
   }
 
+  /* Rail cell sizing for ProductRail (uses HScroll) */
+  .miniapp-rail-cell {
+    flex: 0 0 calc((100% - .75rem) / 2.2);
+    list-style: none;
+  }
+  @media (min-width: 480px) {
+    .miniapp-rail-cell { flex: 0 0 calc((100% - 1.5rem) / 3); }
+  }
+  @media (min-width: 768px) {
+    .miniapp-rail-cell { flex: 0 0 calc((100% - 3rem) / 4); }
+  }
+  @media (min-width: 1024px) {
+    .miniapp-rail-cell { flex: 0 0 calc((100% - 4rem) / 5); }
+  }
+
   /* Category grid scales the same way but caps at 6 — categories are coarse */
   .miniapp-cat-grid {
     display: grid; grid-template-columns: repeat(2, 1fr); gap: .75rem;
