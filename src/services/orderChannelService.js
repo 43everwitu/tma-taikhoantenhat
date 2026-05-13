@@ -8,17 +8,14 @@ let bot = null;
 
 function init(b) { bot = b; }
 
-function censor(value) {
-  if (!value) return '';
-  const s = String(value);
-  if (s.length <= 4) return '••••';
-  return s.slice(0, 2) + '•'.repeat(Math.max(4, s.length - 4)) + s.slice(-2);
-}
-
 function escapeHtml(s) {
   return String(s)
     .replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
     .replace(/"/g, '&quot;').replace(/'/g, '&#39;');
+}
+
+function spoiler(s) {
+  return `<tg-spoiler>${escapeHtml(s)}</tg-spoiler>`;
 }
 
 function decryptInput(encrypted) {
@@ -32,20 +29,23 @@ function decryptInput(encrypted) {
 }
 
 function buildCard({ order, product, variant, keys, customerInfo }) {
+  const divider = '─────────────';
   const lines = [];
-  lines.push(`<b>Order #${order.id} Notification</b>`);
-  lines.push('');
+  lines.push(`📥 <b>Order #${order.id} Notification</b>`);
+  lines.push(divider);
   lines.push(`💰 <b>Thanh toán</b>: ${order.total_price.toLocaleString('vi-VN')}đ`);
-  lines.push(`🧾 <b>Mã đơn</b>: <code>${order.payment_code || order.id}</code>`);
-  if (customerInfo) lines.push(`📧 <b>Thông tin KH</b>: ${escapeHtml(customerInfo)}`);
-  lines.push('');
+  lines.push(`🧾 <b>Mã đơn</b>: <code>${escapeHtml(order.payment_code || String(order.id))}</code>`);
+  if (customerInfo) {
+    // Customer-supplied input is potentially sensitive (emails, etc.) — wrap
+    // in spoiler so it's tap-to-reveal.
+    lines.push(`📧 <b>Thông tin KH</b>: ${spoiler(customerInfo)}`);
+  }
   lines.push(`📦 <b>Sản phẩm</b>: ${escapeHtml(product.name)}${variant ? ` — ${escapeHtml(variant.name)}` : ''} ×${order.quantity}`);
+  lines.push(divider);
   if (keys && keys.length > 0) {
-    lines.push('');
-    lines.push(`🔑 <b>License Keys (${keys.length})</b>:`);
-    for (const k of keys) lines.push(`<code>${escapeHtml(censor(k))}</code>`);
+    lines.push(`🔑 <b>License Keys (${keys.length})</b> — tap để xem:`);
+    for (const k of keys) lines.push(spoiler(k));
   } else {
-    lines.push('');
     lines.push('⚠️ <i>Đơn cần xử lý thủ công — chưa có key.</i>');
   }
   return lines.join('\n');

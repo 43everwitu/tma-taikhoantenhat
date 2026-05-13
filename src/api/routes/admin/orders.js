@@ -45,7 +45,9 @@ router.get('/', (req, res) => {
   if (to) { where += " AND o.created_at <= (? || ' 23:59:59')"; params.push(to); }
   if (userId) { where += ' AND o.user_id = ?'; params.push(parseInt(userId)); }
 
-  const q = (req.query.q || '').trim();
+  const qRaw = (req.query.q || '').trim();
+  // Strip leading '@' so '@peanut1010' matches username 'peanut1010'.
+  const q = qRaw.startsWith('@') ? qRaw.slice(1) : qRaw;
   if (q) {
     where += ` AND (
       CAST(o.id AS TEXT) LIKE ?
@@ -54,9 +56,15 @@ router.get('/', (req, res) => {
       OR u.username LIKE ?
       OR CAST(o.user_id AS TEXT) LIKE ?
       OR p.name LIKE ?
+      OR o.delivered_keys_json LIKE ?
+      OR EXISTS (
+        SELECT 1 FROM stock s
+        WHERE s.sold_to = o.user_id AND s.product_id = o.product_id AND s.is_sold = 1
+          AND s.data LIKE ?
+      )
     )`;
     const wild = `%${q}%`;
-    params.push(wild, wild, wild, wild, wild, wild);
+    params.push(wild, wild, wild, wild, wild, wild, wild, wild);
   }
 
   const rows = db.prepare(`
@@ -89,6 +97,22 @@ router.get('/:id', (req, res) => {
   if (!order) return res.status(404).json({ success: false, error: { code: 'NOT_FOUND', message: 'Đơn hàng không tồn tại' } });
 
   const shaped = shapeOrder(order);
+
+  // Decrypted customer input fields. Admin (any role with orders.read) sees
+  // plaintext including password fields — DB-equivalent visibility for fulfilment.
+  if (order.input_value) {
+    try {
+      const { decryptString } = require('../../../utils/secrets');
+      const raw = decryptString(order.input_value);
+      try {
+        const parsed = JSON.parse(raw);
+        if (parsed && typeof parsed === 'object') shaped.inputFields = parsed;
+        else shaped.inputValueText = String(raw);
+      } catch {
+        shaped.inputValueText = String(raw);
+      }
+    } catch {}
+  }
 
   // Include delivered accounts. Prefer the per-order snapshot in
   // delivered_keys_json (admin edits + manual-deliver write here), fall back

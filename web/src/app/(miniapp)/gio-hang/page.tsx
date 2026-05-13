@@ -41,11 +41,29 @@ export default function CartPage() {
                 {it.variantName && (
                   <p className="text-xs opacity-60 mt-0.5">{it.variantName}</p>
                 )}
-                {it.inputValue && (
-                  <p className="text-xs opacity-50 mt-0.5 inline-flex items-center gap-1">
-                    <Icon name="check" size={12} /> Đã ghi nhận thông tin
-                  </p>
-                )}
+                {it.inputValue && (() => {
+                  let parsed: Record<string, string> | null = null
+                  try { parsed = JSON.parse(it.inputValue) } catch {}
+                  if (!parsed || typeof parsed !== 'object') {
+                    return (
+                      <p className="text-xs opacity-50 mt-0.5 inline-flex items-center gap-1">
+                        <Icon name="check" size={12} /> Đã ghi nhận thông tin
+                      </p>
+                    )
+                  }
+                  const entries = Object.entries(parsed).filter(([, v]) => v && v.length > 0)
+                  if (entries.length === 0) return null
+                  return (
+                    <ul className="text-xs opacity-70 mt-0.5 space-y-0.5">
+                      {entries.map(([label, val]) => {
+                        const isSecret = /password|pass|mật khẩu|m[aậ]t kh[aẩ]u/i.test(label)
+                        return (
+                          <li key={label}><b>{label}:</b> {isSecret ? '••••••' : val}</li>
+                        )
+                      })}
+                    </ul>
+                  )
+                })()}
                 <p className="text-sm font-bold mt-0.5">{formatPrice(it.price * it.quantity)}</p>
                 <div className="mt-2 flex items-center gap-1">
                   <button

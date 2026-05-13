@@ -340,9 +340,12 @@ class PaymentPoller {
         `💰 ${formatPrice(order.total_price)}${inputBlock}\n` +
         `→ /admin/orders để giao thủ công.`,
         { parse_mode: 'HTML', order_id: order.id });
+      // Backorder wait message — admin-configurable via settings.backorder_wait_message
+      const dbForSetting = require('../database');
+      const settingRow = dbForSetting.prepare("SELECT value FROM settings WHERE key = 'backorder_wait_message'").get();
+      const waitMsg = settingRow?.value || 'Đơn này được giao thủ công, shop sẽ xử lý trong ít phút.';
       this._notifyCustomer(order.user_id,
-        `💳 Đã nhận thanh toán đơn #${order.id}.\n` +
-        `Đơn này được giao thủ công, shop sẽ xử lý trong ít phút.`,
+        `💳 Đã nhận thanh toán đơn #${order.id}.\n${waitMsg}`,
         'HTML');
       try {
         const orderChannelService = require('./orderChannelService');

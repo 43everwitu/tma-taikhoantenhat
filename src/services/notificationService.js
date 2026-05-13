@@ -267,6 +267,26 @@ async function sendDelivery(bot, order, accounts, opts = {}) {
   const { escapeHtml, richifyText, formatKeysForTelegram, shouldSendAsFile } = require('../utils/messages');
   const dbModule = require('../database');
 
+  // Build input fields block from encrypted order.input_value (JSON map).
+  // Hide values for password-ish labels.
+  let inputBlock = '';
+  if (order.input_value) {
+    try {
+      const { decryptString } = require('../utils/secrets');
+      const raw = decryptString(order.input_value);
+      const parsed = JSON.parse(raw);
+      if (parsed && typeof parsed === 'object' && Object.keys(parsed).length > 0) {
+        const lines = [];
+        for (const [label, value] of Object.entries(parsed)) {
+          if (!value) continue;
+          const isSecret = /password|pass|mật khẩu|m[aậ]t kh[aẩ]u/i.test(label);
+          lines.push(`<b>${escapeHtml(label)}:</b> ${isSecret ? '••••••' : escapeHtml(String(value))}`);
+        }
+        if (lines.length > 0) inputBlock = '\n\n📋 <b>Thông tin bạn đã nhập:</b>\n' + lines.join('\n');
+      }
+    } catch {}
+  }
+
   if (opts.qrChatId && opts.qrMessageId) {
     try {
       await bot.telegram.deleteMessage(opts.qrChatId, opts.qrMessageId);
@@ -282,8 +302,13 @@ async function sendDelivery(bot, order, accounts, opts = {}) {
     ).get(order.product_id);
     usageInstructions = product && product.usage_instructions
       ? richifyText(product.usage_instructions)
-      : '(không có)';
+      : '';
   }
+  // Treat legacy "(không có)" string from upstream callers as empty.
+  if (usageInstructions === '(không có)') usageInstructions = '';
+  const usageBlock = usageInstructions
+    ? `\n\n📘 <b>Hướng dẫn:</b>\n${usageInstructions}`
+    : '';
 
   const sendOpts = {
     parse_mode: 'HTML',
@@ -300,16 +325,17 @@ async function sendDelivery(bot, order, accounts, opts = {}) {
       productName: order.product_name,
       quantity: order.quantity,
       keysBlock: fileMarker,
-      usageInstructions,
+      usageBlock,
     });
     const minimalCaption = messageTemplateService.render('delivery_keys', {
       orderCode: order.id,
       productName: order.product_name,
       quantity: order.quantity,
       keysBlock: fileMarker,
-      usageInstructions: '(xem ở tin nhắn dưới)',
+      usageBlock: '\n\n📘 (xem ở tin nhắn dưới)',
     });
-    const finalCaption = fullCaption.length <= 1024 ? fullCaption : minimalCaption;
+    const captionWithInput = fullCaption + inputBlock;
+    const finalCaption = captionWithInput.length <= 1024 ? captionWithInput : minimalCaption;
 
     try {
       await bot.telegram.sendDocument(
@@ -342,8 +368,8 @@ async function sendDelivery(bot, order, accounts, opts = {}) {
       productName: order.product_name,
       quantity: order.quantity,
       keysBlock: formatKeysForTelegram(accounts),
-      usageInstructions,
-    });
+      usageBlock,
+    }) + inputBlock;
     try {
       await bot.telegram.sendMessage(order.user_id, body, sendOpts);
       sentTelegram = 1;

@@ -44,8 +44,8 @@
   "delivery_keys": {
     "channel": "bot",
     "label": "Giao sản phẩm (keys)",
-    "variables": ["orderCode", "productName", "quantity", "keysBlock", "usageInstructions"],
-    "body": "✅ Đơn #{{orderCode}} — {{productName}} (×{{quantity}})\n\n🔑 Key:\n{{keysBlock}}\n\n📘 Hướng dẫn:\n{{usageInstructions}}\n\nCảm ơn bạn đã mua hàng!"
+    "variables": ["orderCode", "productName", "quantity", "keysBlock", "usageBlock"],
+    "body": "✅ Đơn #{{orderCode}} — {{productName}} (×{{quantity}})\n\n🔑 Key:\n{{keysBlock}}{{usageBlock}}\n\nCảm ơn bạn đã mua hàng!"
   },
   "low_stock_user": {
     "channel": "bot",

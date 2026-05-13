@@ -22,6 +22,8 @@ interface Order {
 
 interface OrderDetail extends Order {
   accounts?: string[]
+  inputFields?: Record<string, string>
+  inputValueText?: string
 }
 
 function KeyCell({ orderId, status }: { orderId: string; status: string }) {
@@ -58,8 +60,24 @@ function KeyCell({ orderId, status }: { orderId: string; status: string }) {
     return <span className="text-clay-silver text-xs">(không có)</span>
   }
 
+  const inputFields = data?.data?.inputFields
+  const inputValueText = data?.data?.inputValueText
+
   return (
     <div className="space-y-1 max-w-md">
+      {(inputFields || inputValueText) && (
+        <div className="rounded-md bg-yellow-50 border border-yellow-200 px-2 py-1.5 mb-1 text-xs">
+          <p className="font-medium opacity-70 mb-0.5">Thông tin KH:</p>
+          {inputFields
+            ? <ul className="space-y-0.5">
+                {Object.entries(inputFields).filter(([, v]) => v).map(([label, v]) => (
+                  <li key={label}><b>{label}:</b> <code className="font-mono">{v}</code></li>
+                ))}
+              </ul>
+            : <p className="font-mono break-all">{inputValueText}</p>
+          }
+        </div>
+      )}
       {accounts.map((acc, i) => (
         <div key={i} className="flex items-center gap-2 group">
           <code className="font-mono text-xs bg-clay-oat-light px-2 py-0.5 rounded flex-1 truncate" title={acc}>

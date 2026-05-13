@@ -59,8 +59,36 @@ function richifyText(s) {
  * block so the customer can long-press → copy without text being mangled by
  * autoformatters. No numbered prefix.
  */
+const URL_RE_KEYS = /https?:\/\/[^\s<>"']+/g;
+
+function linkifyEscaped(s) {
+  // Tokenise around URLs, escape each side, wrap URLs in <a>. Telegram HTML
+  // requires URLs OUTSIDE <pre>/<code> to render as clickable links.
+  const parts = [];
+  let lastIdx = 0;
+  let m;
+  URL_RE_KEYS.lastIndex = 0;
+  while ((m = URL_RE_KEYS.exec(s)) !== null) {
+    if (m.index > lastIdx) parts.push(escapeHtml(s.slice(lastIdx, m.index)));
+    const u = m[0];
+    parts.push(`<a href="${escapeHtml(u)}">${escapeHtml(u)}</a>`);
+    lastIdx = m.index + u.length;
+  }
+  if (lastIdx < s.length) parts.push(escapeHtml(s.slice(lastIdx)));
+  return parts.join('');
+}
+
 function formatKeysForTelegram(accounts) {
-  return accounts.map(k => `<pre>${escapeHtml(k)}</pre>`).join('\n');
+  // Keys with URLs render mixed text + clickable <a> links (no <pre> wrap
+  // since Telegram won't render anchors inside pre/code). Plain keys get
+  // <code> so they're monospaced + long-press-copy-friendly.
+  return accounts.map(k => {
+    URL_RE_KEYS.lastIndex = 0;
+    if (URL_RE_KEYS.test(k)) {
+      return linkifyEscaped(k);
+    }
+    return `<code>${escapeHtml(k)}</code>`;
+  }).join('\n');
 }
 
 /**
