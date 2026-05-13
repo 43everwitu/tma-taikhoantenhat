@@ -49,9 +49,6 @@ export default function MiniAppHome() {
 
   return (
     <MiniAppShell>
-      <div className="mb-3">
-        <SearchBox value={q} onChange={setQ} placeholder="Tìm sản phẩm…" />
-      </div>
       <section className="miniapp-hero">
         <p className="text-xs uppercase tracking-wider opacity-70 mb-2">{t.appName}</p>
         <h1>Tài khoản số chính chủ</h1>
@@ -74,6 +71,10 @@ export default function MiniAppHome() {
           <CategoryStrip items={cats.data} />
         )}
       </section>
+
+      <div className="mb-3 mt-2">
+        <SearchBox value={q} onChange={setQ} placeholder="Tìm sản phẩm…" />
+      </div>
 
       {ann.data && ann.data.length > 0 && (
         <section className="miniapp-section">

@@ -648,6 +648,76 @@ body {
     .miniapp-cat-strip-tile { flex: 0 0 112px; }
   }
 
+  /* Variant grid for product detail (full list, no horizontal scroll) */
+  .miniapp-variant-grid {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: .5rem;
+  }
+  @media (min-width: 480px) {
+    .miniapp-variant-grid { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+  }
+  @media (min-width: 768px) {
+    .miniapp-variant-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  }
+  .miniapp-variant-tile {
+    display: flex;
+    flex-direction: column;
+    align-items: flex-start;
+    gap: .25rem;
+    padding: .625rem .75rem;
+    border-radius: 14px;
+    background: var(--tg-bg-2, #fff);
+    border: 1px solid color-mix(in srgb, var(--brand-ink) 10%, transparent);
+    color: var(--brand-ink);
+    text-align: left;
+    cursor: pointer;
+    transition: border-color .15s, background .15s, transform .1s;
+    min-height: 64px;
+  }
+  .miniapp-variant-tile:hover { border-color: color-mix(in srgb, var(--brand-gold-deep) 50%, transparent); }
+  .miniapp-variant-tile:active { transform: scale(.98); }
+  .miniapp-variant-tile[aria-pressed="true"] {
+    border-color: var(--brand-gold-deep, #b88500);
+    background: var(--brand-gold-soft, #fff7e0);
+    box-shadow: 0 0 0 1px var(--brand-gold-deep, #b88500) inset;
+  }
+  .miniapp-variant-tile:disabled,
+  .miniapp-variant-tile[aria-disabled="true"] {
+    opacity: .45;
+    cursor: not-allowed;
+  }
+  .miniapp-variant-tile .v-name {
+    font-size: .875rem;
+    font-weight: 600;
+    line-height: 1.25;
+    display: -webkit-box;
+    -webkit-line-clamp: 2;
+    -webkit-box-orient: vertical;
+    overflow: hidden;
+  }
+  .miniapp-variant-tile .v-meta {
+    display: flex;
+    align-items: center;
+    gap: .5rem;
+    width: 100%;
+    margin-top: auto;
+  }
+  .miniapp-variant-tile .v-price {
+    font-size: .8125rem;
+    font-weight: 700;
+    color: var(--brand-gold-deep, #b88500);
+  }
+  .miniapp-variant-tile .v-stock {
+    margin-left: auto;
+    font-size: .6875rem;
+    padding: .125rem .375rem;
+    border-radius: 999px;
+    background: color-mix(in srgb, var(--brand-ink) 8%, transparent);
+  }
+  .miniapp-variant-tile .v-stock--out { color: #dc2626; }
+  .miniapp-variant-tile .v-stock--in { color: #16a34a; }
+
   /* Compact FilterBar + popover panel */
   .miniapp-filterbar {
     display: flex;

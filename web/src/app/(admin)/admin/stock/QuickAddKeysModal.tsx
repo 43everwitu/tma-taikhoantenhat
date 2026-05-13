@@ -1,6 +1,6 @@
 'use client'
 
-import { useState } from 'react'
+import { useState, useEffect } from 'react'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { api } from '@/lib/api'
 
@@ -19,12 +19,18 @@ export function QuickAddKeysModal({ products, onClose }: { products: Product[]; 
     enabled: !!productId,
   })
   const variants = variantsQuery.data?.data ?? []
+  const hasVariants = variants.length > 0
+
+  useEffect(() => {
+    if (hasVariants && !variantId) setVariantId(variants[0].id)
+  }, [hasVariants, variantId, variants])
 
   const mutation = useMutation({
     mutationFn: async () => {
       const items = text.split('\n').map((s) => s.trim()).filter(Boolean)
       if (items.length === 0) throw new Error('Chưa nhập key nào')
       if (!productId) throw new Error('Chưa chọn sản phẩm')
+      if (hasVariants && !variantId) throw new Error('Sản phẩm có biến thể — phải chọn biến thể')
       const payload: { items: string[]; variantId?: number } = { items }
       if (variantId) payload.variantId = Number(variantId)
       return api.post(`/admin/stock/${productId}`, payload)
@@ -32,6 +38,7 @@ export function QuickAddKeysModal({ products, onClose }: { products: Product[]; 
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ['admin', 'products'] })
       qc.invalidateQueries({ queryKey: ['admin', 'variants', productId] })
+      qc.invalidateQueries({ queryKey: ['admin', 'variants', productId, 'panel'] })
       onClose()
     },
     onError: (e) => setErr(e instanceof Error ? e.message : 'Lỗi'),
@@ -58,19 +65,25 @@ export function QuickAddKeysModal({ products, onClose }: { products: Product[]; 
           </select>
         </label>
 
-        {variants.length > 0 && (
+        {hasVariants && (
           <label className="block text-sm">
-            <span className="text-xs text-clay-charcoal mb-1 inline-block">Biến thể</span>
+            <span className="text-xs text-clay-charcoal mb-1 inline-block">
+              Biến thể <span className="text-red-500">*</span>
+            </span>
             <select
               value={variantId}
               onChange={(e) => setVariantId(e.target.value)}
               className="clay-input w-full text-sm"
+              required
             >
-              <option value="">(Không biến thể — sản phẩm chung)</option>
+              <option value="">— Chọn biến thể —</option>
               {variants.map((v) => (
                 <option key={v.id} value={v.id}>{v.name} (kho {v.stock})</option>
               ))}
             </select>
+            {!variantId && (
+              <span className="text-xs text-red-600 mt-1 inline-block">Sản phẩm này có biến thể, phải chọn biến thể.</span>
+            )}
           </label>
         )}
 

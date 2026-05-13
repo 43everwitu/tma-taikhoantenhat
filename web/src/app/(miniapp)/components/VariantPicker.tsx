@@ -28,21 +28,26 @@ export function VariantPicker({ variants, selectedId, onSelect, inputValue, onIn
 
   return (
     <div className="space-y-2">
-      <div className="miniapp-chip-row" style={{ marginTop: 0 }}>
+      <div className="miniapp-variant-grid">
         {variants.map((v) => {
-          const disabled = v.stock <= 0
+          const out = v.stock <= 0
           return (
             <button
               key={v.id}
               type="button"
-              className="miniapp-chip"
+              className="miniapp-variant-tile"
               aria-pressed={selectedId === v.id}
-              disabled={disabled}
+              aria-disabled={out}
+              disabled={out}
               onClick={() => onSelect(v.id)}
-              style={disabled ? { opacity: 0.45 } : undefined}
             >
-              <span>{v.name}</span>
-              <span className="opacity-70 ml-1">{formatPrice(v.price)}</span>
+              <span className="v-name">{v.name}</span>
+              <span className="v-meta">
+                <span className="v-price">{formatPrice(v.price)}</span>
+                <span className={`v-stock ${out ? 'v-stock--out' : 'v-stock--in'}`}>
+                  {out ? 'Hết' : `Còn ${v.stock}`}
+                </span>
+              </span>
             </button>
           )
         })}

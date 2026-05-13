@@ -32,9 +32,10 @@ const INPUT_TYPES = [
 
 export function VariantsManager({ productId }: { productId: string | null }) {
   const qc = useQueryClient()
+  const [showInactive, setShowInactive] = useState(false)
   const { data, isLoading } = useQuery({
-    queryKey: ['admin', 'variants', productId],
-    queryFn: () => api.get<Variant[]>(`/admin/products/${productId}/variants?includeInactive=1`),
+    queryKey: ['admin', 'variants', productId, showInactive],
+    queryFn: () => api.get<Variant[]>(`/admin/products/${productId}/variants${showInactive ? '?includeInactive=1' : ''}`),
     enabled: !!productId,
   })
   const variants = data?.data ?? []
@@ -42,7 +43,10 @@ export function VariantsManager({ productId }: { productId: string | null }) {
 
   const deleteMut = useMutation({
     mutationFn: (id: string) => api.delete(`/admin/products/${productId}/variants/${id}`),
-    onSuccess: () => qc.invalidateQueries({ queryKey: ['admin', 'variants', productId] }),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ['admin', 'variants', productId] })
+      qc.invalidateQueries({ queryKey: ['admin', 'variants', productId, 'panel'] })
+    },
   })
 
   if (!productId) return <p className="text-xs opacity-60">Lưu sản phẩm trước khi thêm biến thể.</p>
@@ -50,13 +54,22 @@ export function VariantsManager({ productId }: { productId: string | null }) {
 
   return (
     <div className="space-y-2">
-      <div className="flex items-center justify-between">
+      <div className="flex items-center justify-between gap-2">
         <span className="text-xs uppercase tracking-wider opacity-60">Biến thể ({variants.length})</span>
-        <button
-          type="button"
-          onClick={() => setEditing('new')}
-          className="text-xs px-2 py-1 rounded bg-yellow-100 hover:bg-yellow-200"
-        >+ Thêm biến thể</button>
+        <div className="flex items-center gap-2">
+          <label className="text-xs opacity-70 inline-flex items-center gap-1">
+            <input
+              type="checkbox"
+              checked={showInactive}
+              onChange={(e) => setShowInactive(e.target.checked)}
+            /> Hiện đã xoá
+          </label>
+          <button
+            type="button"
+            onClick={() => setEditing('new')}
+            className="text-xs px-2 py-1 rounded bg-yellow-100 hover:bg-yellow-200"
+          >+ Thêm biến thể</button>
+        </div>
       </div>
 
       {variants.length === 0 && <p className="text-xs opacity-60">Chưa có biến thể.</p>}
@@ -89,7 +102,7 @@ export function VariantsManager({ productId }: { productId: string | null }) {
           productId={productId}
           variant={editing === 'new' ? null : editing}
           onClose={() => setEditing(null)}
-          onSaved={() => { qc.invalidateQueries({ queryKey: ['admin', 'variants', productId] }); setEditing(null) }}
+          onSaved={() => { qc.invalidateQueries({ queryKey: ['admin', 'variants', productId] }); qc.invalidateQueries({ queryKey: ['admin', 'variants', productId, 'panel'] }); setEditing(null) }}
         />
       )}
     </div>
