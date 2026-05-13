@@ -11,6 +11,10 @@ async function deliverOrder(bot, orderId) {
 
     const order = result.order;
     const product = productService.getById(order.product_id);
+    const variantService = require('./variantService');
+    const db = require('../database');
+    const variant = order.variant_id ? variantService.getById(db, order.variant_id) : null;
+    const orderChannelService = require('./orderChannelService');
 
     if (result.backorder) {
         const inputBlock = order.input_value
@@ -24,6 +28,7 @@ async function deliverOrder(bot, orderId) {
             `💰 ${order.total_price.toLocaleString('vi-VN')}đ${inputBlock}\n` +
             `→ /admin/orders để giao thủ công.`;
         await adminNotifyService.notify('backorder_paid', body, { order_id: order.id });
+        await orderChannelService.postOrderCard({ order, product, variant, keys: null });
         return result;
     }
 
@@ -35,6 +40,7 @@ async function deliverOrder(bot, orderId) {
         usageInstructions,
         postDeliveryKeyboard: postDeliveryKeyboard(),
     });
+    await orderChannelService.postOrderCard({ order, product, variant, keys: result.accounts });
 
     return result;
 }

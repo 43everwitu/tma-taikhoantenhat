@@ -344,6 +344,14 @@ class PaymentPoller {
         `💳 Đã nhận thanh toán đơn #${order.id}.\n` +
         `Đơn này được giao thủ công, shop sẽ xử lý trong ít phút.`,
         'HTML');
+      try {
+        const orderChannelService = require('./orderChannelService');
+        const variantService = require('./variantService');
+        const dbMod = require('../database');
+        const variant = result.order.variant_id ? variantService.getById(dbMod, result.order.variant_id) : null;
+        const productSvc = require('./productService').getById(result.order.product_id);
+        await orderChannelService.postOrderCard({ order: result.order, product: productSvc, variant, keys: null });
+      } catch (e) { console.error('orderChannelService backorder post failed:', e.message); }
       return result;
     }
 
@@ -358,6 +366,14 @@ class PaymentPoller {
           ? `\n\n⚠️ <b>Khách chuyển dư ${formatPrice(overpayAmount)}</b>\nVào /admin/users/${order.user_id}/adjust nếu muốn cộng vào ví.`
           : ''),
         { parse_mode: 'HTML' });
+      try {
+        const orderChannelService = require('./orderChannelService');
+        const variantService = require('./variantService');
+        const dbMod = require('../database');
+        const variant = result.order.variant_id ? variantService.getById(dbMod, result.order.variant_id) : null;
+        const productSvc = require('./productService').getById(result.order.product_id);
+        await orderChannelService.postOrderCard({ order: result.order, product: productSvc, variant, keys: result.accounts });
+      } catch (e) { console.error('orderChannelService auto post failed:', e.message); }
       return result;
     }
 
@@ -374,6 +390,11 @@ class PaymentPoller {
         total: formatPrice(order.total_price).replace(/đ$/, ''),
       }) + `\n\n⏳ <i>Hết hàng tạm thời — admin sẽ giao thủ công sớm nhất.</i>`,
       'HTML');
+    try {
+      const orderChannelService = require('./orderChannelService');
+      const productSvc = require('./productService').getById(order.product_id);
+      await orderChannelService.postOrderCard({ order, product: productSvc, variant: null, keys: null });
+    } catch (e) { console.error('orderChannelService no-stock post failed:', e.message); }
 
     return null;
   }

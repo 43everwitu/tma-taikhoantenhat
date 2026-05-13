@@ -101,6 +101,7 @@ async function start() {
 
   // Wire admin notification dispatcher to the bot instance
   require('./services/adminNotifyService').init(bot);
+  require('./services/orderChannelService').init(bot);
 
   // Initialize notification service
   const { NotificationService } = require('./services/notificationService');

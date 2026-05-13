@@ -149,6 +149,14 @@ router.post('/:id/manual-deliver', validate(z.object({
       const { richifyText } = require('../../../utils/messages');
       const usageInstructions = product?.usage_instructions ? richifyText(product.usage_instructions) : '(không có)';
       await sendDelivery(bot, { ...order, product_name: product?.name }, req.validated.accounts, { usageInstructions });
+      try {
+        const orderChannelService = require('../../../services/orderChannelService');
+        const variantService = require('../../../services/variantService');
+        const variant = order.variant_id ? variantService.getById(db, order.variant_id) : null;
+        await orderChannelService.postOrderCard({ order, product, variant, keys: req.validated.accounts });
+      } catch (channelErr) {
+        console.error('orderChannelService manual-deliver post failed:', channelErr.message);
+      }
     } catch (err) {
       console.error('manual-deliver notify failed:', err.message || err);
     }

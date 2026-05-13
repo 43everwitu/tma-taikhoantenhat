@@ -82,20 +82,25 @@ const orderService = {
       const id = r.lastInsertRowid;
       setPaymentCode.run(`PNS${id}`, id);
 
-      // Reservation: if order has a variant_id, only pull keys with that variant_id.
-      // Otherwise pull product-level keys (variant_id IS NULL) to preserve legacy
-      // single-SKU semantics.
-      const reserved = variantId
-        ? reserveStockBatchByVariant.run(id, productId, variantId, quantity)
-        : reserveStockBatchNoVariant.run(id, productId, quantity);
-      if (reserved.changes < quantity) {
-        // Partial reserve happened — explicit release before throw, defensive
-        // (transaction rollback should also handle, but explicit is safer).
-        releaseReservationsForOrder.run(id);
-        const err = new Error('INSUFFICIENT_STOCK');
-        err.requested = quantity;
-        err.available = reserved.changes;
-        throw err;
+      // Backorder variants have no key inventory — admin fulfils each order
+      // manually. Skip reservation + stock check entirely for those.
+      let isBackorder = false;
+      if (variantId) {
+        const v = db.prepare('SELECT is_backorder FROM product_variants WHERE id = ?').get(variantId);
+        isBackorder = !!(v && v.is_backorder);
+      }
+
+      if (!isBackorder) {
+        const reserved = variantId
+          ? reserveStockBatchByVariant.run(id, productId, variantId, quantity)
+          : reserveStockBatchNoVariant.run(id, productId, quantity);
+        if (reserved.changes < quantity) {
+          releaseReservationsForOrder.run(id);
+          const err = new Error('INSUFFICIENT_STOCK');
+          err.requested = quantity;
+          err.available = reserved.changes;
+          throw err;
+        }
       }
       return id;
     });

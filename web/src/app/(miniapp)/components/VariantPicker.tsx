@@ -21,6 +21,7 @@ export interface Variant {
   inputType?: string
   inputFields?: VariantInputField[] | null
   imageUrl?: string
+  isBackorder?: boolean
 }
 
 interface Props {
@@ -38,7 +39,7 @@ export function VariantPicker({ variants, selectedId, onSelect, inputValues, onI
     <div className="space-y-2">
       <div className="miniapp-variant-grid">
         {variants.map((v) => {
-          const out = v.stock <= 0
+          const out = v.stock <= 0 && !v.isBackorder
           return (
             <button
               key={v.id}
@@ -53,7 +54,7 @@ export function VariantPicker({ variants, selectedId, onSelect, inputValues, onI
               <span className="v-meta">
                 <span className="v-price">{formatPrice(v.price)}</span>
                 <span className={`v-stock ${out ? 'v-stock--out' : 'v-stock--in'}`}>
-                  {out ? 'Hết' : `Còn ${v.stock}`}
+                  {v.isBackorder ? '∞ Có sẵn' : (out ? 'Hết' : `Còn ${v.stock}`)}
                 </span>
               </span>
             </button>

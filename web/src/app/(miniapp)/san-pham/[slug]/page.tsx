@@ -85,7 +85,7 @@ export default function ProductDetailPage() {
         : [])
   const inputValid = !requiresInput || fields.every((f) => !f.required || (inputValues[f.label] ?? '').trim().length >= 1)
 
-  const disabled = effectiveStock <= 0 || p.contactOnly || !inputValid
+  const disabled = (!selected?.isBackorder && effectiveStock <= 0) || p.contactOnly || !inputValid
   const addToCart = () => {
     const trimmed: Record<string, string> = {}
     if (requiresInput) {
@@ -140,9 +140,11 @@ export default function ProductDetailPage() {
             <div>
               <p className="text-2xl font-bold tracking-tight">{formatPrice(effectivePrice)}</p>
               <p className="text-xs mt-1">
-                {effectiveStock > 0
-                  ? <span style={{ color: '#16a34a' }}>● {t.product.inStock.replace('{n}', String(effectiveStock))}</span>
-                  : <span style={{ color: '#dc2626' }}>● {t.product.outOfStock}</span>}
+                {selected?.isBackorder
+                  ? <span style={{ color: '#16a34a' }}>● Có sẵn (đặt trước)</span>
+                  : effectiveStock > 0
+                    ? <span style={{ color: '#16a34a' }}>● {t.product.inStock.replace('{n}', String(effectiveStock))}</span>
+                    : <span style={{ color: '#dc2626' }}>● {t.product.outOfStock}</span>}
               </p>
             </div>
             {!disabled && (
@@ -157,7 +159,7 @@ export default function ProductDetailPage() {
                 <span className="w-6 text-center text-sm font-semibold">{qty}</span>
                 <button
                   type="button"
-                  onClick={() => setQty((q) => Math.min(effectiveStock || 99, q + 1))}
+                  onClick={() => setQty((q) => Math.min(selected?.isBackorder ? 99 : (effectiveStock || 99), q + 1))}
                   className="w-7 h-7 grid place-items-center rounded-full"
                   style={{ background: 'var(--tg-bg)' }}
                   aria-label="Tăng số lượng"
