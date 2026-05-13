@@ -195,10 +195,11 @@ class NotificationService {
     `).run(title, body, adminId || 0, target);
 
     const announcementId = result.lastInsertRowid;
-    const users = db.prepare('SELECT telegram_id FROM users').all();
+    const users = db.prepare('SELECT telegram_id, username FROM users').all();
 
     let sent = 0;
     let failed = 0;
+    const errors = [];
 
     for (const user of users) {
       // Telegram
@@ -206,8 +207,15 @@ class NotificationService {
         try {
           await this.bot.telegram.sendMessage(user.telegram_id, body, { parse_mode: 'HTML' });
           sent++;
-        } catch {
+        } catch (err) {
           failed++;
+          const msg = (err && (err.description || err.message)) || String(err);
+          errors.push({
+            userId: user.telegram_id,
+            username: user.username || null,
+            error: String(msg).slice(0, 300),
+            at: new Date().toISOString(),
+          });
         }
         // Rate limit
         if ((sent + failed) % 25 === 0) await sleep(1000);
@@ -222,11 +230,11 @@ class NotificationService {
       }
     }
 
-    // Update announcement stats
-    db.prepare('UPDATE announcements SET sent_count = ?, failed_count = ? WHERE id = ?')
-      .run(sent, failed, announcementId);
+    // Update announcement stats + error log
+    db.prepare('UPDATE announcements SET sent_count = ?, failed_count = ?, error_details = ? WHERE id = ?')
+      .run(sent, failed, errors.length > 0 ? JSON.stringify(errors) : null, announcementId);
 
-    return { announcementId, sent, failed, total: users.length };
+    return { announcementId, sent, failed, total: users.length, errors };
   }
 
   // ============================================================

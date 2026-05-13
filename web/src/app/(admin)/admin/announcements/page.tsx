@@ -5,6 +5,13 @@ import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { api } from '@/lib/api'
 import { formatDate } from '@/lib/utils'
 
+interface BroadcastError {
+  userId: number
+  username: string | null
+  error: string
+  at: string
+}
+
 interface Announcement {
   id: string
   title: string
@@ -14,6 +21,7 @@ interface Announcement {
   sentCount: number
   failedCount: number
   createdAt: string
+  errorDetails: BroadcastError[] | null
 }
 
 const targetLabels: Record<string, string> = {
@@ -27,6 +35,7 @@ export default function AnnouncementsPage() {
 
   const [title, setTitle] = useState('')
   const [body, setBody] = useState('')
+  const [errorView, setErrorView] = useState<Announcement | null>(null)
   const [target, setTarget] = useState<'all' | 'telegram' | 'web'>('all')
   const [pinned, setPinned] = useState(false)
 
@@ -185,7 +194,12 @@ export default function AnnouncementsPage() {
                   </td>
                   <td className="py-3 px-4 text-right">
                     {ann.failedCount > 0 ? (
-                      <span style={{ color: 'var(--color-pomegranate-700)' }}>{ann.failedCount}</span>
+                      <button
+                        onClick={() => setErrorView(ann)}
+                        className="underline font-medium"
+                        style={{ color: 'var(--color-pomegranate-700)' }}
+                        title="Xem log lỗi"
+                      >{ann.failedCount}</button>
                     ) : (
                       <span className="text-clay-silver">0</span>
                     )}
@@ -199,6 +213,35 @@ export default function AnnouncementsPage() {
           </table>
         )}
       </div>
+
+      {errorView && (
+        <div className="fixed inset-0 z-50 bg-black/40 backdrop-blur-sm flex items-center justify-center p-4" onClick={() => setErrorView(null)}>
+          <div onClick={(e) => e.stopPropagation()} className="bg-white rounded-2xl shadow-xl w-full max-w-2xl p-5 space-y-3 max-h-[85vh] overflow-y-auto">
+            <div className="flex items-center justify-between">
+              <h3 className="text-lg font-semibold">Log lỗi: {errorView.title}</h3>
+              <button type="button" onClick={() => setErrorView(null)} className="opacity-60 text-xl leading-none">×</button>
+            </div>
+            <p className="text-xs opacity-70">
+              {errorView.failedCount} thất bại / {errorView.sentCount} thành công · {formatDate(errorView.createdAt)}
+            </p>
+            {(!errorView.errorDetails || errorView.errorDetails.length === 0) ? (
+              <p className="text-sm text-clay-silver">Không có chi tiết lỗi.</p>
+            ) : (
+              <ul className="space-y-1 text-xs">
+                {errorView.errorDetails.map((e, i) => (
+                  <li key={i} className="rounded-md border border-red-200 bg-red-50 px-2 py-1.5">
+                    <div className="font-medium">
+                      {e.username ? `@${e.username}` : `ID ${e.userId}`}
+                      <span className="opacity-60 ml-2">{new Date(e.at).toLocaleString('vi-VN')}</span>
+                    </div>
+                    <div className="font-mono text-red-700 break-all">{e.error}</div>
+                  </li>
+                ))}
+              </ul>
+            )}
+          </div>
+        </div>
+      )}
     </div>
   )
 }

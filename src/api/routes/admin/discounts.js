@@ -2,7 +2,7 @@ const { Router } = require('express');
 const { z } = require('zod');
 const discountService = require('../../../services/discountService');
 const auditService = require('../../../services/auditService');
-const { validate } = require('../middleware/validate');
+const { validate } = require('../../middleware/validate');
 
 const router = Router();
 

@@ -8,6 +8,10 @@ const { validate } = require('../../middleware/validate');
 const router = Router();
 
 function shapeAnnouncement(r) {
+  let errorDetails = null;
+  if (r.error_details) {
+    try { errorDetails = JSON.parse(r.error_details); } catch { errorDetails = null; }
+  }
   return {
     id: String(r.id),
     title: r.title,
@@ -18,6 +22,7 @@ function shapeAnnouncement(r) {
     failedCount: r.failed_count || 0,
     adminId: r.admin_id,
     createdAt: r.created_at,
+    errorDetails,
   };
 }
 
