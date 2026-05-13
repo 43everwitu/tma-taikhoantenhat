@@ -264,7 +264,7 @@ export function VariantsManager({ productId }: { productId: string | null }) {
           <div onClick={(e) => e.stopPropagation()} className="bg-white rounded-2xl shadow-xl w-full max-w-sm p-5 space-y-3">
             <div className="flex items-center justify-between">
               <h3 className="text-base font-semibold">Đổi giá {selectedIds.size} biến thể</h3>
-              <button onClick={() => setBulkPriceOpen(false)} className="opacity-60 text-xl leading-none">×</button>
+              <button type="button" onClick={() => setBulkPriceOpen(false)} className="opacity-60 text-xl leading-none">×</button>
             </div>
             <label className="block text-sm">
               <span className="text-xs opacity-70 mb-1 inline-block">Giá mới (VND)</span>
@@ -278,8 +278,9 @@ export function VariantsManager({ productId }: { productId: string | null }) {
               />
             </label>
             <div className="flex justify-end gap-2 pt-1">
-              <button onClick={() => setBulkPriceOpen(false)} className="clay-btn text-sm">Huỷ</button>
+              <button type="button" onClick={() => setBulkPriceOpen(false)} className="clay-btn text-sm">Huỷ</button>
               <button
+                type="button"
                 onClick={() => bulkPriceMut.mutate({ ids: Array.from(selectedIds), price: Math.max(0, bulkPrice) })}
                 disabled={bulkPriceMut.isPending}
                 className="clay-btn clay-btn--lemon text-sm"
@@ -361,7 +362,7 @@ function VariantEditModal({ productId, variant, onClose, onSaved }: {
       <div onClick={(e) => e.stopPropagation()} className="bg-white rounded-2xl shadow-xl w-full max-w-md p-5 space-y-3 max-h-[90vh] overflow-y-auto">
         <div className="flex items-center justify-between">
           <h3 className="text-lg font-semibold">{variant ? 'Sửa biến thể' : 'Thêm biến thể'}</h3>
-          <button onClick={onClose} className="opacity-60 text-xl leading-none">×</button>
+          <button type="button" onClick={onClose} className="opacity-60 text-xl leading-none">×</button>
         </div>
 
         <label className="block text-sm">
@@ -510,8 +511,9 @@ function VariantEditModal({ productId, variant, onClose, onSaved }: {
         {err && <p className="text-xs text-red-600">{err}</p>}
 
         <div className="flex justify-end gap-2 pt-1">
-          <button onClick={onClose} className="clay-btn text-sm">Huỷ</button>
+          <button type="button" onClick={onClose} className="clay-btn text-sm">Huỷ</button>
           <button
+            type="button"
             onClick={() => mutation.mutate()}
             disabled={mutation.isPending || !form.name}
             className="clay-btn clay-btn--lemon text-sm"
