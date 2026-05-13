@@ -74,6 +74,8 @@ const orderService = {
       }
     }
 
+    const discountCodeId = opts.discountCodeId ?? null;
+    const discountAmount = opts.discountAmount ?? 0;
     const txn = db.transaction(() => {
       const r = insertOrder.run(
         userId, productId, variantId, quantity, totalPrice,
@@ -81,6 +83,12 @@ const orderService = {
       );
       const id = r.lastInsertRowid;
       setPaymentCode.run(`PNS${id}`, id);
+      if (discountCodeId) {
+        db.prepare(`UPDATE orders SET discount_code_id = ?, discount_amount = ? WHERE id = ?`)
+          .run(discountCodeId, discountAmount, id);
+        db.prepare(`UPDATE discount_codes SET used_count = used_count + 1 WHERE id = ?`)
+          .run(discountCodeId);
+      }
 
       // Backorder variants have no key inventory — admin fulfils each order
       // manually. Skip reservation + stock check entirely for those.

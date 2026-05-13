@@ -73,6 +73,17 @@ router.get('/topups', requireCustomer, (req, res) => {
   res.json({ success: true, data: rows });
 });
 
+// POST /discounts/preview — Validate code + compute discount for given subtotal
+router.post('/discounts/preview', requireCustomer, validate(z.object({
+  code: z.string().min(1).max(40),
+  subtotal: z.number().int().nonnegative(),
+})), (req, res) => {
+  const discountService = require('../../services/discountService');
+  const r = discountService.validateForOrder(req.validated.code, req.validated.subtotal, req.customer.telegramId);
+  if (!r.ok) return res.status(400).json({ success: false, error: { code: 'DISCOUNT_INVALID', message: r.reason } });
+  res.json({ success: true, data: { discount: r.discount, total: req.validated.subtotal - r.discount, code: r.code.code } });
+});
+
 // POST /orders — Create order (requires customer auth)
 router.post('/orders', requireCustomer, validate(z.object({
   productId: z.number().int().positive(),
@@ -80,8 +91,9 @@ router.post('/orders', requireCustomer, validate(z.object({
   bankIndex: z.number().int().min(0).max(1).optional().default(0),
   variantId: z.number().int().positive().nullable().optional(),
   inputValue: z.string().min(1).max(200).nullable().optional(),
+  discountCode: z.string().max(40).nullable().optional(),
 })), (req, res) => {
-  const { productId, quantity, bankIndex, variantId, inputValue } = req.validated;
+  const { productId, quantity, bankIndex, variantId, inputValue, discountCode } = req.validated;
   const telegramId = req.customer.telegramId;
 
   const product = db.prepare('SELECT * FROM products WHERE id = ? AND is_active = 1').get(productId);
@@ -120,7 +132,18 @@ router.post('/orders', requireCustomer, validate(z.object({
   }
 
   const unitPrice = variant ? variant.price : product.price;
-  const totalPrice = unitPrice * quantity;
+  const subtotal = unitPrice * quantity;
+  let totalPrice = subtotal;
+  let discountCodeId = null;
+  let discountAmount = 0;
+  if (discountCode) {
+    const discountService = require('../../services/discountService');
+    const r = discountService.validateForOrder(discountCode, subtotal, telegramId);
+    if (!r.ok) return res.status(400).json({ success: false, error: { code: 'DISCOUNT_INVALID', message: r.reason } });
+    discountCodeId = r.code.id;
+    discountAmount = r.discount;
+    totalPrice = Math.max(0, subtotal - r.discount);
+  }
 
   const order = orderService.create(
     telegramId, productId, quantity, totalPrice,
@@ -129,6 +152,8 @@ router.post('/orders', requireCustomer, validate(z.object({
       bankName: paymentService.getBank(bankIndex).NAME,
       variantId: variantId ?? null,
       inputValue: inputValue ?? null,
+      discountCodeId,
+      discountAmount,
     }
   );
 

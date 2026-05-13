@@ -23,5 +23,6 @@ router.use('/upload', require('./upload'));
 router.use('/uploads', require('./upload'));
 router.use('/me', require('./me'));
 router.use('/admins', require('./admins'));
+router.use('/discounts', require('./discounts'));
 
 module.exports = router;

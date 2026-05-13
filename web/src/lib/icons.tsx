@@ -62,4 +62,5 @@ export {
   RotateCcw,
   MessageSquare,
   ShieldCheck,
+  Ticket,
 } from 'lucide-react'

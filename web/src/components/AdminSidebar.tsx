@@ -5,7 +5,7 @@ import { usePathname, useRouter } from 'next/navigation'
 import { useEffect } from 'react'
 import { useQuery } from '@tanstack/react-query'
 import { api, clearAdminToken } from '@/lib/api'
-import { BarChart3, Receipt, Package, Boxes, Megaphone, Settings, LogOut, Users, Wallet, X, MessageSquare, ShieldCheck } from '@/lib/icons'
+import { BarChart3, Receipt, Package, Boxes, Megaphone, Settings, LogOut, Users, Wallet, X, MessageSquare, ShieldCheck, Ticket } from '@/lib/icons'
 import { MascotBadge } from '@/components/MascotBadge'
 import { t } from '@/i18n/vi'
 
@@ -17,6 +17,7 @@ const NAV = [
   { href: '/admin/users', label: 'Người dùng', icon: Users, perm: 'users.read' },
   { href: '/admin/admins', label: 'Quản trị', icon: ShieldCheck, perm: 'admins.read' },
   { href: '/admin/topups', label: 'Nạp tiền', icon: Wallet, feature: 'topups' as const, perm: 'topups.read' },
+  { href: '/admin/discounts', label: 'Mã giảm giá', icon: Ticket, perm: 'products.read' },
   { href: '/admin/announcements', label: 'Thông báo', icon: Megaphone, perm: 'announcements.read' },
   { href: '/admin/messages', label: 'Tin nhắn', icon: MessageSquare, feature: 'broadcast' as const, perm: 'messages.read' },
   { href: '/admin/settings', label: 'Cài đặt', icon: Settings, perm: 'settings.read' },
