@@ -43,8 +43,11 @@ export function MiniAppShell({
         <header className="miniapp-header">
           <div className="miniapp-container px-4 py-3 flex items-center justify-between">
             <Link href="/" className="miniapp-brand">
-              <span className="miniapp-brand-mark">T</span>
-              <span>{title ?? t.appName}</span>
+              <span className="miniapp-brand-mark">
+                {/* eslint-disable-next-line @next/next/no-img-element */}
+                <img src="/favicon.png" alt="" width={32} height={32} />
+              </span>
+              <span className="line-clamp-2">{title ?? t.appName}</span>
             </Link>
 
             <nav className="miniapp-topnav-actions">
@@ -103,7 +106,7 @@ export function MiniAppShell({
         </header>
       )}
 
-      <main className={`miniapp-container px-4 pt-3 ${hasBottombar ? 'pb-32' : 'pb-24'} md:pb-12`}>
+      <main className={`miniapp-container px-4 pt-3 ${hasBottombar ? 'pb-48' : 'pb-24'} md:pb-12`}>
         {children}
       </main>
 

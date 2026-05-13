@@ -1,6 +1,8 @@
 'use client'
 
+import { useEffect, useRef, useState } from 'react'
 import { formatPrice } from '@/lib/utils'
+import { Icon } from './Icon'
 
 export interface VariantInputField {
   label: string
@@ -32,35 +34,89 @@ interface Props {
   onInputChange: (values: Record<string, string>) => void
 }
 
+function stockLabel(v: Variant) {
+  if (v.isBackorder) return '∞'
+  if (v.stock <= 0) return 'Hết'
+  return `Còn ${v.stock}`
+}
+
+function stockTone(v: Variant): 'in' | 'out' {
+  if (v.isBackorder) return 'in'
+  return v.stock <= 0 ? 'out' : 'in'
+}
+
 export function VariantPicker({ variants, selectedId, onSelect, inputValues, onInputChange }: Props) {
   const selected = variants.find((v) => v.id === selectedId) ?? null
+  const [open, setOpen] = useState(false)
+  const wrapRef = useRef<HTMLDivElement>(null)
+
+  useEffect(() => {
+    if (!open) return
+    function onDocClick(e: MouseEvent) {
+      if (!wrapRef.current?.contains(e.target as Node)) setOpen(false)
+    }
+    function onKey(e: KeyboardEvent) { if (e.key === 'Escape') setOpen(false) }
+    document.addEventListener('mousedown', onDocClick)
+    document.addEventListener('keydown', onKey)
+    return () => {
+      document.removeEventListener('mousedown', onDocClick)
+      document.removeEventListener('keydown', onKey)
+    }
+  }, [open])
+
+  function pick(id: string) {
+    onSelect(id)
+    setOpen(false)
+  }
 
   return (
     <div className="space-y-2">
-      <div className="miniapp-variant-grid">
-        {variants.map((v) => {
-          const out = v.stock <= 0 && !v.isBackorder
-          return (
-            <button
-              key={v.id}
-              type="button"
-              className="miniapp-variant-tile"
-              aria-pressed={selectedId === v.id}
-              aria-disabled={out}
-              disabled={out}
-              onClick={() => onSelect(v.id)}
-            >
-              <span className="v-name">{v.name}</span>
-              <span className="v-meta">
-                <span className="v-price">{formatPrice(v.price)}</span>
-                <span className={`v-stock ${out ? 'v-stock--out' : 'v-stock--in'}`}>
-                  {v.isBackorder ? '∞' : (out ? 'Hết' : `Còn ${v.stock}`)}
-                </span>
-              </span>
-            </button>
-          )
-        })}
+      <div ref={wrapRef} className="relative">
+        <button
+          type="button"
+          onClick={() => setOpen((o) => !o)}
+          aria-expanded={open}
+          className="miniapp-variant-select"
+        >
+          <span className="v-name">{selected ? selected.name : 'Chọn biến thể'}</span>
+          {selected && (
+            <span className="v-meta">
+              <span className="v-price">{formatPrice(selected.price)}</span>
+              <span className={`v-stock v-stock--${stockTone(selected)}`}>{stockLabel(selected)}</span>
+            </span>
+          )}
+          <Icon name="chevronRight" size={16} className={open ? 'rotate-90' : ''} />
+        </button>
+
+        {open && (
+          <ul role="listbox" className="miniapp-variant-list" aria-label="Biến thể">
+            {variants.map((v) => {
+              const out = v.stock <= 0 && !v.isBackorder
+              const isSelected = selectedId === v.id
+              return (
+                <li key={v.id}>
+                  <button
+                    type="button"
+                    role="option"
+                    aria-selected={isSelected}
+                    aria-disabled={out}
+                    disabled={out}
+                    onClick={() => pick(v.id)}
+                    className={`miniapp-variant-row ${isSelected ? 'is-selected' : ''} ${out ? 'is-out' : ''}`}
+                  >
+                    <span className="v-name">{v.name}</span>
+                    <span className="v-meta">
+                      <span className="v-price">{formatPrice(v.price)}</span>
+                      <span className={`v-stock v-stock--${stockTone(v)}`}>{stockLabel(v)}</span>
+                    </span>
+                  </button>
+                </li>
+              )
+            })}
+          </ul>
+        )}
       </div>
+
       {selected?.description && (
         <div
           className="rich-text text-xs opacity-80"
