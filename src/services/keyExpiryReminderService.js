@@ -69,16 +69,37 @@ async function sweep() {
   return { sent, scanned: rows.length };
 }
 
+// Compute ms until next 09:00 Asia/Ho_Chi_Minh (UTC+7, no DST).
+function msUntilNext9amICT() {
+  const now = Date.now();
+  // 09:00 ICT = 02:00 UTC.
+  const utcNow = new Date(now);
+  const target = new Date(Date.UTC(
+    utcNow.getUTCFullYear(),
+    utcNow.getUTCMonth(),
+    utcNow.getUTCDate(),
+    2, 0, 0, 0, // 02:00 UTC = 09:00 ICT
+  ));
+  if (target.getTime() <= now) target.setUTCDate(target.getUTCDate() + 1);
+  return target.getTime() - now;
+}
+
 function start(b) {
   init(b);
-  // Run once at startup (catches missed runs), then every 24h.
+  // First catch-up sweep 10s after boot for missed-while-down orders.
   setTimeout(() => sweep().catch(() => {}), 10_000);
-  if (timer) clearInterval(timer);
-  timer = setInterval(() => sweep().catch(() => {}), 24 * 60 * 60 * 1000);
+  if (timer) clearTimeout(timer);
+  const armDaily = () => {
+    timer = setTimeout(async () => {
+      await sweep().catch(() => {});
+      armDaily();
+    }, msUntilNext9amICT());
+  };
+  armDaily();
 }
 
 function stop() {
-  if (timer) clearInterval(timer);
+  if (timer) clearTimeout(timer);
   timer = null;
 }
 

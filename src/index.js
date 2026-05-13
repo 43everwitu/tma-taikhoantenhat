@@ -103,7 +103,7 @@ async function start() {
   require('./services/adminNotifyService').init(bot);
   require('./services/orderChannelService').init(bot);
   require('./services/keyExpiryReminderService').start(bot);
-  console.log('⏰ Key expiry reminder sweep armed (daily)');
+  console.log('⏰ Key expiry reminder armed (daily 09:00 ICT)');
 
   // Initialize notification service
   const { NotificationService } = require('./services/notificationService');
