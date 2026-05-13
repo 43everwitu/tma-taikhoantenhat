@@ -80,6 +80,21 @@ async function start() {
   console.log(`👤 Admin ID: ${config.ADMIN_ID}`);
   console.log(`🏦 Bank: ${config.BANK.NAME} - ${config.BANK.ACCOUNT}`);
 
+  // Sync the chat menu button to MINIAPP_URL so /env is single source of truth.
+  // Otherwise BotFather's stored URL (set manually once) goes stale every time
+  // the tunnel host changes, leaving the in-Telegram WebApp blank.
+  const miniappUrl = (process.env.MINIAPP_URL || '').replace(/\/$/, '');
+  if (miniappUrl) {
+    try {
+      await bot.telegram.setChatMenuButton({
+        menuButton: { type: 'web_app', text: 'Mở shop', web_app: { url: miniappUrl } },
+      });
+      console.log(`🔘 Menu button → ${miniappUrl}`);
+    } catch (err) {
+      console.error('⚠️ Failed to set menu button:', err.message || err);
+    }
+  }
+
   // Seed initial admin account
   const authService = require('./services/authService');
   await authService.seedAdmin();
