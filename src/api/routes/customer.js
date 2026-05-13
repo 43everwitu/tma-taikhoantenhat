@@ -100,19 +100,23 @@ router.post('/orders', requireCustomer, validate(z.object({
     }
   }
 
-  let available;
-  if (variant) {
-    available = db.prepare(
-      'SELECT COUNT(*) as c FROM stock WHERE product_id = ? AND variant_id = ? AND is_sold = 0 AND reserved_for_order_id IS NULL'
-    ).get(productId, variantId).c;
-  } else {
-    const stockCount = db.prepare(
-      'SELECT COUNT(*) as c FROM stock WHERE product_id = ? AND variant_id IS NULL AND is_sold = 0 AND reserved_for_order_id IS NULL'
-    ).get(productId).c;
-    available = stockCount > 0 ? stockCount : (product.sheet_stock || 0);
-  }
-  if (available < quantity) {
-    return res.status(400).json({ success: false, error: { code: 'INSUFFICIENT_STOCK', message: `Chỉ còn ${available} sản phẩm` } });
+  // Backorder variants: skip stock pre-flight check entirely — admin will
+  // fulfil each order manually. orderService.create also bypasses reservation.
+  if (!(variant && variant.is_backorder)) {
+    let available;
+    if (variant) {
+      available = db.prepare(
+        'SELECT COUNT(*) as c FROM stock WHERE product_id = ? AND variant_id = ? AND is_sold = 0 AND reserved_for_order_id IS NULL'
+      ).get(productId, variantId).c;
+    } else {
+      const stockCount = db.prepare(
+        'SELECT COUNT(*) as c FROM stock WHERE product_id = ? AND variant_id IS NULL AND is_sold = 0 AND reserved_for_order_id IS NULL'
+      ).get(productId).c;
+      available = stockCount > 0 ? stockCount : (product.sheet_stock || 0);
+    }
+    if (available < quantity) {
+      return res.status(400).json({ success: false, error: { code: 'INSUFFICIENT_STOCK', message: `Chỉ còn ${available} sản phẩm` } });
+    }
   }
 
   const unitPrice = variant ? variant.price : product.price;

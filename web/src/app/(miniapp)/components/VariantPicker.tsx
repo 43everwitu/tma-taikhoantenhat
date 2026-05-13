@@ -54,7 +54,7 @@ export function VariantPicker({ variants, selectedId, onSelect, inputValues, onI
               <span className="v-meta">
                 <span className="v-price">{formatPrice(v.price)}</span>
                 <span className={`v-stock ${out ? 'v-stock--out' : 'v-stock--in'}`}>
-                  {v.isBackorder ? '∞ Có sẵn' : (out ? 'Hết' : `Còn ${v.stock}`)}
+                  {v.isBackorder ? '∞' : (out ? 'Hết' : `Còn ${v.stock}`)}
                 </span>
               </span>
             </button>
