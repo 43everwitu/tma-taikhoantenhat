@@ -1,10 +1,11 @@
 'use client'
 
 import Link from 'next/link'
-import { ReactNode } from 'react'
-import { usePathname } from 'next/navigation'
+import { ReactNode, useCallback } from 'react'
+import { usePathname, useRouter } from 'next/navigation'
 import { useQuery } from '@tanstack/react-query'
 import { apiFetch } from '@/lib/miniappApi'
+import { useTelegramBackButton } from '@/lib/useTelegramBackButton'
 import { Icon } from './Icon'
 import type { MiniappIconName } from '@/lib/miniappIcons'
 import { t } from '@/i18n/vi'
@@ -31,6 +32,9 @@ export function MiniAppShell({
   hasBottombar?: boolean
 }) {
   const pathname = usePathname()
+  const router = useRouter()
+  const onBack = useCallback(() => { router.back() }, [router])
+  useTelegramBackButton(pathname !== '/', onBack)
   const shopInfo = useQuery({
     queryKey: ['shop', 'info'],
     queryFn: () => apiFetch<{ supportUrl?: string }>('/shop/info'),
