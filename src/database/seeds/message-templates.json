@@ -106,5 +106,71 @@
     "label": "Web — đơn hết hạn",
     "variables": ["orderCode"],
     "body": "Đơn {{orderCode}} đã hết hạn. Shop đã trả lại stock. Bạn đặt lại nhé!"
+  },
+  "admin.backorder_paid": {
+    "channel": "admin",
+    "label": "Admin — đơn backorder đã thanh toán",
+    "variables": ["orderCode", "productName", "quantity", "total", "userMention", "inputBlock"],
+    "body": "🛎 Đơn đặt trước cần xử lý: #{{orderCode}}\n📦 {{productName}} (×{{quantity}})\n💰 {{total}}đ\nKH: {{userMention}}{{inputBlock}}\n→ /admin/orders để giao thủ công."
+  },
+  "admin.delivered": {
+    "channel": "admin",
+    "label": "Admin — đã tự động giao hàng",
+    "variables": ["orderCode", "productName", "quantity", "userMention", "overpayBlock"],
+    "body": "✅ Tự động giao hàng đơn #{{orderCode}}\nKH: {{userMention}}\nSP: {{productName}}\nSL: {{quantity}}{{overpayBlock}}"
+  },
+  "admin.no_stock": {
+    "channel": "admin",
+    "label": "Admin — đã thanh toán nhưng hết hàng",
+    "variables": ["orderCode", "productName", "quantity", "userMention"],
+    "body": "💳 Đã nhận thanh toán đơn #{{orderCode}} nhưng hết hàng!\nKH: {{userMention}}\nSP: {{productName}}\nSL: {{quantity}}\nCần giao thủ công."
+  },
+  "admin.payment_short": {
+    "channel": "admin",
+    "label": "Admin — thanh toán thiếu / lệch",
+    "variables": ["orderCode", "total", "received", "memo", "userMention", "note"],
+    "body": "⚠️ Thanh toán thiếu cho đơn #{{orderCode}}\nKH: {{userMention}}\nMã: {{memo}}\nChuyển: {{received}}đ\nCần: {{total}}đ\n\n<i>{{note}}</i>"
+  },
+  "admin.low_stock": {
+    "channel": "admin",
+    "label": "Admin — sản phẩm sắp hết kho",
+    "variables": ["productEmoji", "productName", "productId", "stockCount", "threshold", "stockUrlBlock"],
+    "body": "⚠️ <b>Tồn kho thấp</b>\n\n{{productEmoji}} <b>{{productName}}</b>\n🆔 ID: <code>{{productId}}</code>\n📦 Còn lại: <b>{{stockCount}}</b> / ngưỡng {{threshold}}{{stockUrlBlock}}"
+  },
+  "group.order_card": {
+    "channel": "group",
+    "label": "Kênh đơn hàng — thẻ đơn",
+    "variables": ["orderCode", "paymentCode", "productLine", "quantity", "totalSpoiler", "customerLine", "keysBlock"],
+    "body": "📥 <b>Order #{{orderCode}} Notification</b>\n─────────────\n💰 <b>Thanh toán</b>: {{totalSpoiler}}\n🧾 <b>Mã đơn</b>: <code>{{paymentCode}}</code>{{customerLine}}\n📦 <b>Sản phẩm</b>: {{productLine}} ×{{quantity}}\n─────────────\n{{keysBlock}}"
+  },
+  "bot.expiry_reminder": {
+    "channel": "bot",
+    "label": "Bot — nhắc key sắp hết hạn",
+    "variables": ["orderRef", "productName", "expiryDate", "supportContact"],
+    "body": "⏰ <b>Đơn {{orderRef}}</b> sắp hết hạn.\n📦 {{productName}}\n📅 Hết hạn: <b>{{expiryDate}}</b>\n\nGia hạn vui lòng liên hệ {{supportContact}}."
+  },
+  "bot.backorder_wait": {
+    "channel": "bot",
+    "label": "Bot — chờ giao thủ công (backorder)",
+    "variables": ["orderCode", "waitMsg"],
+    "body": "💳 Đã nhận thanh toán đơn #{{orderCode}}.\n{{waitMsg}}"
+  },
+  "bot.order_expired_short": {
+    "channel": "bot",
+    "label": "Bot — đơn hết hạn (rút gọn)",
+    "variables": ["orderCode"],
+    "body": "⏰ Đơn #{{orderCode}} hết hạn thanh toán.\nGõ /menu để đặt lại."
+  },
+  "bot.order_cancelled_short": {
+    "channel": "bot",
+    "label": "Bot — đơn bị huỷ (rút gọn)",
+    "variables": ["orderCode"],
+    "body": "❌ Đơn #{{orderCode}} đã bị hủy.\nLiên hệ hỗ trợ nếu cần."
+  },
+  "bot.stock_replenished": {
+    "channel": "bot",
+    "label": "Bot — báo có hàng lại (followers)",
+    "variables": ["productEmoji", "productName", "stockCount"],
+    "body": "🔔 <b>{{productEmoji}} {{productName}}</b> đã có hàng!\nCòn {{stockCount}} sản phẩm. Mua ngay: /menu"
   }
 }
