@@ -28,7 +28,10 @@ router.put('/:key', validate(z.object({ body: z.string().min(1).max(4000) })), (
     const all = messageTemplateService.list();
     const meta = all.find((t) => t.key === req.params.key);
     const channel = meta ? meta.channel : 'bot';
-    const sanitized = channel === 'bot' ? toTelegramHtml(req.body.body) : req.body.body;
+    // admin and group bodies are also sent via bot.telegram.sendMessage with
+    // parse_mode: 'HTML' — they need the same Telegram-HTML allowlist as 'bot'.
+    // Only 'web' channel skips sanitisation here (passes through unchanged).
+    const sanitized = channel === 'web' ? req.body.body : toTelegramHtml(req.body.body);
     messageTemplateService.update(req.params.key, sanitized);
     auditService.log(req.admin.adminId, 'message.update', 'message_template', req.params.key, { body: sanitized }, req.ip);
     res.json({ success: true, data: { sanitized } });
