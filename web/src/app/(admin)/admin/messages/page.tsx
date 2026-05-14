@@ -68,45 +68,80 @@ export default function AdminMessagesPage() {
 
   if (isLoading) return <div className="p-6">Đang tải...</div>
 
+  const CHANNEL_META: Record<MessageTemplate['channel'], { label: string; tone: string }> = {
+    bot: { label: 'Bot — gửi tới khách', tone: 'bg-sky-100 text-sky-800 border-sky-200' },
+    admin: { label: 'Admin — gửi tới quản trị', tone: 'bg-amber-100 text-amber-800 border-amber-200' },
+    group: { label: 'Group — kênh đơn hàng', tone: 'bg-violet-100 text-violet-800 border-violet-200' },
+    web: { label: 'Web — thông báo website', tone: 'bg-emerald-100 text-emerald-800 border-emerald-200' },
+  }
+
+  function renderRow(t: MessageTemplate) {
+    return (
+      <li key={t.key} className="flex items-stretch gap-2">
+        <button
+          onClick={() => pick(t)}
+          className={`flex-1 min-w-0 text-left px-3 py-2 rounded-lg text-sm transition ${activeKey === t.key ? 'bg-clay-ink text-white' : 'hover:bg-clay-cream'}`}
+        >
+          <div className="font-medium truncate">{t.label}</div>
+          <div className="text-[11px] opacity-60 font-mono truncate">{t.key}</div>
+        </button>
+        <div className="w-14 shrink-0 flex items-center justify-end">
+          {t.core ? (
+            <span
+              title="Template bắt buộc — không thể tắt"
+              className="text-[9px] font-bold uppercase tracking-wide px-1.5 py-1 rounded bg-amber-200 text-amber-900 leading-none whitespace-nowrap"
+            >
+              Khoá
+            </span>
+          ) : (
+            <button
+              type="button"
+              aria-label={t.enabled ? 'Tắt' : 'Bật'}
+              title={t.enabled ? 'Đang bật — bấm để tắt' : 'Đang tắt — bấm để bật'}
+              onClick={(e) => { e.stopPropagation(); toggleMut.mutate({ key: t.key, enabled: !t.enabled }) }}
+              disabled={toggleMut.isPending}
+              className={`w-full h-7 rounded-md text-[11px] font-bold transition ${t.enabled ? 'bg-emerald-500 text-white' : 'bg-zinc-300 text-zinc-700'} disabled:opacity-60`}
+            >
+              {t.enabled ? 'ON' : 'OFF'}
+            </button>
+          )}
+        </div>
+      </li>
+    )
+  }
+
   return (
-    <div className="grid grid-cols-1 lg:grid-cols-[280px_1fr] gap-4 p-4">
-      <aside className="clay-card p-3 max-h-[80vh] overflow-y-auto">
+    <div className="grid grid-cols-1 lg:grid-cols-[320px_1fr] gap-4 p-4">
+      <aside className="clay-card p-0 max-h-[85vh] overflow-y-auto">
         {(['bot', 'admin', 'group', 'web'] as const).map((ch) => {
           const items = list.filter((t) => t.channel === ch)
           if (items.length === 0) return null
+          const core = items.filter((t) => t.core)
+          const optional = items.filter((t) => !t.core)
+          const meta = CHANNEL_META[ch]
           return (
-            <div key={ch} className="mb-4">
-              <h3 className="text-xs uppercase tracking-wider text-clay-charcoal px-2 mb-2">{ch}</h3>
-              <ul className="space-y-1">
-                {items.map((t) => (
-                  <li key={t.key} className="flex items-stretch gap-1">
-                    <button
-                      onClick={() => pick(t)}
-                      className={`flex-1 text-left px-3 py-2 rounded-lg text-sm transition ${activeKey === t.key ? 'bg-clay-ink text-white' : 'hover:bg-clay-cream'}`}
-                    >
-                      <div className="font-medium flex items-center gap-1.5">
-                        {t.label}
-                        {t.core && <span className="text-[9px] uppercase tracking-wide px-1 py-px rounded bg-amber-200 text-amber-900">Bắt buộc</span>}
-                        {!t.core && !t.enabled && <span className="text-[9px] uppercase tracking-wide px-1 py-px rounded bg-zinc-300 text-zinc-700">Tắt</span>}
-                      </div>
-                      <div className="text-xs opacity-70">{t.key}</div>
-                    </button>
-                    {!t.core && (
-                      <button
-                        type="button"
-                        aria-label={t.enabled ? 'Tắt' : 'Bật'}
-                        title={t.enabled ? 'Đang bật — bấm để tắt' : 'Đang tắt — bấm để bật'}
-                        onClick={(e) => { e.stopPropagation(); toggleMut.mutate({ key: t.key, enabled: !t.enabled }) }}
-                        disabled={toggleMut.isPending}
-                        className={`w-9 shrink-0 rounded-lg text-xs font-semibold transition ${t.enabled ? 'bg-emerald-500 text-white' : 'bg-zinc-300 text-zinc-700'} disabled:opacity-60`}
-                      >
-                        {t.enabled ? 'ON' : 'OFF'}
-                      </button>
-                    )}
-                  </li>
-                ))}
-              </ul>
-            </div>
+            <section key={ch} className="border-b border-clay-cream last:border-b-0">
+              <header
+                className={`sticky top-0 z-10 px-3 py-2 text-xs font-semibold flex items-center justify-between border-b backdrop-blur ${meta.tone}`}
+              >
+                <span className="uppercase tracking-wider">{meta.label}</span>
+                <span className="text-[10px] font-normal opacity-70">{items.length}</span>
+              </header>
+              <div className="p-2 space-y-3">
+                {core.length > 0 && (
+                  <div>
+                    <p className="text-[10px] uppercase tracking-wider px-2 py-1 text-clay-charcoal/70">Bắt buộc · {core.length}</p>
+                    <ul className="space-y-1">{core.map(renderRow)}</ul>
+                  </div>
+                )}
+                {optional.length > 0 && (
+                  <div>
+                    <p className="text-[10px] uppercase tracking-wider px-2 py-1 text-clay-charcoal/70">Tuỳ chọn · {optional.length}</p>
+                    <ul className="space-y-1">{optional.map(renderRow)}</ul>
+                  </div>
+                )}
+              </div>
+            </section>
           )
         })}
       </aside>
