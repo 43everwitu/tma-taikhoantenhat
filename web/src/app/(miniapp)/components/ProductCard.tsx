@@ -32,24 +32,13 @@ export function ProductCard({ p }: { p: ProductSummary }) {
               src={p.imageUrl}
               alt={p.name}
               fill
-              sizes="(min-width: 1536px) 14vw, (min-width: 1280px) 17vw, (min-width: 1024px) 20vw, (min-width: 768px) 25vw, (min-width: 480px) 33vw, 50vw"
+              sizes="(min-width: 1024px) 20vw, (min-width: 768px) 25vw, (min-width: 480px) 33vw, 50vw"
               style={{ objectFit: 'cover' }}
             />
           ) : (
             <div className="absolute inset-0 grid place-items-center" style={{ color: 'var(--brand-gold-deep)' }}>
               <Icon name="package" size={44} strokeWidth={1.25} />
             </div>
-          )}
-          {inStock && (
-            <button
-              type="button"
-              aria-label="Thêm nhanh vào giỏ"
-              onClick={(e) => { e.preventDefault(); e.stopPropagation(); setQuickOpen(true) }}
-              className="absolute bottom-2 right-2 w-8 h-8 grid place-items-center rounded-full"
-              style={{ background: 'var(--brand-gold)', color: 'var(--brand-ink)', boxShadow: '0 2px 6px rgba(0,0,0,.18)' }}
-            >
-              <Icon name="plus" size={16} />
-            </button>
           )}
         </div>
         <div className="miniapp-product-info">
@@ -59,6 +48,17 @@ export function ProductCard({ p }: { p: ProductSummary }) {
             <span style={{ width: 6, height: 6, borderRadius: 999, background: 'currentColor', display: 'inline-block' }} />
             {inStock ? `Còn ${p.stock}` : 'Hết hàng'}
           </p>
+          {inStock && (
+            <button
+              type="button"
+              aria-label="Mua nhanh"
+              onClick={(e) => { e.preventDefault(); e.stopPropagation(); setQuickOpen(true) }}
+              className="miniapp-product-quickbuy"
+            >
+              <Icon name="zap" size={14} />
+              <span>Mua nhanh</span>
+            </button>
+          )}
         </div>
       </Link>
       {quickOpen && <VariantQuickBuy slug={p.slug} onClose={() => setQuickOpen(false)} />}

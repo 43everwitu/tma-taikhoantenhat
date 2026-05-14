@@ -373,6 +373,19 @@ body {
   }
   .miniapp-product-stock.in { color: #16a34a; }
   .miniapp-product-stock.out { color: #dc2626; }
+  .miniapp-product-quickbuy {
+    margin-top: .5rem;
+    width: 100%;
+    display: inline-flex; align-items: center; justify-content: center; gap: .375rem;
+    padding: .375rem .5rem;
+    border-radius: 10px;
+    font-size: .75rem; font-weight: 600;
+    background: var(--brand-gold);
+    color: var(--brand-ink);
+    transition: filter .15s ease;
+  }
+  .miniapp-product-quickbuy:hover { filter: brightness(.95); }
+  .miniapp-product-quickbuy:active { transform: translateY(1px); }
   .miniapp-product-badge {
     position: absolute; top: .5rem; left: .5rem;
     padding: .125rem .5rem;
