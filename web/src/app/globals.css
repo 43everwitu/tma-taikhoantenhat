@@ -433,6 +433,18 @@ body {
     color: #fff;
     border-color: var(--brand-ink);
   }
+  /* Chip row + filter button on same axis. Chips scroll horizontally;
+     filter button is pinned at the end and does not shrink. */
+  .miniapp-chip-filter-row {
+    display: flex; gap: .5rem; align-items: center;
+    margin-top: .625rem;
+  }
+  .miniapp-chip-filter-row > .miniapp-chip-row {
+    flex: 1 1 auto; min-width: 0; margin-top: 0;
+  }
+  .miniapp-chip-filter-row > .miniapp-filter-anchor {
+    flex: 0 0 auto;
+  }
 
   /* Primary CTA button */
   .miniapp-btn {

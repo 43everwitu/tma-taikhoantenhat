@@ -43,25 +43,28 @@ export default function AllProductsPage() {
     <MiniAppShell title="Tất cả sản phẩm" subtitle={products.data ? `${products.data.length} sản phẩm` : undefined}>
       <SearchBox value={q} onChange={setQ} placeholder={t.catalog.searchPlaceholder} />
 
-      <div className="miniapp-chip-row">
-        <button
-          type="button"
-          className="miniapp-chip"
-          aria-pressed={activeSlug === ''}
-          onClick={() => setActiveSlug('')}
-        >Tất cả</button>
-        {cats.data?.map((c) => (
+      <div className="miniapp-chip-filter-row">
+        <div className="miniapp-chip-row">
           <button
-            key={c.id}
             type="button"
             className="miniapp-chip"
-            aria-pressed={activeSlug === c.slug}
-            onClick={() => setActiveSlug(c.slug)}
-          >{c.name}</button>
-        ))}
+            aria-pressed={activeSlug === ''}
+            onClick={() => setActiveSlug('')}
+          >Tất cả</button>
+          {cats.data?.map((c) => (
+            <button
+              key={c.id}
+              type="button"
+              className="miniapp-chip"
+              aria-pressed={activeSlug === c.slug}
+              onClick={() => setActiveSlug(c.slug)}
+            >{c.name}</button>
+          ))}
+        </div>
+        <div className="miniapp-filter-anchor">
+          <FilterBar value={filter} onChange={setFilter} />
+        </div>
       </div>
-
-      <FilterBar value={filter} onChange={setFilter} />
 
       <div className="miniapp-section">
         {products.isLoading && <p className="opacity-60 text-sm">Đang tải…</p>}
