@@ -5,7 +5,7 @@ import { usePathname, useRouter } from 'next/navigation'
 import { useEffect } from 'react'
 import { useQuery } from '@tanstack/react-query'
 import { api, clearAdminToken } from '@/lib/api'
-import { BarChart3, Receipt, Package, Boxes, Megaphone, Settings, LogOut, Users, Wallet, X, MessageSquare, ShieldCheck, Ticket } from '@/lib/icons'
+import { BarChart3, Receipt, Package, Boxes, Megaphone, Settings, LogOut, Users, Wallet, X, MessageSquare, ShieldCheck, Ticket, KeyRound } from '@/lib/icons'
 import { MascotBadge } from '@/components/MascotBadge'
 import { t } from '@/i18n/vi'
 
@@ -21,6 +21,7 @@ const NAV = [
   { href: '/admin/announcements', label: 'Thông báo', icon: Megaphone, perm: 'announcements.read' },
   { href: '/admin/messages', label: 'Tin nhắn', icon: MessageSquare, perm: 'messages.read' },
   { href: '/admin/settings', label: 'Cài đặt', icon: Settings, perm: 'settings.read' },
+  { href: '/admin/profile', label: 'Bảo mật', icon: KeyRound },
 ]
 
 interface Props {

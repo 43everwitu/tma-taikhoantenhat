@@ -74,6 +74,29 @@ export interface MessageTemplate {
   core: boolean
 }
 
+export interface Admin2FAState {
+  enabled: boolean
+  required: boolean
+  backupCount: number
+}
+
+export const adminAuth = {
+  login: (username: string, password: string) =>
+    api.post<{ ok: true; token?: string; requires2fa?: boolean; challengeToken?: string; requiresEnroll?: boolean; enrollToken?: string; admin?: { id: number; username: string; displayName: string; role: string } }>('/auth/login', { username, password }),
+  verify2fa: (challengeToken: string, code: string) =>
+    api.post<{ ok: true; token: string; consumedBackup: boolean; admin: { id: number; username: string; displayName: string; role: string } }>('/auth/login/2fa', { challengeToken, code }),
+}
+
+export const twoFactor = {
+  state: () => api.get<Admin2FAState>('/admin/me/2fa'),
+  setup: () => api.post<{ secret: string; otpauthUrl: string; qrDataUrl: string }>('/admin/me/2fa/setup', {}),
+  enable: (code: string) => api.post<{ backupCodes: string[]; token: string | null }>('/admin/me/2fa/enable', { code }),
+  disable: (code: string) => api.post<{ disabled: true }>('/admin/me/2fa/disable', { code }),
+  regenerate: (code: string) => api.post<{ backupCodes: string[] }>('/admin/me/2fa/regenerate-backup', { code }),
+  adminSet: (id: number, body: { required?: boolean; reset?: boolean }) =>
+    api.patch<{ updated: boolean }>(`/admin/admins/${id}/2fa`, body),
+}
+
 export const templates = {
   list: () => api.get<MessageTemplate[]>('/admin/messages'),
   update: (key: string, body: string) => api.put<void>(`/admin/messages/${key}`, { body }),

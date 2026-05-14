@@ -63,4 +63,7 @@ export {
   MessageSquare,
   ShieldCheck,
   Ticket,
+  KeyRound,
+  ShieldAlert,
+  ShieldOff,
 } from 'lucide-react'

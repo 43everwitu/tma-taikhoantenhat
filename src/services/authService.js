@@ -4,7 +4,16 @@ const config = require('../config');
 
 const SALT_ROUNDS = 12;
 const ADMIN_TOKEN_EXPIRY = '24h';
+const CHALLENGE_TOKEN_EXPIRY = '5m';
+const ENROLL_TOKEN_EXPIRY = '15m';
 const CUSTOMER_TOKEN_EXPIRY = '30d';
+const MAX_2FA_ATTEMPTS = 5;
+const LOCK_MINUTES = 5;
+
+// super_admin is implicitly required regardless of the flag value.
+function effectiveRequired(admin) {
+  return admin.role === 'super_admin' || !!admin.totp_required;
+}
 
 // jose is ESM-only — lazy dynamic import
 let _jose = null;
@@ -48,19 +57,129 @@ const authService = {
   },
 
   /**
-   * Admin login — returns JWT or null.
+   * Admin login — returns one of:
+   *   { ok: false }                                     — bad creds / inactive
+   *   { ok: true, requires2fa: true, challengeToken }   — password ok, TOTP next
+   *   { ok: true, requiresEnroll: true, enrollToken, admin } — must enroll first
+   *   { ok: true, token, admin }                        — full session
    */
   async adminLogin(username, password) {
     const admin = db.prepare(
       'SELECT * FROM admins WHERE username = ? AND is_active = 1'
     ).get(username);
 
-    if (!admin) return null;
+    if (!admin) return { ok: false };
 
     const valid = await bcrypt.compare(password, admin.password_hash);
-    if (!valid) return null;
+    if (!valid) return { ok: false };
 
-    // Update last login
+    const { SignJWT } = await getJose();
+    const sign = (claims, ttl) => new SignJWT(claims)
+      .setProtectedHeader({ alg: 'HS256' })
+      .setIssuedAt()
+      .setExpirationTime(ttl)
+      .sign(getSecretKey());
+
+    // Already enrolled → require TOTP challenge before issuing full token.
+    if (admin.totp_enabled) {
+      const challengeToken = await sign(
+        { adminId: admin.id, step: '2fa' },
+        CHALLENGE_TOKEN_EXPIRY,
+      );
+      return { ok: true, requires2fa: true, challengeToken };
+    }
+
+    // Must enroll first → enrollment-step token, limited middleware access.
+    if (effectiveRequired(admin)) {
+      const enrollToken = await sign(
+        { adminId: admin.id, role: admin.role, username: admin.username, step: 'enroll' },
+        ENROLL_TOKEN_EXPIRY,
+      );
+      return {
+        ok: true,
+        requiresEnroll: true,
+        enrollToken,
+        admin: {
+          id: admin.id,
+          username: admin.username,
+          displayName: admin.display_name,
+          role: admin.role,
+        },
+      };
+    }
+
+    // No 2FA required, no enrollment — direct full session.
+    db.prepare('UPDATE admins SET last_login_at = CURRENT_TIMESTAMP WHERE id = ?').run(admin.id);
+    const token = await sign(
+      { adminId: admin.id, role: admin.role, username: admin.username },
+      ADMIN_TOKEN_EXPIRY,
+    );
+    return {
+      ok: true,
+      token,
+      admin: {
+        id: admin.id,
+        username: admin.username,
+        displayName: admin.display_name,
+        role: admin.role,
+      },
+    };
+  },
+
+  /**
+   * Verify the 2FA challenge token + code, return full admin token + lockout
+   * state. Counts failed attempts in admin_2fa_attempts and locks for 5 min
+   * after 5 fails.
+   */
+  async verifyAdminTwoFactor(challengeToken, code) {
+    const { jwtVerify } = await getJose();
+    let payload;
+    try { ({ payload } = await jwtVerify(challengeToken, getSecretKey())); }
+    catch { return { ok: false, code: 'INVALID_CHALLENGE' }; }
+    if (payload.step !== '2fa' || !payload.adminId) return { ok: false, code: 'INVALID_CHALLENGE' };
+
+    const admin = db.prepare('SELECT * FROM admins WHERE id = ? AND is_active = 1').get(payload.adminId);
+    if (!admin || !admin.totp_enabled) return { ok: false, code: 'NOT_ENROLLED' };
+
+    const lock = db.prepare('SELECT attempts, locked_until FROM admin_2fa_attempts WHERE admin_id = ?').get(admin.id);
+    if (lock?.locked_until && new Date(lock.locked_until) > new Date()) {
+      return { ok: false, code: 'LOCKED', lockedUntil: lock.locked_until };
+    }
+
+    const totpService = require('./totpService');
+    const secret = admin.totp_secret ? totpService.decryptSecret(admin.totp_secret) : null;
+    let success = secret ? totpService.verifyCode(secret, code) : false;
+    let consumedBackup = false;
+    let newBackupHashes = null;
+
+    if (!success && admin.totp_backup_codes) {
+      const hashes = JSON.parse(admin.totp_backup_codes);
+      const r = await totpService.verifyBackupCode(hashes, code);
+      if (r.ok) {
+        success = true;
+        consumedBackup = true;
+        newBackupHashes = r.remaining;
+      }
+    }
+
+    if (!success) {
+      const attempts = (lock?.attempts || 0) + 1;
+      const locked_until = attempts >= MAX_2FA_ATTEMPTS
+        ? new Date(Date.now() + LOCK_MINUTES * 60_000).toISOString()
+        : null;
+      db.prepare(`
+        INSERT INTO admin_2fa_attempts (admin_id, attempts, locked_until)
+        VALUES (?, ?, ?)
+        ON CONFLICT(admin_id) DO UPDATE SET attempts = ?, locked_until = ?
+      `).run(admin.id, attempts, locked_until, attempts, locked_until);
+      return { ok: false, code: locked_until ? 'LOCKED' : 'BAD_CODE', attempts, lockedUntil: locked_until };
+    }
+
+    // Reset attempts + consume backup if used + update last login
+    db.prepare('DELETE FROM admin_2fa_attempts WHERE admin_id = ?').run(admin.id);
+    if (consumedBackup) {
+      db.prepare('UPDATE admins SET totp_backup_codes = ? WHERE id = ?').run(JSON.stringify(newBackupHashes), admin.id);
+    }
     db.prepare('UPDATE admins SET last_login_at = CURRENT_TIMESTAMP WHERE id = ?').run(admin.id);
 
     const { SignJWT } = await getJose();
@@ -75,7 +194,9 @@ const authService = {
       .sign(getSecretKey());
 
     return {
+      ok: true,
       token,
+      consumedBackup,
       admin: {
         id: admin.id,
         username: admin.username,
@@ -83,6 +204,24 @@ const authService = {
         role: admin.role,
       },
     };
+  },
+
+  /**
+   * Issue a full admin token for an already-authenticated admin (used after
+   * a successful enrollment from the enroll-step token).
+   */
+  async issueFullAdminToken(admin) {
+    const { SignJWT } = await getJose();
+    db.prepare('UPDATE admins SET last_login_at = CURRENT_TIMESTAMP WHERE id = ?').run(admin.id);
+    return new SignJWT({
+      adminId: admin.id,
+      role: admin.role,
+      username: admin.username,
+    })
+      .setProtectedHeader({ alg: 'HS256' })
+      .setIssuedAt()
+      .setExpirationTime(ADMIN_TOKEN_EXPIRY)
+      .sign(getSecretKey());
   },
 
   /**

@@ -2,7 +2,7 @@
 
 import { useState } from 'react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
-import { api } from '@/lib/api'
+import { api, twoFactor } from '@/lib/api'
 
 interface Admin {
   id: number
@@ -12,6 +12,7 @@ interface Admin {
   isActive: boolean
   lastLoginAt: string | null
   permissions: string[]
+  twoFactor: { enabled: boolean; required: boolean; backupCount: number }
 }
 
 export default function AdminsPage() {
@@ -23,6 +24,22 @@ export default function AdminsPage() {
   const admins = data?.data ?? []
   const [createOpen, setCreateOpen] = useState(false)
 
+  // Fetch current admin role to gate 2FA force/reset buttons (super_admin only).
+  const meQuery = useQuery({
+    queryKey: ['admin', 'me'],
+    queryFn: () => api.get<{ role: string }>('/admin/me'),
+  })
+  const isSuper = meQuery.data?.data.role === 'super_admin'
+
+  const toggle2faRequired = useMutation({
+    mutationFn: ({ id, required }: { id: number; required: boolean }) => twoFactor.adminSet(id, { required }),
+    onSuccess: () => qc.invalidateQueries({ queryKey: ['admin', 'admins'] }),
+  })
+  const reset2fa = useMutation({
+    mutationFn: (id: number) => twoFactor.adminSet(id, { reset: true }),
+    onSuccess: () => qc.invalidateQueries({ queryKey: ['admin', 'admins'] }),
+  })
+
   return (
     <div className="space-y-4">
       <div className="flex items-center justify-between">
@@ -32,23 +49,60 @@ export default function AdminsPage() {
 
       <div className="space-y-2">
         {isLoading && <p className="text-sm opacity-60">Đang tải…</p>}
-        {admins.map((a) => (
-          <div key={a.id} className="rounded-xl bg-white border border-clay-oat p-3 flex items-center gap-3">
-            <div className="flex-1">
-              <p className="font-medium text-sm">{a.displayName} <span className="opacity-60 font-normal">@{a.username}</span></p>
-              <p className="text-xs opacity-60">{a.role} · {a.isActive ? 'Hoạt động' : 'Đã khoá'} · {a.permissions.length} quyền</p>
+        {admins.map((a) => {
+          const tf = a.twoFactor
+          const tfBadge = tf.enabled
+            ? <span className="text-[10px] font-semibold px-1.5 py-0.5 rounded bg-emerald-100 text-emerald-800">2FA ✓</span>
+            : tf.required
+              ? <span className="text-[10px] font-semibold px-1.5 py-0.5 rounded bg-amber-100 text-amber-800">2FA bắt buộc — chưa bật</span>
+              : <span className="text-[10px] font-semibold px-1.5 py-0.5 rounded bg-zinc-200 text-zinc-700">2FA tắt</span>
+          return (
+            <div key={a.id} className="rounded-xl bg-white border border-clay-oat p-3 flex items-center gap-3 flex-wrap">
+              <div className="flex-1 min-w-0">
+                <p className="font-medium text-sm flex items-center gap-2">
+                  {a.displayName} <span className="opacity-60 font-normal">@{a.username}</span>
+                  {tfBadge}
+                </p>
+                <p className="text-xs opacity-60">
+                  {a.role} · {a.isActive ? 'Hoạt động' : 'Đã khoá'} · {a.permissions.length} quyền
+                  {tf.enabled && ` · ${tf.backupCount} mã dự phòng`}
+                </p>
+              </div>
+              <div className="flex gap-1.5 flex-wrap">
+                {isSuper && (
+                  <>
+                    <button
+                      onClick={() => toggle2faRequired.mutate({ id: a.id, required: !tf.required })}
+                      disabled={toggle2faRequired.isPending || a.role === 'super_admin'}
+                      title={a.role === 'super_admin' ? 'super_admin luôn yêu cầu 2FA' : tf.required ? 'Bỏ yêu cầu 2FA' : 'Bắt buộc 2FA'}
+                      className="clay-btn text-xs disabled:opacity-50"
+                    >
+                      {tf.required ? 'Bỏ bắt buộc' : 'Bắt buộc 2FA'}
+                    </button>
+                    {tf.enabled && (
+                      <button
+                        onClick={() => { if (confirm(`Reset 2FA cho ${a.username}? Họ sẽ phải cài lại khi đăng nhập.`)) reset2fa.mutate(a.id) }}
+                        disabled={reset2fa.isPending}
+                        className="clay-btn text-xs"
+                      >
+                        Reset 2FA
+                      </button>
+                    )}
+                  </>
+                )}
+                <button
+                  onClick={() => {
+                    if (!confirm(`${a.isActive ? 'Khoá' : 'Mở khoá'} ${a.username}?`)) return
+                    api.patch(`/admin/admins/${a.id}`, { isActive: !a.isActive }).then(() => qc.invalidateQueries({ queryKey: ['admin', 'admins'] }))
+                  }}
+                  className="clay-btn text-xs"
+                >
+                  {a.isActive ? 'Khoá' : 'Mở'}
+                </button>
+              </div>
             </div>
-            <button
-              onClick={() => {
-                if (!confirm(`${a.isActive ? 'Khoá' : 'Mở khoá'} ${a.username}?`)) return
-                api.patch(`/admin/admins/${a.id}`, { isActive: !a.isActive }).then(() => qc.invalidateQueries({ queryKey: ['admin', 'admins'] }))
-              }}
-              className="clay-btn text-xs"
-            >
-              {a.isActive ? 'Khoá' : 'Mở'}
-            </button>
-          </div>
-        ))}
+          )
+        })}
       </div>
 
       {createOpen && <CreateModal onClose={() => setCreateOpen(false)} onCreated={() => { qc.invalidateQueries({ queryKey: ['admin', 'admins'] }); setCreateOpen(false) }} />}

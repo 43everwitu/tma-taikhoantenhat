@@ -73,4 +73,17 @@ function requirePermission(perm) {
   };
 }
 
-module.exports = { requireAdmin, requireCustomer, optionalCustomer, requirePermission, loadAdminPermissions };
+// Reject tokens that are not full admin sessions (i.e. the 2FA challenge or
+// enrollment-step tokens). Mount on admin routes that should be inaccessible
+// during enrollment. /admin/me + /admin/me/2fa/* skip this gate.
+function requireFullAuth(req, res, next) {
+  if (req.admin?.step) {
+    return res.status(403).json({
+      success: false,
+      error: { code: 'STEP_REQUIRED', message: 'Phải hoàn tất 2FA trước', step: req.admin.step },
+    });
+  }
+  next();
+}
+
+module.exports = { requireAdmin, requireCustomer, optionalCustomer, requirePermission, loadAdminPermissions, requireFullAuth };

@@ -9,7 +9,8 @@ const { requireCustomer } = require('../middleware/auth');
 
 const router = Router();
 
-// POST /auth/login — Admin login
+// POST /auth/login — Admin login (returns full token, 2FA challenge, or
+// enrollment-step token depending on the admin's 2FA state).
 router.post('/login', validate(z.object({
   username: z.string().min(1).max(50),
   password: z.string().min(1).max(100),
@@ -17,8 +18,24 @@ router.post('/login', validate(z.object({
   const { username, password } = req.validated;
   const result = await authService.adminLogin(username, password);
 
-  if (!result) {
+  if (!result.ok) {
     return res.status(401).json({ success: false, error: { code: 'INVALID_CREDENTIALS', message: 'Sai tên đăng nhập hoặc mật khẩu' } });
+  }
+
+  res.json({ success: true, data: result });
+});
+
+// POST /auth/login/2fa — verify TOTP / backup code, exchange challenge for full token.
+router.post('/login/2fa', validate(z.object({
+  challengeToken: z.string().min(10),
+  code: z.string().min(6).max(20),
+})), async (req, res) => {
+  const { challengeToken, code } = req.validated;
+  const result = await authService.verifyAdminTwoFactor(challengeToken, code);
+
+  if (!result.ok) {
+    const status = result.code === 'LOCKED' ? 429 : 401;
+    return res.status(status).json({ success: false, error: { code: result.code, lockedUntil: result.lockedUntil || null } });
   }
 
   res.json({ success: true, data: result });

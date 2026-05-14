@@ -1,6 +1,14 @@
 const { Router } = require('express');
+const { requireFullAuth } = require('../../middleware/auth');
 
 const router = Router();
+
+// /me and its 2FA sub-routes are reachable with an enrollment-step token so a
+// manager flagged totp_required can complete setup before getting a full
+// session. Everything else requires a full-step token via requireFullAuth.
+router.use('/me', require('./me'));
+
+router.use(requireFullAuth);
 
 router.use('/dashboard', require('./dashboard'));
 router.use('/orders', require('./orders'));
@@ -20,7 +28,6 @@ router.use('/payment-poller', require('./poller'));
 router.use('/features', require('./features'));
 router.use('/upload', require('./upload'));
 router.use('/uploads', require('./upload'));
-router.use('/me', require('./me'));
 router.use('/admins', require('./admins'));
 router.use('/discounts', require('./discounts'));
 
