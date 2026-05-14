@@ -376,15 +376,16 @@ class PaymentPoller {
       const overpayBlock = overpayAmount > 0
         ? `\n\n⚠️ <b>Khách chuyển dư ${formatPrice(overpayAmount)}</b>\nVào /admin/users/${order.user_id}/adjust nếu muốn cộng vào ví.`
         : '';
-      adminNotifyService.notify('delivered',
-        messageTemplateService.render('admin.delivered', {
-          orderCode: order.id,
-          productName: result.order.product_name,
-          quantity: order.quantity,
-          userMention: String(order.user_id),
-          overpayBlock,
-        }),
-        { parse_mode: 'HTML' });
+      const deliveredBody = messageTemplateService.renderIfEnabled('admin.delivered', {
+        orderCode: order.id,
+        productName: result.order.product_name,
+        quantity: order.quantity,
+        userMention: String(order.user_id),
+        overpayBlock,
+      });
+      if (deliveredBody) {
+        adminNotifyService.notify('delivered', deliveredBody, { parse_mode: 'HTML' });
+      }
       try {
         const orderChannelService = require('./orderChannelService');
         const variantService = require('./variantService');
@@ -560,12 +561,12 @@ class PaymentPoller {
   }
 
   async _notifyExpired(order) {
-    await this._notifyCustomer(order.user_id,
-      messageTemplateService.render('payment_expired', {
-        orderCode: order.id,
-        productName: order.product_name,
-      }),
-      'HTML');
+    const body = messageTemplateService.renderIfEnabled('payment_expired', {
+      orderCode: order.id,
+      productName: order.product_name,
+    });
+    if (!body) return;
+    await this._notifyCustomer(order.user_id, body, 'HTML');
   }
 
   async _processTopupMatch(tx, memo, topup) {

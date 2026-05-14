@@ -105,11 +105,12 @@ class NotificationService {
 
     if (followers.length === 0) return;
 
-    const body = messageTemplateService.render('bot.stock_replenished', {
+    const body = messageTemplateService.renderIfEnabled('bot.stock_replenished', {
       productEmoji: product.emoji || '📦',
       productName: product.name,
       stockCount,
     });
+    if (!body) return;
 
     let sent = 0;
     for (const { user_id } of followers) {
@@ -163,7 +164,7 @@ class NotificationService {
         ? `\n\n🔗 <a href="${stockUrl}">Thêm kho qua dashboard</a>`
         : '';
 
-      const body = messageTemplateService.render('admin.low_stock', {
+      const body = messageTemplateService.renderIfEnabled('admin.low_stock', {
         productEmoji: p.emoji || '📦',
         productName: p.name,
         productId: p.id,
@@ -171,6 +172,7 @@ class NotificationService {
         threshold: p.low_stock_threshold,
         stockUrlBlock,
       });
+      if (!body) { updateAlert.run(p.id); continue; }
 
       const opts = { parse_mode: 'HTML' };
       if (stockUrl && isPublicUrl) {

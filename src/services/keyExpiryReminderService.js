@@ -55,12 +55,13 @@ async function sweep() {
         `SELECT DATE(?, '+' || ? || ' days') AS d`
       ).get(r.sold_at, r.duration_days).d;
       const orderRef = order ? `#${order.id}` : '';
-      const body = messageTemplateService.render('bot.expiry_reminder', {
+      const body = messageTemplateService.renderIfEnabled('bot.expiry_reminder', {
         orderRef,
         productName: r.product_name,
         expiryDate,
         supportContact: support,
       });
+      if (!body) { markSent.run(r.id); continue; }
       await bot.telegram.sendMessage(r.sold_to, body, { parse_mode: 'HTML' });
       markSent.run(r.id);
       sent++;

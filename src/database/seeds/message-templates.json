@@ -3,109 +3,37 @@
     "channel": "bot",
     "label": "Chào mừng (/start)",
     "variables": ["name", "username", "supportContact"],
-    "body": "Xin chào {{name}}!\n\nChào mừng đến với Taikhoantenhat.\n\nBấm nút \"Mở cửa hàng\" bên dưới để bắt đầu.\n\n💬 Cần hỗ trợ? Liên hệ {{supportContact}}"
-  },
-  "order_created": {
-    "channel": "bot",
-    "label": "Đơn hàng vừa tạo",
-    "variables": ["orderCode", "productName", "quantity", "total", "expiryMinutes"],
-    "body": "Bạn đã đặt thành công đơn <b>{{orderCode}}</b>.\n\n📦 {{productName}} × {{quantity}}\n💰 Tổng: <b>{{total}}đ</b>\n\nShop sẽ giữ chỗ trong {{expiryMinutes}} phút. Bạn thanh toán nhé!"
-  },
-  "payment_pending": {
-    "channel": "bot",
-    "label": "Hướng dẫn thanh toán (kèm QR)",
-    "variables": ["orderCode", "productName", "total", "memo", "expiryMinutes"],
-    "body": "Onii-chan ơi, đây là QR thanh toán cho đơn <b>{{orderCode}}</b>:\n\n📦 {{productName}}\n💰 Số tiền: <b>{{total}}đ</b>\n📝 Nội dung CK: <code>{{memo}}</code>\n\n⏱ Trong {{expiryMinutes}} phút nha~"
+    "body": "Xin chào {{name}}.\n\nChào mừng đến với Taikhoantenhat — cửa hàng tài khoản số.\n\nBấm \"Mở cửa hàng\" bên dưới để bắt đầu.\n\nHỗ trợ: {{supportContact}}"
   },
   "payment_success": {
     "channel": "bot",
     "label": "Thanh toán thành công",
     "variables": ["orderCode", "productName", "quantity", "total"],
-    "body": "🎉 Shop đã nhận được tiền của bạn!\n\n✅ Đơn <b>{{orderCode}}</b>\n📦 {{productName}} × {{quantity}}\n💰 {{total}}đ\n\nĐang gửi sản phẩm cho bạn."
+    "body": "Shop đã nhận thanh toán cho đơn <b>{{orderCode}}</b>.\n\n📦 {{productName}} × {{quantity}}\n💰 {{total}}đ\n\nĐang xử lý giao hàng."
   },
   "payment_short": {
     "channel": "bot",
     "label": "Thanh toán thiếu",
     "variables": ["orderCode", "total", "received", "memo"],
-    "body": "Shop nhận được <b>{{received}}đ</b> cho đơn <b>{{orderCode}}</b> nhưng cần <b>{{total}}đ</b>. Bạn chuyển bù phần còn lại với nội dung <code>{{memo}}</code> nhé!"
-  },
-  "payment_failed": {
-    "channel": "bot",
-    "label": "Thanh toán thất bại",
-    "variables": ["orderCode", "reason"],
-    "body": "Gomen ne onii-chan~ 😔 Đơn <b>{{orderCode}}</b> không thanh toán được.\n\nLý do: {{reason}}\n\nOnii-chan thử lại nhé!"
+    "body": "Shop nhận được <b>{{received}}đ</b> cho đơn <b>{{orderCode}}</b> nhưng cần <b>{{total}}đ</b>.\n\nVui lòng chuyển bù phần còn lại với nội dung <code>{{memo}}</code>."
   },
   "payment_expired": {
     "channel": "bot",
     "label": "Đơn hết hạn",
     "variables": ["orderCode", "productName"],
-    "body": "Đơn <b>{{orderCode}}</b> ({{productName}}) đã hết hạn. Shop đã trả lại stock. Bạn đặt lại nhé!"
+    "body": "Đơn <b>{{orderCode}}</b> ({{productName}}) đã hết hạn. Shop đã trả lại hàng. Vui lòng đặt lại nếu vẫn muốn mua."
   },
   "delivery_keys": {
     "channel": "bot",
     "label": "Giao sản phẩm (keys)",
     "variables": ["orderCode", "productName", "quantity", "keysBlock", "usageBlock"],
-    "body": "✅ Đơn #{{orderCode}} — {{productName}} (×{{quantity}})\n\n🔑 Key:\n{{keysBlock}}{{usageBlock}}\n\nCảm ơn bạn đã mua hàng!"
-  },
-  "low_stock_user": {
-    "channel": "bot",
-    "label": "Sắp hết hàng (broadcast)",
-    "variables": ["productName", "remaining"],
-    "body": "Onii-chan ơi~ {{productName}} chỉ còn <b>{{remaining}}</b> suất thôi! Onii-chan nhanh tay nha!"
-  },
-  "refund": {
-    "channel": "bot",
-    "label": "Hoàn tiền",
-    "variables": ["orderCode", "amount", "reason", "newBalance"],
-    "body": "Shop đã hoàn <b>{{amount}}đ</b> cho đơn <b>{{orderCode}}</b> vào ví của bạn.\n\nLý do: {{reason}}\nSố dư mới: <b>{{newBalance}}đ</b>\n\nXin lỗi vì sự bất tiện!"
+    "body": "✅ Đơn #{{orderCode}} — {{productName}} (×{{quantity}})\n\n🔑 Key:\n{{keysBlock}}{{usageBlock}}\n\nCảm ơn bạn đã mua hàng."
   },
   "topup_success": {
     "channel": "bot",
     "label": "Nạp ví thành công",
     "variables": ["amount", "newBalance", "memo"],
-    "body": "🎉 Shop đã cộng <b>{{amount}}đ</b> vào ví của bạn (mã: <code>{{memo}}</code>).\n\nSố dư mới: <b>{{newBalance}}đ</b>\n\nCảm ơn bạn đã nạp!"
-  },
-  "balance_low": {
-    "channel": "bot",
-    "label": "Cảnh báo số dư thấp",
-    "variables": ["balance", "threshold"],
-    "body": "Onii-chan ơi~ Số dư ví chỉ còn <b>{{balance}}đ</b> (dưới <b>{{threshold}}đ</b>). Onii-chan nạp thêm bằng /nap nhé!"
-  },
-  "order_cancelled": {
-    "channel": "bot",
-    "label": "Hủy đơn",
-    "variables": ["orderCode", "productName", "reason"],
-    "body": "Đơn <b>{{orderCode}}</b> ({{productName}}) đã bị hủy. Lý do: {{reason}}. Shop đã trả lại stock và hoàn ví (nếu có) cho bạn."
-  },
-  "web.new_stock": {
-    "channel": "web",
-    "label": "Web — sản phẩm mới có hàng",
-    "variables": ["productName", "quantity", "productUrl"],
-    "body": "{{productName}} vừa được bổ sung {{quantity}} suất! Bạn ghé xem nhé."
-  },
-  "web.restock_email": {
-    "channel": "web",
-    "label": "Web — email báo có hàng lại",
-    "variables": ["productName", "productUrl", "unsubscribeUrl"],
-    "body": "Onii-chan ơi~ {{productName}} đã có hàng trở lại! Mua ngay tại {{productUrl}}.\n\nKhông muốn nhận email này nữa? {{unsubscribeUrl}}"
-  },
-  "web.order_success": {
-    "channel": "web",
-    "label": "Web — trang thanh toán thành công",
-    "variables": ["orderCode", "productName", "total"],
-    "body": "Đơn {{orderCode}} ({{productName}} — {{total}}đ) thanh toán thành công. Shop đang gửi sản phẩm vào Telegram của bạn."
-  },
-  "web.payment_failed": {
-    "channel": "web",
-    "label": "Web — thanh toán thất bại",
-    "variables": ["orderCode", "reason"],
-    "body": "Gomen ne onii-chan~ Đơn {{orderCode}} không thanh toán được. Lý do: {{reason}}. Onii-chan thử lại nhé!"
-  },
-  "web.payment_expired": {
-    "channel": "web",
-    "label": "Web — đơn hết hạn",
-    "variables": ["orderCode"],
-    "body": "Đơn {{orderCode}} đã hết hạn. Shop đã trả lại stock. Bạn đặt lại nhé!"
+    "body": "Shop đã cộng <b>{{amount}}đ</b> vào ví của bạn (mã: <code>{{memo}}</code>).\n\nSố dư mới: <b>{{newBalance}}đ</b>."
   },
   "admin.backorder_paid": {
     "channel": "admin",
@@ -154,18 +82,6 @@
     "label": "Bot — chờ giao thủ công (backorder)",
     "variables": ["orderCode", "waitMsg"],
     "body": "💳 Đã nhận thanh toán đơn #{{orderCode}}.\n{{waitMsg}}"
-  },
-  "bot.order_expired_short": {
-    "channel": "bot",
-    "label": "Bot — đơn hết hạn (rút gọn)",
-    "variables": ["orderCode"],
-    "body": "⏰ Đơn #{{orderCode}} hết hạn thanh toán.\nGõ /menu để đặt lại."
-  },
-  "bot.order_cancelled_short": {
-    "channel": "bot",
-    "label": "Bot — đơn bị huỷ (rút gọn)",
-    "variables": ["orderCode"],
-    "body": "❌ Đơn #{{orderCode}} đã bị hủy.\nLiên hệ hỗ trợ nếu cần."
   },
   "bot.stock_replenished": {
     "channel": "bot",

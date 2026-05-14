@@ -24,11 +24,12 @@ async function handleStart(ctx) {
     const supportRow = db.prepare(`SELECT value FROM settings WHERE key = 'support_contact'`).get();
     const supportContact = supportRow?.value || process.env.SUPPORT_CONTACT || '@admin';
 
-    const text = messageTemplateService.render('welcome', {
+    const text = messageTemplateService.renderIfEnabled('welcome', {
         name,
         username,
         supportContact,
     });
+    if (!text) return;
 
     const url = buildStartLink(ctx.botInfo?.username, ctx.startPayload);
 

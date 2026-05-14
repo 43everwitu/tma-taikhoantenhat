@@ -23,16 +23,33 @@ const TRUSTED_VARS = new Set([
   'productLine',
   'waitMsg',
 ]);
+
+// Templates the system needs to function. The toggle UI shows these as locked
+// on; the toggle API rejects writes against them.
+const CORE_TEMPLATE_KEYS = new Set([
+  'cmd_myid',
+  'delivery_keys',
+  'payment_short',
+  'payment_success',
+  'topup_success',
+  'bot.backorder_wait',
+  'admin.payment_short',
+  'admin.backorder_paid',
+  'admin.no_stock',
+  'group.order_card',
+]);
+
 let cache = { ts: 0, rows: null };
 
 function loadAll() {
   if (cache.rows && Date.now() - cache.ts < CACHE_TTL_MS) return cache.rows;
-  const rows = db.prepare('SELECT key, body, default_body, variables FROM message_templates').all();
+  const rows = db.prepare('SELECT key, body, default_body, variables, is_enabled FROM message_templates').all();
   const map = {};
   for (const r of rows) {
     map[r.key] = {
       body: (r.body && r.body.trim()) || r.default_body,
       variables: JSON.parse(r.variables),
+      enabled: !!r.is_enabled,
     };
   }
   cache = { ts: Date.now(), rows: map };
@@ -55,16 +72,35 @@ function render(key, vars = {}) {
   });
 }
 
+function isEnabled(key) {
+  if (CORE_TEMPLATE_KEYS.has(key)) return true;
+  const tpl = loadAll()[key];
+  return !!tpl && tpl.enabled !== false;
+}
+
+// Returns the rendered body or null when the template is disabled. Lets call
+// sites bail before calling Telegram / adminNotify when an admin has turned
+// the message off.
+function renderIfEnabled(key, vars = {}) {
+  if (!isEnabled(key)) return null;
+  return render(key, vars);
+}
+
 function get(key) {
   return loadAll()[key];
 }
 
 function list() {
   const rows = db.prepare(`
-    SELECT key, channel, label, variables, body, default_body, updated_at
+    SELECT key, channel, label, variables, body, default_body, is_enabled, updated_at
     FROM message_templates ORDER BY channel, key
   `).all();
-  return rows.map((r) => ({ ...r, variables: JSON.parse(r.variables) }));
+  return rows.map((r) => ({
+    ...r,
+    variables: JSON.parse(r.variables),
+    enabled: !!r.is_enabled,
+    core: CORE_TEMPLATE_KEYS.has(r.key),
+  }));
 }
 
 function update(key, body) {
@@ -79,4 +115,28 @@ function reset(key) {
   invalidate();
 }
 
-module.exports = { render, get, list, update, reset, invalidate, escapeHtml, TRUSTED_VARS };
+function setEnabled(key, enabled) {
+  if (CORE_TEMPLATE_KEYS.has(key)) {
+    const err = new Error('CORE_TEMPLATE');
+    err.code = 'CORE_TEMPLATE';
+    throw err;
+  }
+  const result = db.prepare('UPDATE message_templates SET is_enabled = ?, updated_at = CURRENT_TIMESTAMP WHERE key = ?').run(enabled ? 1 : 0, key);
+  if (result.changes === 0) throw new Error(`Unknown template: ${key}`);
+  invalidate();
+}
+
+module.exports = {
+  render,
+  renderIfEnabled,
+  isEnabled,
+  get,
+  list,
+  update,
+  reset,
+  setEnabled,
+  invalidate,
+  escapeHtml,
+  TRUSTED_VARS,
+  CORE_TEMPLATE_KEYS,
+};

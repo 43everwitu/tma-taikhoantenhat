@@ -40,6 +40,20 @@ router.put('/:key', validate(z.object({ body: z.string().min(1).max(4000) })), (
   }
 });
 
+// PUT /admin/messages/:key/toggle — enable/disable optional templates
+router.put('/:key/toggle', validate(z.object({ enabled: z.boolean() })), (req, res) => {
+  try {
+    messageTemplateService.setEnabled(req.params.key, req.body.enabled);
+    auditService.log(req.admin.adminId, 'message.toggle', 'message_template', req.params.key, { enabled: req.body.enabled }, req.ip);
+    res.json({ success: true, data: { enabled: req.body.enabled } });
+  } catch (e) {
+    if (e.code === 'CORE_TEMPLATE') {
+      return res.status(400).json({ success: false, error: { code: 'CORE_TEMPLATE', message: 'Template bắt buộc, không thể tắt' } });
+    }
+    res.status(404).json({ success: false, error: { code: 'NOT_FOUND', message: e.message } });
+  }
+});
+
 // POST /admin/messages/:key/reset — restore body from default_body
 router.post('/:key/reset', (req, res) => {
   try {
