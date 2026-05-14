@@ -21,6 +21,7 @@ const TRUSTED_VARS = new Set([
   'stockUrlBlock',
   'customerLine',
   'productLine',
+  'waitMsg',
 ]);
 let cache = { ts: 0, rows: null };
 

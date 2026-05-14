@@ -129,7 +129,7 @@
     "channel": "admin",
     "label": "Admin — thanh toán thiếu / lệch",
     "variables": ["orderCode", "total", "received", "memo", "userMention", "note"],
-    "body": "⚠️ Thanh toán thiếu cho đơn #{{orderCode}}\nKH: {{userMention}}\nMã: {{memo}}\nChuyển: {{received}}đ\nCần: {{total}}đ\n\n<i>{{note}}</i>"
+    "body": "⚠️ Thanh toán cần xử lý: #{{orderCode}}\nKH: {{userMention}}\nMã: {{memo}}\nChuyển: {{received}}đ\nCần: {{total}}đ\n\n<i>{{note}}</i>"
   },
   "admin.low_stock": {
     "channel": "admin",
