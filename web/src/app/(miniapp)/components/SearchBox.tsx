@@ -16,12 +16,18 @@ interface Props {
   value: string
   onChange: (q: string) => void
   placeholder?: string
+  autoFocus?: boolean
 }
 
-export function SearchBox({ value, onChange, placeholder }: Props) {
+export function SearchBox({ value, onChange, placeholder, autoFocus }: Props) {
   const [debounced, setDebounced] = useState(value)
   const [open, setOpen] = useState(false)
   const wrapRef = useRef<HTMLDivElement>(null)
+  const inputRef = useRef<HTMLInputElement>(null)
+
+  useEffect(() => {
+    if (autoFocus) inputRef.current?.focus()
+  }, [autoFocus])
 
   useEffect(() => {
     const t = setTimeout(() => setDebounced(value.trim()), 200)
@@ -48,6 +54,7 @@ export function SearchBox({ value, onChange, placeholder }: Props) {
       <div className="miniapp-search">
         <span className="opacity-60 flex"><Icon name="search" size={18} /></span>
         <input
+          ref={inputRef}
           value={value}
           onChange={(e) => { onChange(e.target.value); setOpen(true) }}
           onFocus={() => setOpen(true)}

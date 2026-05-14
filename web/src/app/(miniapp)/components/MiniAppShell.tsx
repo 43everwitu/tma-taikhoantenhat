@@ -66,6 +66,14 @@ export function MiniAppShell({
                   {it.label}
                 </Link>
               ))}
+              <Link
+                href="/san-pham?focus=1"
+                className="miniapp-topnav-link"
+                aria-label="Tìm kiếm"
+              >
+                <Icon name="search" size={18} />
+                Tìm kiếm
+              </Link>
               {supportUrl && (
                 <a
                   href={supportUrl}
@@ -80,6 +88,14 @@ export function MiniAppShell({
             </nav>
 
             <div className="md:hidden flex items-center gap-2">
+              <Link
+                href="/san-pham?focus=1"
+                aria-label="Tìm kiếm"
+                className="inline-flex items-center justify-center w-9 h-9 rounded-full"
+                style={{ background: 'var(--brand-gold-soft)', color: 'var(--brand-ink)' }}
+              >
+                <Icon name="search" size={18} />
+              </Link>
               {supportUrl && (
                 <a
                   href={supportUrl}
