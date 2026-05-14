@@ -53,7 +53,7 @@ router.post('/:key/reset', (req, res) => {
 
 // POST /admin/messages/:key/preview — render with sample vars (no DB write)
 router.post('/:key/preview',
-  validate(z.object({ vars: z.record(z.any()).default({}) })),
+  validate(z.object({ vars: z.record(z.string(), z.any()).default({}) })),
   (req, res) => {
     try {
       const text = messageTemplateService.render(req.params.key, req.body.vars);
