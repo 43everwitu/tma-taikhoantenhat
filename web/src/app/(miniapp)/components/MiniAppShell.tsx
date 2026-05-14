@@ -1,12 +1,13 @@
 'use client'
 
 import Link from 'next/link'
-import { ReactNode, useCallback } from 'react'
+import { ReactNode, useCallback, useState } from 'react'
 import { usePathname, useRouter } from 'next/navigation'
 import { useQuery } from '@tanstack/react-query'
 import { apiFetch } from '@/lib/miniappApi'
 import { useTelegramBackButton } from '@/lib/useTelegramBackButton'
 import { Icon } from './Icon'
+import { SearchModal } from './SearchModal'
 import type { MiniappIconName } from '@/lib/miniappIcons'
 import { t } from '@/i18n/vi'
 
@@ -33,6 +34,7 @@ export function MiniAppShell({
 }) {
   const pathname = usePathname()
   const router = useRouter()
+  const [searchOpen, setSearchOpen] = useState(false)
   const onBack = useCallback(() => { router.back() }, [router])
   useTelegramBackButton(pathname !== '/', onBack)
   const shopInfo = useQuery({
@@ -66,14 +68,15 @@ export function MiniAppShell({
                   {it.label}
                 </Link>
               ))}
-              <Link
-                href="/san-pham?focus=1"
+              <button
+                type="button"
+                onClick={() => setSearchOpen(true)}
                 className="miniapp-topnav-link"
                 aria-label="Tìm kiếm"
               >
                 <Icon name="search" size={18} />
                 Tìm kiếm
-              </Link>
+              </button>
               {supportUrl && (
                 <a
                   href={supportUrl}
@@ -88,14 +91,15 @@ export function MiniAppShell({
             </nav>
 
             <div className="md:hidden flex items-center gap-2">
-              <Link
-                href="/san-pham?focus=1"
+              <button
+                type="button"
+                onClick={() => setSearchOpen(true)}
                 aria-label="Tìm kiếm"
                 className="inline-flex items-center justify-center w-9 h-9 rounded-full"
                 style={{ background: 'var(--brand-gold-soft)', color: 'var(--brand-ink)' }}
               >
                 <Icon name="search" size={18} />
-              </Link>
+              </button>
               {supportUrl && (
                 <a
                   href={supportUrl}
@@ -142,6 +146,8 @@ export function MiniAppShell({
           </Link>
         ))}
       </nav>
+
+      <SearchModal open={searchOpen} onClose={() => setSearchOpen(false)} />
     </div>
   )
 }

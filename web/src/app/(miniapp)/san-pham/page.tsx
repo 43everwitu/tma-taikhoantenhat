@@ -1,7 +1,6 @@
 'use client'
 
 import { useState, useMemo } from 'react'
-import { useSearchParams } from 'next/navigation'
 import { useQuery } from '@tanstack/react-query'
 import { apiFetch } from '@/lib/miniappApi'
 import { MiniAppShell } from '../components/MiniAppShell'
@@ -16,8 +15,6 @@ interface Category { id: number; name: string; slug: string; emoji: string }
 const DEFAULT_FILTER: FilterValue = { sort: 'default', priceMin: '', priceMax: '' }
 
 export default function AllProductsPage() {
-  const sp = useSearchParams()
-  const shouldFocusSearch = sp.get('focus') === '1'
   const [q, setQ] = useState('')
   const [activeSlug, setActiveSlug] = useState<string | ''>('')
   const [filter, setFilter] = useState<FilterValue>(DEFAULT_FILTER)
@@ -44,7 +41,7 @@ export default function AllProductsPage() {
 
   return (
     <MiniAppShell title="Tất cả sản phẩm" subtitle={products.data ? `${products.data.length} sản phẩm` : undefined}>
-      <SearchBox value={q} onChange={setQ} placeholder={t.catalog.searchPlaceholder} autoFocus={shouldFocusSearch} />
+      <SearchBox value={q} onChange={setQ} placeholder={t.catalog.searchPlaceholder} />
 
       <div className="miniapp-chip-filter-row">
         <div className="miniapp-chip-row">
