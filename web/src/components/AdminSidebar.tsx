@@ -19,7 +19,7 @@ const NAV = [
   { href: '/admin/topups', label: 'Nạp tiền', icon: Wallet, feature: 'topups' as const, perm: 'topups.read' },
   { href: '/admin/discounts', label: 'Mã giảm giá', icon: Ticket, perm: 'products.read' },
   { href: '/admin/announcements', label: 'Thông báo', icon: Megaphone, perm: 'announcements.read' },
-  { href: '/admin/messages', label: 'Tin nhắn', icon: MessageSquare, feature: 'broadcast' as const, perm: 'messages.read' },
+  { href: '/admin/messages', label: 'Tin nhắn', icon: MessageSquare, perm: 'messages.read' },
   { href: '/admin/settings', label: 'Cài đặt', icon: Settings, perm: 'settings.read' },
 ]
 
