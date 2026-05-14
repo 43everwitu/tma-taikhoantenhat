@@ -67,7 +67,7 @@ export default function AdminMessagesPage() {
   return (
     <div className="grid grid-cols-1 lg:grid-cols-[280px_1fr] gap-4 p-4">
       <aside className="clay-card p-3 max-h-[80vh] overflow-y-auto">
-        {(['bot', 'web'] as const).map((ch) => {
+        {(['bot', 'admin', 'group', 'web'] as const).map((ch) => {
           const items = list.filter((t) => t.channel === ch)
           if (items.length === 0) return null
           return (
