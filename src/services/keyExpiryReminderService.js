@@ -3,6 +3,7 @@
 // stock.sold_at. Dedupes via stock.reminder_sent_at.
 
 const db = require('../database');
+const messageTemplateService = require('./messageTemplateService');
 
 let bot = null;
 let timer = null;
@@ -54,11 +55,12 @@ async function sweep() {
         `SELECT DATE(?, '+' || ? || ' days') AS d`
       ).get(r.sold_at, r.duration_days).d;
       const orderRef = order ? `#${order.id}` : '';
-      const body =
-        `⏰ <b>Đơn ${orderRef}</b> sắp hết hạn.\n` +
-        `📦 ${r.product_name}\n` +
-        `📅 Hết hạn: <b>${expiryDate}</b>\n\n` +
-        `Gia hạn vui lòng liên hệ ${support}.`;
+      const body = messageTemplateService.render('bot.expiry_reminder', {
+        orderRef,
+        productName: r.product_name,
+        expiryDate,
+        supportContact: support,
+      });
       await bot.telegram.sendMessage(r.sold_to, body, { parse_mode: 'HTML' });
       markSent.run(r.id);
       sent++;
