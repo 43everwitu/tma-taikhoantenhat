@@ -10,7 +10,12 @@ export function Providers({ children }: { children: React.ReactNode }) {
   const [queryClient] = useState(() => new QueryClient({
     defaultOptions: {
       queries: {
-        staleTime: 30000,
+        // 60s default — TMA navigation should hit cache, not refetch
+        staleTime: 60_000,
+        // Keep in cache 5min so back-nav is instant
+        gcTime: 5 * 60_000,
+        // TMA backgrounds aggressively; refocus refetch is noise
+        refetchOnWindowFocus: false,
         retry: 1,
       },
     },

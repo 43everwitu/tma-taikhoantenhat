@@ -39,10 +39,6 @@ export default function ProductDetailPage() {
     queryFn: () => apiFetch<ProductDetail>(`/products/${slug}`),
   })
 
-  useEffect(() => {
-    if (p?.id) pushRecentlyViewed(String(p.id))
-  }, [p?.id])
-
   const related = useQuery({
     queryKey: ['products', 'related', p?.categorySlug, p?.id],
     queryFn: () => apiFetch<ProductSummary[]>(`/products?category=${encodeURIComponent(p!.categorySlug!)}&limit=12`),
@@ -50,11 +46,15 @@ export default function ProductDetailPage() {
     select: (rows) => rows.filter((r) => r.id !== p?.id).slice(0, 10),
   })
 
+  // Snapshot recently-viewed BEFORE pushing the current id so the rail
+  // doesn't include this page. Single effect = no waterfall.
   const [recentIds, setRecentIds] = useState<string[]>([])
   useEffect(() => {
     if (!p?.id) return
-    const ids = getRecentlyViewedIds().filter((id) => id !== String(p.id))
+    const id = String(p.id)
+    const ids = getRecentlyViewedIds().filter((x) => x !== id)
     setRecentIds(ids)
+    pushRecentlyViewed(id)
   }, [p?.id])
 
   const recently = useQuery({
@@ -115,7 +115,7 @@ export default function ProductDetailPage() {
           <div className="aspect-square" style={{ position: 'relative' }}>
             {p.promotion && <span className="miniapp-product-badge" style={{ top: 12, left: 12 }}>{p.promotion}</span>}
             {effectiveImage ? (
-              <Image src={effectiveImage} alt={p.name} fill sizes="100vw" style={{ objectFit: 'cover' }} />
+              <Image src={effectiveImage} alt={p.name} fill sizes="(min-width: 768px) 50vw, 100vw" style={{ objectFit: 'cover' }} />
             ) : (
               <div className="absolute inset-0 grid place-items-center" style={{ color: 'var(--brand-gold-deep)' }}>
                 <Icon name="package" size={88} strokeWidth={1.25} />
