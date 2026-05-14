@@ -4,6 +4,8 @@
 //   ORDER_CHANNEL_THREAD_ID - optional message_thread_id for forum topics (e.g. 2)
 // No-op if ORDER_CHANNEL_CHAT_ID is unset.
 
+const messageTemplateService = require('./messageTemplateService');
+
 let bot = null;
 
 function init(b) { bot = b; }
@@ -12,10 +14,6 @@ function escapeHtml(s) {
   return String(s)
     .replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
     .replace(/"/g, '&quot;').replace(/'/g, '&#39;');
-}
-
-function spoiler(s) {
-  return `<tg-spoiler>${escapeHtml(s)}</tg-spoiler>`;
 }
 
 function decryptInput(encrypted) {
@@ -29,26 +27,36 @@ function decryptInput(encrypted) {
 }
 
 function buildCard({ order, product, variant, keys, customerInfo }) {
-  const divider = '─────────────';
-  const lines = [];
-  lines.push(`📥 <b>Order #${order.id} Notification</b>`);
-  lines.push(divider);
-  lines.push(`💰 <b>Thanh toán</b>: ${order.total_price.toLocaleString('vi-VN')}đ`);
-  lines.push(`🧾 <b>Mã đơn</b>: <code>${escapeHtml(order.payment_code || String(order.id))}</code>`);
-  if (customerInfo) {
-    // Customer-supplied input is potentially sensitive (emails, etc.) — wrap
-    // in spoiler so it's tap-to-reveal.
-    lines.push(`📧 <b>Thông tin KH</b>: ${spoiler(customerInfo)}`);
-  }
-  lines.push(`📦 <b>Sản phẩm</b>: ${escapeHtml(product.name)}${variant ? ` — ${escapeHtml(variant.name)}` : ''} ×${order.quantity}`);
-  lines.push(divider);
+  const totalSpoiler = `<tg-spoiler>${escapeHtml(order.total_price.toLocaleString('vi-VN') + 'đ')}</tg-spoiler>`;
+  const paymentCode = order.payment_code || String(order.id);
+
+  // Customer-supplied input is potentially sensitive (emails, etc.) — wrap
+  // in spoiler so it's tap-to-reveal. Empty line when no input.
+  const customerLine = customerInfo
+    ? `\n📧 <b>Thông tin KH</b>: <tg-spoiler>${escapeHtml(customerInfo)}</tg-spoiler>`
+    : '';
+
+  // productLine includes optional variant suffix; trusted-as-HTML because the
+  // template var is marked trusted (productLine is in TRUSTED_VARS).
+  const productLine = `${escapeHtml(product.name)}${variant ? ` — ${escapeHtml(variant.name)}` : ''}`;
+
+  let keysBlock;
   if (keys && keys.length > 0) {
-    lines.push(`🔑 <b>License Keys (${keys.length})</b> — tap để xem:`);
-    for (const k of keys) lines.push(spoiler(k));
+    const spoilered = keys.map((k) => `<tg-spoiler>${escapeHtml(k)}</tg-spoiler>`).join('\n');
+    keysBlock = `🔑 <b>License Keys (${keys.length})</b> — tap để xem:\n${spoilered}`;
   } else {
-    lines.push('⚠️ <i>Đơn cần xử lý thủ công — chưa có key.</i>');
+    keysBlock = '⚠️ <i>Đơn cần xử lý thủ công — chưa có key.</i>';
   }
-  return lines.join('\n');
+
+  return messageTemplateService.render('group.order_card', {
+    orderCode: order.id,
+    paymentCode,
+    productLine,
+    quantity: order.quantity,
+    totalSpoiler,
+    customerLine,
+    keysBlock,
+  });
 }
 
 async function postOrderCard({ order, product, variant, keys }) {
