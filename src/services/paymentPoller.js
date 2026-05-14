@@ -296,10 +296,14 @@ class PaymentPoller {
         this._logTransaction(tx, order.id, paymentCode, 'matched');
       }
       adminNotifyService.notify('payment_short',
-        `⚠️ Thanh toán thiếu cho đơn #${order.id}\n` +
-        `KH: ${order.user_id}\n` +
-        `Mã: ${paymentCode}\nChuyển: ${formatPrice(tx.amount)}\nCần: ${formatPrice(order.total_price)}\n\n` +
-        `<i>Bot không tự cộng. Vào /admin/users để cộng thủ công nếu cần.</i>`,
+        messageTemplateService.render('admin.payment_short', {
+          orderCode: order.id,
+          total: formatPrice(order.total_price).replace(/đ$/, ''),
+          received: formatPrice(tx.amount).replace(/đ$/, ''),
+          memo: paymentCode,
+          userMention: String(order.user_id),
+          note: 'Bot không tự cộng. Vào /admin/users để cộng thủ công nếu cần.',
+        }),
         { parse_mode: 'HTML' });
       await this._notifyCustomer(order.user_id,
         messageTemplateService.render('payment_short', {
@@ -335,17 +339,24 @@ class PaymentPoller {
           })()}</code>`
         : '';
       adminNotifyService.notify('backorder_paid',
-        `🛎 Đơn đặt trước cần xử lý: #${order.id}\n` +
-        `📦 ${result.order.product_name} (×${order.quantity})\n` +
-        `💰 ${formatPrice(order.total_price)}${inputBlock}\n` +
-        `→ /admin/orders để giao thủ công.`,
+        messageTemplateService.render('admin.backorder_paid', {
+          orderCode: order.id,
+          productName: result.order.product_name,
+          quantity: order.quantity,
+          total: formatPrice(order.total_price).replace(/đ$/, ''),
+          userMention: String(order.user_id),
+          inputBlock,
+        }),
         { parse_mode: 'HTML', order_id: order.id });
       // Backorder wait message — admin-configurable via settings.backorder_wait_message
       const dbForSetting = require('../database');
       const settingRow = dbForSetting.prepare("SELECT value FROM settings WHERE key = 'backorder_wait_message'").get();
       const waitMsg = settingRow?.value || 'Đơn này được giao thủ công, shop sẽ xử lý trong ít phút.';
       this._notifyCustomer(order.user_id,
-        `💳 Đã nhận thanh toán đơn #${order.id}.\n${waitMsg}`,
+        messageTemplateService.render('bot.backorder_wait', {
+          orderCode: order.id,
+          waitMsg,
+        }),
         'HTML');
       try {
         const orderChannelService = require('./orderChannelService');
@@ -362,12 +373,17 @@ class PaymentPoller {
       this.matchCount++;
       await this._notifyCustomerDelivered(order, result.accounts);
 
+      const overpayBlock = overpayAmount > 0
+        ? `\n\n⚠️ <b>Khách chuyển dư ${formatPrice(overpayAmount)}</b>\nVào /admin/users/${order.user_id}/adjust nếu muốn cộng vào ví.`
+        : '';
       adminNotifyService.notify('delivered',
-        `✅ Tự động giao hàng đơn #${order.id}\n` +
-        `KH: ${order.user_id}\nSP: ${result.order.product_name}\nSL: ${order.quantity}` +
-        (overpayAmount > 0
-          ? `\n\n⚠️ <b>Khách chuyển dư ${formatPrice(overpayAmount)}</b>\nVào /admin/users/${order.user_id}/adjust nếu muốn cộng vào ví.`
-          : ''),
+        messageTemplateService.render('admin.delivered', {
+          orderCode: order.id,
+          productName: result.order.product_name,
+          quantity: order.quantity,
+          userMention: String(order.user_id),
+          overpayBlock,
+        }),
         { parse_mode: 'HTML' });
       try {
         const orderChannelService = require('./orderChannelService');
@@ -383,8 +399,13 @@ class PaymentPoller {
     // Auto-deliver failed (no stock) — mark as paid, notify admin for manual delivery
     orderService.markPaid(order.id);
     adminNotifyService.notify('no_stock',
-      `💳 Đã nhận thanh toán đơn #${order.id} nhưng hết hàng!\n` +
-      `KH: ${order.user_id}\nSP: ${order.product_name}\nCần giao thủ công.`);
+      messageTemplateService.render('admin.no_stock', {
+        orderCode: order.id,
+        productName: order.product_name,
+        quantity: order.quantity,
+        userMention: String(order.user_id),
+      }),
+      { parse_mode: 'HTML' });
     this._notifyCustomer(order.user_id,
       messageTemplateService.render('payment_success', {
         orderCode: order.id,
@@ -447,17 +468,25 @@ class PaymentPoller {
 
     if (order) {
       adminNotifyService.notify('payment_short',
-        `⚠️ <b>Khách chuyển khoản cho đơn ${order.status}</b>\n\n` +
-        `Đơn #${order.id} (status: ${order.status})\n` +
-        `KH: ${order.user_id}\n` +
-        `Số tiền: ${formatPrice(tx.amount)} · Mã: ${paymentCode}\n\n` +
-        `<i>Vào /admin/users/${order.user_id}/adjust để cộng thủ công nếu cần.</i>`,
+        messageTemplateService.render('admin.payment_short', {
+          orderCode: `${order.id} (status: ${order.status})`,
+          total: '—',
+          received: formatPrice(tx.amount).replace(/đ$/, ''),
+          memo: paymentCode,
+          userMention: String(order.user_id),
+          note: `Vào /admin/users/${order.user_id}/adjust để cộng thủ công nếu cần.`,
+        }),
         { parse_mode: 'HTML' });
     } else {
       adminNotifyService.notify('payment_short',
-        `⚠️ <b>Chuyển khoản không khớp đơn nào</b>\n\n` +
-        `Mã: ${paymentCode}\nSố tiền: ${formatPrice(tx.amount)}\n\n` +
-        `<i>Không tìm thấy đơn hàng tương ứng.</i>`,
+        messageTemplateService.render('admin.payment_short', {
+          orderCode: '—',
+          total: '—',
+          received: formatPrice(tx.amount).replace(/đ$/, ''),
+          memo: paymentCode,
+          userMention: '—',
+          note: 'Không tìm thấy đơn hàng tương ứng.',
+        }),
         { parse_mode: 'HTML' });
     }
   }
@@ -484,10 +513,14 @@ class PaymentPoller {
     // includes their telegram_id (one-tap link to the adjust page).
     const userId = topupService.resolveUserFromMemo(memo);
     adminNotifyService.notify('payment_short',
-      `⚠️ <b>Nạp ví ngoài /nap (memo ${memo})</b>\n\n` +
-      `Số tiền: ${formatPrice(tx.amount)}\n` +
-      (userId ? `KH: ${userId}\n` : 'KH: <i>không xác định</i>\n') +
-      `\n<i>Bot không tự cộng. Vào /admin/users để xử lý thủ công.</i>`,
+      messageTemplateService.render('admin.payment_short', {
+        orderCode: `topup memo ${memo}`,
+        total: '—',
+        received: formatPrice(tx.amount).replace(/đ$/, ''),
+        memo,
+        userMention: userId ? String(userId) : '—',
+        note: 'Bot không tự cộng. Vào /admin/users để xử lý thủ công.',
+      }),
       { parse_mode: 'HTML' });
   }
 
@@ -569,11 +602,14 @@ class PaymentPoller {
       'HTML');
 
     adminNotifyService.notify('payment_short',
-      `💵 <b>Yêu cầu nạp ví chờ duyệt</b>\n\n` +
-      `Topup #${topup.id} · KH ${topup.user_id}\n` +
-      `Số tiền: ${formatPrice(tx.amount)}\n` +
-      `Memo: ${memo}\n\n` +
-      `Vào /admin/topups → tab "Chờ duyệt" → nhấn "Cộng".`,
+      messageTemplateService.render('admin.payment_short', {
+        orderCode: `topup #${topup.id}`,
+        total: '—',
+        received: formatPrice(tx.amount).replace(/đ$/, ''),
+        memo,
+        userMention: String(topup.user_id),
+        note: 'Vào /admin/topups → tab "Chờ duyệt" → nhấn "Cộng".',
+      }),
       { parse_mode: 'HTML' });
 
     return { ok: true };
