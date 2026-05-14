@@ -120,6 +120,9 @@ Ports: api `:3000`, web `:3001`, mbbank `:8000`.
 | `v0.27-editable-messages` | A — admin/group/bot message templates, `/admin/messages` covers all 4 channels (bot/admin/group/web), `scripts/verify-message-templates.js` smoke (was 29 templates pre-prune) |
 | `v0.28-miniapp-ux` | UX — /san-pham caps 5 cols PC, quick-buy moved into product-info with zap icon, TMA BackButton via `useTelegramBackButton`, Lọc inline with chip row, variant input highlighted card, search button → popup modal in navbar |
 | `v0.29-templates-prune` | templates — drop 14 unused seed rows (TMA covers payment/order flows), neutral pro tone (no Onii-chan / nhé / ~), per-template ON/OFF via `is_enabled` + `CORE_TEMPLATE_KEYS`, `renderIfEnabled` skips disabled sends, `/admin/messages` shows ON/OFF + "Bắt buộc" badge. 16 templates total. |
+| `v0.30-hygiene` | cleanup — delete `bot-legacy.js` + `handlers/adminActions.js` + `services/sheetSync.js` + `admin/sync` route (~978 LOC dead). Drop deprecated env (SEPAY/WEBHOOK_PORT/GOOGLE_SHEET_ID/SHEET_SYNC_INTERVAL). Anime tagline + 'onii-chan' fallback removed. `.gitignore` adds `data/uploads/` + `data/*.bak-*`. |
+| `v0.31-security` | helmet CSP (TMA-friendly: telegram.org for script-src, web.telegram.org + t.me as frame-ancestors), upload magic-byte sniff (`detectImageKind` rejects spoofed mimetypes → 415). Other items confirmed already in place: SALT_ROUNDS=12, rate-limit buckets applied, JWT TTL explicit (admin 24h / customer 30d), SQL `${where}` builders use literals + `?` params. |
+| `v0.32-tma-perf` | QueryClient defaults: staleTime 60s, gcTime 5min, refetchOnWindowFocus false (TMA backgrounds aggressively). Detail page waterfall collapsed (3 useEffects → 1) — recently-viewed rail paints in same tick as related rail. Detail hero `sizes` corrected for `md:grid-cols-2` (was 100vw, now `(min-width:768px) 50vw, 100vw`). |
 
 ## Pending follow-ups
 
