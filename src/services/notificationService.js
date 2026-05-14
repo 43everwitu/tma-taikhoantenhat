@@ -1,6 +1,7 @@
 const db = require('../database');
 const config = require('../config');
 const adminNotifyService = require('./adminNotifyService');
+const messageTemplateService = require('./messageTemplateService');
 
 const sleep = (ms) => new Promise(r => setTimeout(r, ms));
 
@@ -64,14 +65,17 @@ class NotificationService {
   }
 
   async notifyOrderExpired(order) {
-    const body = `⏰ Đơn #${order.id} hết hạn thanh toán.\n` +
-      `Gõ /menu để đặt lại.`;
+    const body = messageTemplateService.render('bot.order_expired_short', {
+      orderCode: order.id,
+    });
     return this.notify(order.user_id, 'order_update', 'Đơn hàng hết hạn', body,
       { order_id: order.id });
   }
 
   async notifyOrderCancelled(order) {
-    const body = `❌ Đơn #${order.id} đã bị hủy.\nLiên hệ hỗ trợ nếu cần.`;
+    const body = messageTemplateService.render('bot.order_cancelled_short', {
+      orderCode: order.id,
+    });
     return this.notify(order.user_id, 'order_update', 'Đơn hàng bị hủy', body,
       { order_id: order.id });
   }
@@ -101,8 +105,11 @@ class NotificationService {
 
     if (followers.length === 0) return;
 
-    const body = `🔔 <b>${product.emoji} ${product.name}</b> đã có hàng!\n` +
-      `Còn ${stockCount} sản phẩm. Mua ngay: /menu`;
+    const body = messageTemplateService.render('bot.stock_replenished', {
+      productEmoji: product.emoji || '📦',
+      productName: product.name,
+      stockCount,
+    });
 
     let sent = 0;
     for (const { user_id } of followers) {
@@ -150,16 +157,20 @@ class NotificationService {
 
     for (const p of lowStockProducts) {
       const stockUrl = rawUrl ? `${rawUrl}/admin/stock/${p.id}` : '';
-      const lines = [
-        `⚠️ <b>Tồn kho thấp</b>`,
-        ``,
-        `${p.emoji || '📦'} <b>${p.name}</b>`,
-        `🆔 ID: <code>${p.id}</code>`,
-        `📦 Còn lại: <b>${p.stock_count}</b> / ngưỡng ${p.low_stock_threshold}`,
-      ];
-      if (stockUrl && !isPublicUrl) {
-        lines.push('', `🔗 <a href="${stockUrl}">Thêm kho qua dashboard</a>`);
-      }
+      // stockUrlBlock is trusted-as-HTML — empty when we'll use an inline
+      // button (public URL) so the body stays clean.
+      const stockUrlBlock = (stockUrl && !isPublicUrl)
+        ? `\n\n🔗 <a href="${stockUrl}">Thêm kho qua dashboard</a>`
+        : '';
+
+      const body = messageTemplateService.render('admin.low_stock', {
+        productEmoji: p.emoji || '📦',
+        productName: p.name,
+        productId: p.id,
+        stockCount: p.stock_count,
+        threshold: p.low_stock_threshold,
+        stockUrlBlock,
+      });
 
       const opts = { parse_mode: 'HTML' };
       if (stockUrl && isPublicUrl) {
@@ -171,7 +182,7 @@ class NotificationService {
       }
 
       try {
-        await adminNotifyService.notify('low_stock', lines.join('\n'), opts);
+        await adminNotifyService.notify('low_stock', body, opts);
         updateAlert.run(p.id);
       } catch (err) {
         console.error(`❌ Low stock alert for product ${p.id}:`, err.message);
