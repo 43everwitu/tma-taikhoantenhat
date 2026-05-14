@@ -110,6 +110,7 @@ Ports: api `:3000`, web `:3001`, mbbank `:8000`.
 | `v0.26-backorder-order-polish` | variant `is_backorder` flag + admin manual-deliver flow w/ admin notify, compact bot delivery message + .txt fallback, /admin/orders edit-keys CRUD, customer order page linkify + copy buttons, navbar support button (`settings.support_url`), `/start` welcome drops balance + adds support contact |
 | `v0.27-editable-messages` | A — admin/group/bot message templates (29 total), `/admin/messages` covers all 4 channels (bot/admin/group/web), `scripts/verify-message-templates.js` renders every key as smoke test |
 | `v0.28-miniapp-ux` | UX — /san-pham caps 5 cols PC, quick-buy moved into product-info with zap icon, TMA BackButton via `useTelegramBackButton`, Lọc inline with chip row, variant input highlighted card, search button in navbar (`?focus=1` autofocuses) |
+| `v0.29-templates-prune` | templates — drop 14 unused seed rows (TMA covers payment/order flows), neutral pro tone (no Onii-chan / nhé / ~), per-template ON/OFF via `is_enabled` + `CORE_TEMPLATE_KEYS`, `renderIfEnabled` skips disabled sends, /admin/messages shows ON/OFF + Bắt buộc badge. 16 templates total. |
 
 ## Pending follow-ups
 
