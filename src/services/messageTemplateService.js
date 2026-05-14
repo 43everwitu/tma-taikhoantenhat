@@ -8,7 +8,20 @@ function escapeHtml(s) {
 
 // Variables whose values are already HTML-safe — pre-formatted by callers.
 // Everything NOT in this set is escaped at substitution time.
-const TRUSTED_VARS = new Set(['keysBlock', 'usageInstructions']);
+const TRUSTED_VARS = new Set([
+  'keysBlock',
+  'usageInstructions',
+  // Spoiler/mention HTML built by callers (orderChannelService, paymentPoller).
+  'userMention',
+  'userSpoiler',
+  'totalSpoiler',
+  // Pre-rendered sub-blocks (multi-line HTML stitched up by callers).
+  'inputBlock',
+  'overpayBlock',
+  'stockUrlBlock',
+  'customerLine',
+  'productLine',
+]);
 let cache = { ts: 0, rows: null };
 
 function loadAll() {
