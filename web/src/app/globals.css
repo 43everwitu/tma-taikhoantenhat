@@ -386,6 +386,22 @@ body {
   }
   .miniapp-product-quickbuy:hover { filter: brightness(.95); }
   .miniapp-product-quickbuy:active { transform: translateY(1px); }
+
+  /* Highlighted variant input card */
+  .miniapp-variant-input-card {
+    margin-top: .5rem;
+    padding: .75rem;
+    border-radius: 14px;
+    background: var(--brand-gold-soft);
+    border: 1px solid color-mix(in srgb, var(--brand-gold) 60%, transparent);
+    box-shadow: 0 1px 0 color-mix(in srgb, var(--brand-gold) 30%, transparent);
+  }
+  .miniapp-variant-input-header {
+    display: inline-flex; align-items: center; gap: .375rem;
+    font-size: .75rem; font-weight: 700;
+    color: var(--brand-gold-deep, var(--brand-ink));
+    text-transform: uppercase; letter-spacing: .02em;
+  }
   .miniapp-product-badge {
     position: absolute; top: .5rem; left: .5rem;
     padding: .125rem .5rem;

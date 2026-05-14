@@ -1,7 +1,7 @@
 import {
   Home, ShoppingCart, ClipboardList, Search, Package, Megaphone, Sparkles,
   BookOpen, Film, Wrench, Zap, Plus, Minus, Trash2, Inbox, Clock, CheckCircle2,
-  XCircle, AlertCircle, Copy, ArrowRight, ChevronRight, Menu, X, SlidersHorizontal,
+  XCircle, AlertCircle, Info, Copy, ArrowRight, ChevronRight, Menu, X, SlidersHorizontal,
   MessageCircle, Headphones,
   type LucideIcon,
 } from 'lucide-react'
@@ -26,6 +26,7 @@ export const miniappIcons = {
   check: CheckCircle2,
   cross: XCircle,
   alert: AlertCircle,
+  info: Info,
   copy: Copy,
   arrowRight: ArrowRight,
   chevronRight: ChevronRight,
