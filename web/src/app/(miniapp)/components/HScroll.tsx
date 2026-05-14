@@ -40,27 +40,29 @@ export function HScroll({ children, ariaLabel }: Props) {
 
   return (
     <div className="miniapp-hscroll" role={ariaLabel ? 'region' : undefined} aria-label={ariaLabel}>
-      <button
-        type="button"
-        className="miniapp-hscroll-arrow miniapp-hscroll-arrow--left"
-        onClick={() => scrollBy(-1)}
-        disabled={atStart}
-        aria-label="Cuộn trái"
-      >
-        <Icon name="arrowRight" size={20} className="rotate-180" />
-      </button>
+      {!atStart && (
+        <button
+          type="button"
+          className="miniapp-hscroll-arrow miniapp-hscroll-arrow--left"
+          onClick={() => scrollBy(-1)}
+          aria-label="Cuộn trái"
+        >
+          <Icon name="arrowRight" size={20} className="rotate-180" />
+        </button>
+      )}
       <div ref={trackRef} className="miniapp-hscroll-track">
         {children}
       </div>
-      <button
-        type="button"
-        className="miniapp-hscroll-arrow miniapp-hscroll-arrow--right"
-        onClick={() => scrollBy(1)}
-        disabled={atEnd}
-        aria-label="Cuộn phải"
-      >
-        <Icon name="arrowRight" size={20} />
-      </button>
+      {!atEnd && (
+        <button
+          type="button"
+          className="miniapp-hscroll-arrow miniapp-hscroll-arrow--right"
+          onClick={() => scrollBy(1)}
+          aria-label="Cuộn phải"
+        >
+          <Icon name="arrowRight" size={20} />
+        </button>
+      )}
     </div>
   )
 }

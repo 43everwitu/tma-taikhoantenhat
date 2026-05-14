@@ -124,63 +124,57 @@ export function VariantPicker({ variants, selectedId, onSelect, inputValues, onI
         />
       )}
       {selected?.requiresInput && (
-        <div className="miniapp-variant-input-card">
-          <div className="miniapp-variant-input-header">
-            <Icon name="info" size={14} />
-            <span>Thông tin cần cung cấp</span>
-          </div>
-          <div className="space-y-2 mt-2">
-            {(() => {
-              const fields: VariantInputField[] =
-                selected.inputFields && selected.inputFields.length > 0
-                  ? selected.inputFields
-                  : [{
-                      label: selected.inputLabel || 'Thông tin',
-                      placeholder: selected.inputPlaceholder || '',
-                      type: (selected.inputType as VariantInputField['type']) || 'text',
-                      required: true,
-                    }]
+        <div className="space-y-2">
+          {(() => {
+            const fields: VariantInputField[] =
+              selected.inputFields && selected.inputFields.length > 0
+                ? selected.inputFields
+                : [{
+                    label: selected.inputLabel || 'Thông tin',
+                    placeholder: selected.inputPlaceholder || '',
+                    type: (selected.inputType as VariantInputField['type']) || 'text',
+                    required: true,
+                  }]
 
-              return fields.map((f, idx) => (
-                <div key={`${f.label}-${idx}`}>
-                  <label className="block text-xs font-medium mb-1" style={{ color: 'var(--brand-ink)' }}>
-                    {f.label}{f.required && <span className="text-red-500"> *</span>}
-                  </label>
-                  {f.type === 'textarea' ? (
-                    <textarea
-                      value={inputValues[f.label] ?? ''}
-                      onChange={(e) => onInputChange({ ...inputValues, [f.label]: e.target.value })}
-                      placeholder={f.placeholder ?? ''}
-                      rows={3}
-                      className="w-full rounded-xl px-3 py-2 text-sm"
-                      style={{
-                        background: '#fff',
-                        border: '1px solid color-mix(in srgb, var(--brand-gold) 50%, transparent)',
-                      }}
-                      minLength={f.required ? 1 : 0}
-                      maxLength={500}
-                      required={f.required}
-                    />
-                  ) : (
-                    <input
-                      type={f.type}
-                      value={inputValues[f.label] ?? ''}
-                      onChange={(e) => onInputChange({ ...inputValues, [f.label]: e.target.value })}
-                      placeholder={f.placeholder ?? ''}
-                      className="w-full rounded-xl px-3 py-2 text-sm"
-                      style={{
-                        background: '#fff',
-                        border: '1px solid color-mix(in srgb, var(--brand-gold) 50%, transparent)',
-                      }}
-                      minLength={f.required ? 1 : 0}
-                      maxLength={200}
-                      required={f.required}
-                    />
-                  )}
-                </div>
-              ))
-            })()}
-          </div>
+            return fields.map((f, idx) => (
+              <div key={`${f.label}-${idx}`}>
+                <label className="block text-xs opacity-70 mb-1">
+                  {f.label}{f.required && <span className="text-red-500"> *</span>}
+                </label>
+                {f.type === 'textarea' ? (
+                  <textarea
+                    value={inputValues[f.label] ?? ''}
+                    onChange={(e) => onInputChange({ ...inputValues, [f.label]: e.target.value })}
+                    placeholder={f.placeholder ?? ''}
+                    rows={3}
+                    className="w-full rounded-xl px-3 py-2 text-sm"
+                    style={{
+                      background: 'var(--tg-bg-2, #fff)',
+                      border: '1px solid color-mix(in srgb, var(--brand-ink) 14%, transparent)',
+                    }}
+                    minLength={f.required ? 1 : 0}
+                    maxLength={500}
+                    required={f.required}
+                  />
+                ) : (
+                  <input
+                    type={f.type}
+                    value={inputValues[f.label] ?? ''}
+                    onChange={(e) => onInputChange({ ...inputValues, [f.label]: e.target.value })}
+                    placeholder={f.placeholder ?? ''}
+                    className="w-full rounded-xl px-3 py-2 text-sm"
+                    style={{
+                      background: 'var(--tg-bg-2, #fff)',
+                      border: '1px solid color-mix(in srgb, var(--brand-ink) 14%, transparent)',
+                    }}
+                    minLength={f.required ? 1 : 0}
+                    maxLength={200}
+                    required={f.required}
+                  />
+                )}
+              </div>
+            ))
+          })()}
         </div>
       )}
     </div>
