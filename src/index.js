@@ -1,6 +1,7 @@
 const config = require('./config');
 const db = require('./database');
 const express = require('express');
+const helmet = require('helmet');
 const path = require('node:path');
 const { createBot } = require('./bot');
 
@@ -15,6 +16,29 @@ const app = express();
 // ERR_ERL_UNEXPECTED_X_FORWARDED_FOR. Tighten to specific IP ranges in
 // production once the front-end IP set is known.
 app.set('trust proxy', 1);
+
+// Security headers. CSP keeps things tight while allowing the Telegram Mini
+// App SDK script + framing from web.telegram.org / t.me. Static /uploads is
+// served below — image rendering depends on default img-src 'self'.
+app.use(helmet({
+  contentSecurityPolicy: {
+    useDefaults: true,
+    directives: {
+      'default-src': ["'self'"],
+      'script-src': ["'self'", "'unsafe-inline'", 'https://telegram.org'],
+      'style-src': ["'self'", "'unsafe-inline'"],
+      'img-src': ["'self'", 'data:', 'blob:', 'https:'],
+      'connect-src': ["'self'", 'https://telegram.org', 'https:'],
+      'frame-ancestors': ["'self'", 'https://web.telegram.org', 'https://t.me'],
+      'object-src': ["'none'"],
+    },
+  },
+  // Cloudflare Tunnel handles TLS; let HSTS live there.
+  hsts: false,
+  // Allow cross-origin embedding of /uploads images from TMA.
+  crossOriginResourcePolicy: { policy: 'cross-origin' },
+  crossOriginEmbedderPolicy: false,
+}));
 
 app.use(express.json());
 
