@@ -42,19 +42,11 @@ module.exports = {
     // Encryption (AES-256-GCM, 32 bytes / 64 hex chars)
     ENCRYPTION_KEY: process.env.ENCRYPTION_KEY || '',
 
-    // Legacy
-    WEBHOOK_PORT: parseInt(process.env.WEBHOOK_PORT) || 3000,
-    SEPAY_API_KEY: process.env.SEPAY_API_KEY || '',
-
     // Shop
     SHOP_NAME: process.env.SHOP_NAME || 'Taikhoantenhat',
     SUPPORT_CONTACT: process.env.SUPPORT_CONTACT || '@taikhoantenhat_support',
     BRAND_NAME: 'Taikhoantenhat',
-    BRAND_TAGLINE: 'Bán hàng tự động cho các onii-chan',
-
-    // Google Sheet
-    GOOGLE_SHEET_ID: process.env.GOOGLE_SHEET_ID || '',
-    SHEET_SYNC_INTERVAL: parseInt(process.env.SHEET_SYNC_INTERVAL) || 5,
+    BRAND_TAGLINE: 'Cửa hàng tài khoản số',
 
     // Feature flags (sub-project D)
     FEATURE_TOPUPS: process.env.FEATURE_TOPUPS === 'true',

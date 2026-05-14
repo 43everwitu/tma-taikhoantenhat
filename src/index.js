@@ -111,10 +111,6 @@ async function start() {
   app.locals.notificationService = notificationService;
   notificationService.startLowStockMonitor();
 
-  // Start Google Sheet auto-sync
-  const { startAutoSync } = require('./services/sheetSync');
-  startAutoSync();
-
   // Initialize payment poller singleton (so bot handlers can access it)
   if (config.PAYMENT_POLL_ENABLED && config.MBBANK_API_TOKEN) {
     getPaymentPoller();

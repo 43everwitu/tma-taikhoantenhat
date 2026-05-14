@@ -17,7 +17,6 @@ router.use('/messages', require('./messages'));
 router.use('/settings', require('./settings'));
 router.use('/audit-log', require('./audit'));
 router.use('/payment-poller', require('./poller'));
-router.use('/sync', require('./sync'));
 router.use('/features', require('./features'));
 router.use('/upload', require('./upload'));
 router.use('/uploads', require('./upload'));

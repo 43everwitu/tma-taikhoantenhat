@@ -5,7 +5,7 @@ const messageTemplateService = require('../services/messageTemplateService');
 const messages = {
     welcome: ({ name, username, balance }) =>
         messageTemplateService.render('welcome', {
-            name: name || 'onii-chan',
+            name: name || 'bạn',
             username: username || '',
             balance: new Intl.NumberFormat('vi-VN').format(balance || 0),
         }),

@@ -46,3 +46,8 @@ taikho35_taikhoan_wp_lmbr8.sql
 
 # Python venv
 mbbank-api/.venv/
+
+# Runtime data + uploads
+data/uploads/
+data/*.bak-*
+data/shop.db.bak-*
