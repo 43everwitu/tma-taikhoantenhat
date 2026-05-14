@@ -7,7 +7,7 @@ const { toTelegramHtml } = require('../../../utils/richHtml');
 
 const router = Router();
 
-// GET /admin/messages — list all 18 templates
+// GET /admin/messages — list all templates (bot/admin/group/web channels)
 router.get('/', (req, res) => {
   res.json({ success: true, data: messageTemplateService.list() });
 });
