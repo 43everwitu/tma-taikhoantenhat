@@ -108,6 +108,7 @@ Ports: api `:3000`, web `:3001`, mbbank `:8000`.
 | `v0.24-admin-toast` | minimal Toast provider + success/error toasts for variant/product/stock CRUD; soft-deleted variants get red bg + strikethrough + "Đã xoá" badge |
 | `v0.25-variants-overhaul` | variants hard-delete (isActive = hide/show only), multi-input fields per variant, drag-and-drop reorder via @dnd-kit, longDescription max 5000→20000 |
 | `v0.26-backorder-order-polish` | variant `is_backorder` flag + admin manual-deliver flow w/ admin notify, compact bot delivery message + .txt fallback, /admin/orders edit-keys CRUD, customer order page linkify + copy buttons, navbar support button (`settings.support_url`), `/start` welcome drops balance + adds support contact |
+| `v0.27-editable-messages` | A — admin/group/bot message templates (29 total), `/admin/messages` covers all 4 channels (bot/admin/group/web), `scripts/verify-message-templates.js` renders every key as smoke test |
 
 ## Pending follow-ups
 
