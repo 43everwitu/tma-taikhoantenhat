@@ -41,6 +41,10 @@ export default function AdminMessagesPage() {
       flashSaved()
     },
   })
+  const toggleMut = useMutation({
+    mutationFn: ({ key, enabled }: { key: string; enabled: boolean }) => templates.toggle(key, enabled),
+    onSuccess: () => qc.invalidateQueries({ queryKey: ['admin', 'messages'] }),
+  })
   const resetMut = useMutation({
     mutationFn: () => templates.reset(active!.key),
     onSuccess: async () => {
@@ -75,14 +79,30 @@ export default function AdminMessagesPage() {
               <h3 className="text-xs uppercase tracking-wider text-clay-charcoal px-2 mb-2">{ch}</h3>
               <ul className="space-y-1">
                 {items.map((t) => (
-                  <li key={t.key}>
+                  <li key={t.key} className="flex items-stretch gap-1">
                     <button
                       onClick={() => pick(t)}
-                      className={`w-full text-left px-3 py-2 rounded-lg text-sm transition ${activeKey === t.key ? 'bg-clay-ink text-white' : 'hover:bg-clay-cream'}`}
+                      className={`flex-1 text-left px-3 py-2 rounded-lg text-sm transition ${activeKey === t.key ? 'bg-clay-ink text-white' : 'hover:bg-clay-cream'}`}
                     >
-                      <div className="font-medium">{t.label}</div>
+                      <div className="font-medium flex items-center gap-1.5">
+                        {t.label}
+                        {t.core && <span className="text-[9px] uppercase tracking-wide px-1 py-px rounded bg-amber-200 text-amber-900">Bắt buộc</span>}
+                        {!t.core && !t.enabled && <span className="text-[9px] uppercase tracking-wide px-1 py-px rounded bg-zinc-300 text-zinc-700">Tắt</span>}
+                      </div>
                       <div className="text-xs opacity-70">{t.key}</div>
                     </button>
+                    {!t.core && (
+                      <button
+                        type="button"
+                        aria-label={t.enabled ? 'Tắt' : 'Bật'}
+                        title={t.enabled ? 'Đang bật — bấm để tắt' : 'Đang tắt — bấm để bật'}
+                        onClick={(e) => { e.stopPropagation(); toggleMut.mutate({ key: t.key, enabled: !t.enabled }) }}
+                        disabled={toggleMut.isPending}
+                        className={`w-9 shrink-0 rounded-lg text-xs font-semibold transition ${t.enabled ? 'bg-emerald-500 text-white' : 'bg-zinc-300 text-zinc-700'} disabled:opacity-60`}
+                      >
+                        {t.enabled ? 'ON' : 'OFF'}
+                      </button>
+                    )}
                   </li>
                 ))}
               </ul>

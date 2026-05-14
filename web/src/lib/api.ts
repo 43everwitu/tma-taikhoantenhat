@@ -64,12 +64,14 @@ export const api = {
 
 export interface MessageTemplate {
   key: string
-  channel: 'bot' | 'web'
+  channel: 'bot' | 'admin' | 'group' | 'web'
   label: string
   variables: string[]
   body: string
   default_body: string
   updated_at: string
+  enabled: boolean
+  core: boolean
 }
 
 export const templates = {
@@ -78,4 +80,6 @@ export const templates = {
   reset: (key: string) => api.post<void>(`/admin/messages/${key}/reset`, {}),
   preview: (key: string, vars: Record<string, string>) =>
     api.post<{ text: string }>(`/admin/messages/${key}/preview`, { vars }),
+  toggle: (key: string, enabled: boolean) =>
+    api.put<{ enabled: boolean }>(`/admin/messages/${key}/toggle`, { enabled }),
 }
