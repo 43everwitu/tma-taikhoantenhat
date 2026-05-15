@@ -131,19 +131,8 @@ class NotificationService {
    * about the same product every cycle.
    */
   async checkLowStock() {
-    const lowStockProducts = db.prepare(`
-      SELECT * FROM (
-        SELECT p.id, p.name, p.emoji, p.low_stock_threshold, p.last_low_stock_alert_at,
-          (SELECT COUNT(*) FROM stock s WHERE s.product_id = p.id AND s.is_sold = 0) as stock_count
-        FROM products p
-        WHERE p.is_active = 1
-          AND p.low_stock_threshold > 0
-      )
-      WHERE stock_count > 0
-        AND stock_count <= low_stock_threshold
-        AND (last_low_stock_alert_at IS NULL
-             OR last_low_stock_alert_at < datetime('now', '-24 hours'))
-    `).all();
+    const { effectiveLowStockProducts } = require('./lowStockQuery');
+    const lowStockProducts = effectiveLowStockProducts();
 
     if (lowStockProducts.length === 0) return;
 
@@ -169,7 +158,7 @@ class NotificationService {
         productName: p.name,
         productId: p.id,
         stockCount: p.stock_count,
-        threshold: p.low_stock_threshold,
+        threshold: p.effective_threshold,
         stockUrlBlock,
       });
       if (!body) { updateAlert.run(p.id); continue; }
