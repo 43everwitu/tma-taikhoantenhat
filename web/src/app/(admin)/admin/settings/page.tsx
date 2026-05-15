@@ -83,6 +83,11 @@ const GROUPS: Group[] = [
     fields: [
       { key: 'low_stock_alert_threshold', label: 'Ngưỡng cảnh báo tồn kho mặc định', type: 'number',
         description: 'Áp dụng cho sản phẩm chưa set ngưỡng riêng. Khi stock ≤ ngưỡng → admin được báo (1 lần / 24h).' },
+      { key: 'low_stock_chat_id', label: 'Chat ID nhận cảnh báo tồn kho', type: 'text',
+        description: 'Để trống = gửi vào DM admin (ADMIN_ID env). Nhập chat id âm (vd -1003865156744) để gửi vào group/channel.',
+        placeholder: '-1003865156744' },
+      { key: 'low_stock_thread_id', label: 'Thread ID (forum topic)', type: 'number',
+        description: 'Tuỳ chọn. ID topic trong group forum (vd 2). Để trống nếu group không bật forum.' },
     ],
   },
   {
