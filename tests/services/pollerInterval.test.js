@@ -27,3 +27,34 @@ test('clamps to 120s upper bound', () => {
 });
 
 test('cleanup', () => { setInterval(30); });
+
+test('isAutoPaymentEnabled returns true when setting is "true"', () => {
+  db.prepare("INSERT INTO settings (key,value) VALUES ('auto_payment_enabled','true') ON CONFLICT(key) DO UPDATE SET value='true'").run();
+  delete require.cache[require.resolve('../../src/services/pollerConfig')];
+  const { isAutoPaymentEnabled } = require('../../src/services/pollerConfig');
+  assert.strictEqual(isAutoPaymentEnabled(false), true);
+});
+
+test('isAutoPaymentEnabled returns true when setting is "1"', () => {
+  db.prepare("INSERT INTO settings (key,value) VALUES ('auto_payment_enabled','1') ON CONFLICT(key) DO UPDATE SET value='1'").run();
+  delete require.cache[require.resolve('../../src/services/pollerConfig')];
+  const { isAutoPaymentEnabled } = require('../../src/services/pollerConfig');
+  assert.strictEqual(isAutoPaymentEnabled(false), true);
+});
+
+test('isAutoPaymentEnabled returns false when setting is "false"', () => {
+  db.prepare("INSERT INTO settings (key,value) VALUES ('auto_payment_enabled','false') ON CONFLICT(key) DO UPDATE SET value='false'").run();
+  delete require.cache[require.resolve('../../src/services/pollerConfig')];
+  const { isAutoPaymentEnabled } = require('../../src/services/pollerConfig');
+  assert.strictEqual(isAutoPaymentEnabled(true), false);
+});
+
+test('isAutoPaymentEnabled falls back to env when row missing', () => {
+  db.prepare("DELETE FROM settings WHERE key='auto_payment_enabled'").run();
+  delete require.cache[require.resolve('../../src/services/pollerConfig')];
+  const { isAutoPaymentEnabled } = require('../../src/services/pollerConfig');
+  assert.strictEqual(isAutoPaymentEnabled(true), true);
+  assert.strictEqual(isAutoPaymentEnabled(false), false);
+  // restore for next runs
+  db.prepare("INSERT INTO settings (key,value) VALUES ('auto_payment_enabled','1') ON CONFLICT(key) DO UPDATE SET value='1'").run();
+});

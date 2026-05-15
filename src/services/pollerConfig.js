@@ -12,4 +12,18 @@ function getPollIntervalMs() {
   return Math.min(seconds, 120) * 1000;
 }
 
-module.exports = { getPollIntervalMs };
+/**
+ * Whether auto-matching of bank transactions is enabled. Combines the DB
+ * setting `auto_payment_enabled` (truthy → on) with the env-time
+ * PAYMENT_POLL_ENABLED. The setting wins when present so admins can toggle
+ * matching from the UI without a restart. Returns true if BOTH the gate
+ * is on AND MBBANK_API_TOKEN is configured (caller still checks the token).
+ */
+function isAutoPaymentEnabled(envFallback) {
+  const row = db.prepare("SELECT value FROM settings WHERE key = 'auto_payment_enabled'").get();
+  if (!row) return !!envFallback;
+  const v = row.value;
+  return v === 'true' || v === '1';
+}
+
+module.exports = { getPollIntervalMs, isAutoPaymentEnabled };

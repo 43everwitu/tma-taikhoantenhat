@@ -76,7 +76,8 @@ class PaymentPoller {
    */
   ensureRunning() {
     if (this.running) return;
-    if (!config.PAYMENT_POLL_ENABLED || !config.MBBANK_API_TOKEN) {
+    const { isAutoPaymentEnabled } = require('./pollerConfig');
+    if (!isAutoPaymentEnabled(config.PAYMENT_POLL_ENABLED) || !config.MBBANK_API_TOKEN) {
       return;
     }
 
