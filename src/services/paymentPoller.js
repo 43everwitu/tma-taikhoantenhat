@@ -137,11 +137,12 @@ class PaymentPoller {
 
   async _poll() {
     try {
-      // Step 1: Get all active pending orders + topups
+      // Step 1: Get pending + recently-expired orders (24h recovery window) + pending topups
       const pendingOrders = orderService.getActivePending();
+      const recentlyExpired = orderService.getRecentlyExpired(24);
       const pendingTopups = topupService.getActivePending();
 
-      if (pendingOrders.length === 0 && pendingTopups.length === 0) {
+      if (pendingOrders.length === 0 && recentlyExpired.length === 0 && pendingTopups.length === 0) {
         // Nothing to match — go dormant
         this.stop();
         return;
@@ -150,7 +151,8 @@ class PaymentPoller {
       this.pollCount++;
 
       // Step 2: Fetch transactions from MBBank API
-      const orderMin = pendingOrders.length ? Math.min(...pendingOrders.map(o => o.total_price)) : Infinity;
+      const allOrders = pendingOrders.concat(recentlyExpired);
+      const orderMin = allOrders.length ? Math.min(...allOrders.map(o => o.total_price)) : Infinity;
       const topupMin = pendingTopups.length ? Math.min(...pendingTopups.map(t => t.amount)) : Infinity;
       const minAmount = Math.min(orderMin, topupMin);
       const transactions = await this._fetchTransactions(minAmount);
@@ -159,7 +161,7 @@ class PaymentPoller {
 
       // Step 3: Build lookup maps
       const orderMap = new Map();
-      for (const order of pendingOrders) {
+      for (const order of allOrders) {
         if (order.payment_code) orderMap.set(order.payment_code, order);
       }
       const topupMap = new Map();
@@ -278,7 +280,22 @@ class PaymentPoller {
     // If order not provided, look it up
     if (!order) {
       order = orderService.getByPaymentCode(paymentCode);
-      if (!order || order.status !== 'pending') return null;
+      if (!order || (order.status !== 'pending' && order.status !== 'expired')) return null;
+    }
+
+    // Late-payment recovery: matched order is already expired. Flip it back to
+    // 'paid' and continue down the normal deliver path. markRecoveredPaid is
+    // a no-op if the status changed under us → safe.
+    if (order.status === 'expired') {
+      const recovered = orderService.markRecoveredPaid(order.id);
+      if (!recovered) {
+        console.log(`💸 Recovery skipped for expired order ${order.id} (status changed under us)`);
+        return null;
+      }
+      console.log(`💸 Recovered expired order ${order.id} via late bank transfer`);
+      // Patch the in-memory row so downstream short-pay + delivery branches
+      // see the correct status (DB write already happened above).
+      order.status = 'paid';
     }
 
     // Short pay — DO NOT auto-credit. Bot policy: only admin may add wallet
