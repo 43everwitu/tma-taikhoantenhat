@@ -397,6 +397,54 @@ const orderService = {
     return stale;
   },
 
+  /**
+   * Orders that already transitioned to 'expired' but their expires_at is
+   * within the recovery window. Used by the poller to recheck late bank
+   * transfers (e.g. inter-bank delays). Returns full order rows joined with
+   * product name.
+   */
+  getRecentlyExpired(hoursBack = 24) {
+    return db.prepare(`
+      SELECT o.*, p.name as product_name
+      FROM orders o
+      JOIN products p ON o.product_id = p.id
+      WHERE o.status = 'expired'
+        AND o.expires_at IS NOT NULL
+        AND o.expires_at > datetime('now', ?)
+      ORDER BY o.expires_at DESC
+    `).all(`-${hoursBack} hours`);
+  },
+
+  /**
+   * Flip an expired order back to 'paid' because its payment was found late.
+   * Idempotent: only succeeds if current status is 'expired'. Returns true on
+   * successful flip, false if status was already changed (delivered/paid/etc).
+   */
+  markRecoveredPaid(orderId) {
+    const r = db.prepare(`
+      UPDATE orders
+      SET status = 'paid', payment_matched_at = CURRENT_TIMESTAMP
+      WHERE id = ? AND status = 'expired'
+    `).run(orderId);
+    return r.changes > 0;
+  },
+
+  /**
+   * Hard-delete orders that have been in 'expired' state for more than
+   * `hoursBack` hours (default 24). Stock reservations were already released
+   * at expiry time, so no extra cleanup is needed beyond the row delete.
+   * Returns number of deleted rows.
+   */
+  cleanupExpiredOrders(hoursBack = 24) {
+    const r = db.prepare(`
+      DELETE FROM orders
+      WHERE status = 'expired'
+        AND expires_at IS NOT NULL
+        AND expires_at < datetime('now', ?)
+    `).run(`-${hoursBack} hours`);
+    return r.changes;
+  },
+
   markPaymentMatched(orderId) {
     db.prepare(`
       UPDATE orders SET payment_matched_at = CURRENT_TIMESTAMP WHERE id = ?
