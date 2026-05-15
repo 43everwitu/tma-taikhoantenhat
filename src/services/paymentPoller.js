@@ -83,7 +83,8 @@ class PaymentPoller {
     this.running = true;
     this.attempts = 0;
     const initialDelayMs = 30_000;
-    const intervalMs = 30_000;
+    const { getPollIntervalMs } = require('./pollerConfig');
+    const intervalMs = getPollIntervalMs();
     // 60 × 30s = 30min — covers topup_expiry default (30min) and the longest
     // realistic order_expiry. Earlier 30-cap (15min) silently skipped slow
     // inter-bank topup transfers that settled after 15min.
