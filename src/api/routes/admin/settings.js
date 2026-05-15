@@ -33,7 +33,7 @@ router.put('/', (req, res) => {
   updateAll();
 
   // Bust the in-memory toggle cache so notify_admin_* changes take effect now.
-  if (Object.keys(updates).some(k => k.startsWith('notify_admin_'))) {
+  if (Object.keys(updates).some(k => k.startsWith('notify_admin_') || k.startsWith('low_stock_'))) {
     adminNotifyService.invalidateCache();
   }
 
