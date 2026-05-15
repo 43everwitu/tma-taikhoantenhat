@@ -3,6 +3,7 @@
 import { useState } from 'react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { api, twoFactor } from '@/lib/api'
+import { EditAdminModal } from './EditModal'
 
 interface Admin {
   id: number
@@ -23,6 +24,7 @@ export default function AdminsPage() {
   })
   const admins = data?.data ?? []
   const [createOpen, setCreateOpen] = useState(false)
+  const [editing, setEditing] = useState<Admin | null>(null)
 
   // Fetch current admin role to gate 2FA force/reset buttons (super_admin only).
   const meQuery = useQuery({
@@ -90,6 +92,7 @@ export default function AdminsPage() {
                     )}
                   </>
                 )}
+                <button onClick={() => setEditing(a)} className="clay-btn text-xs">Sửa</button>
                 <button
                   onClick={() => {
                     if (!confirm(`${a.isActive ? 'Khoá' : 'Mở khoá'} ${a.username}?`)) return
@@ -104,6 +107,15 @@ export default function AdminsPage() {
           )
         })}
       </div>
+
+      {editing && (
+        <EditAdminModal
+          admin={editing}
+          isSuper={isSuper}
+          onClose={() => setEditing(null)}
+          onSaved={() => { qc.invalidateQueries({ queryKey: ['admin', 'admins'] }); setEditing(null) }}
+        />
+      )}
 
       {createOpen && <CreateModal onClose={() => setCreateOpen(false)} onCreated={() => { qc.invalidateQueries({ queryKey: ['admin', 'admins'] }); setCreateOpen(false) }} />}
     </div>
