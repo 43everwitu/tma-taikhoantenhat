@@ -59,8 +59,6 @@ const GROUPS: Group[] = [
         description: 'Bật để bot tự match chuyển khoản với mã PNS<id> và giao hàng tự động. Tắt thì admin phải duyệt mọi đơn thủ công.' },
       { key: 'order_expiry_minutes', label: 'Hạn thanh toán đơn', type: 'number', unit: 'phút',
         description: 'Đơn pending quá thời gian này → tự huỷ. QR cũng hết hạn theo. Khuyến nghị 10–15 phút.' },
-      { key: 'payment_timeout_minutes', label: 'Timeout payment (legacy)', type: 'number', unit: 'phút',
-        description: 'Cũ — giữ tương thích. Dùng order_expiry_minutes thay thế.' },
       { key: 'payment_poll_interval_seconds', label: 'Tần suất dò MB Bank', type: 'number', unit: 'giây',
         description: 'Bot poll MB Bank mỗi N giây khi có đơn pending. Thấp = phản hồi nhanh nhưng nhiều API call. Khuyến nghị 15–30s.' },
     ],
