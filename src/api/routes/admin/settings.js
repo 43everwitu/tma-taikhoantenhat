@@ -37,6 +37,11 @@ router.put('/', (req, res) => {
     adminNotifyService.invalidateCache();
   }
 
+  // Bust the 2FA policy cache when require_2fa_all changes.
+  if (Object.prototype.hasOwnProperty.call(updates, 'require_2fa_all')) {
+    require('../../../services/twofaPolicy').invalidateCache();
+  }
+
   auditService.log(req.admin.adminId, 'settings.update', 'settings', null, updates, req.ip);
   res.json({ success: true });
 });

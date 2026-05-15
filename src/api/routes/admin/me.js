@@ -26,7 +26,7 @@ function loadAdmin(req) {
 }
 
 function shape2faState(admin) {
-  const required = admin.role === 'super_admin' || !!admin.totp_required;
+  const required = require('../../../services/twofaPolicy').isRequired(admin);
   let backupCount = 0;
   if (admin.totp_backup_codes) {
     try { backupCount = JSON.parse(admin.totp_backup_codes).length; } catch {}
@@ -98,7 +98,7 @@ router.post('/2fa/enable', validate(z.object({ code: z.string().min(6).max(8) })
 router.post('/2fa/disable', validate(z.object({ code: z.string().min(6).max(20) })), async (req, res) => {
   const admin = loadAdmin(req);
   if (!admin) return res.status(401).json({ success: false, error: { code: 'ADMIN_INACTIVE' } });
-  if (admin.role === 'super_admin' || admin.totp_required) {
+  if (require('../../../services/twofaPolicy').isRequired(admin)) {
     return res.status(403).json({ success: false, error: { code: 'TOTP_REQUIRED', message: 'Tài khoản bắt buộc 2FA — không thể tắt.' } });
   }
   if (!admin.totp_enabled || !admin.totp_secret) {

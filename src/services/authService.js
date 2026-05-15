@@ -1,6 +1,7 @@
 const bcrypt = require('bcrypt');
 const db = require('../database');
 const config = require('../config');
+const twofaPolicy = require('./twofaPolicy');
 
 const SALT_ROUNDS = 12;
 const ADMIN_TOKEN_EXPIRY = '24h';
@@ -10,9 +11,9 @@ const CUSTOMER_TOKEN_EXPIRY = '30d';
 const MAX_2FA_ATTEMPTS = 5;
 const LOCK_MINUTES = 5;
 
-// super_admin is implicitly required regardless of the flag value.
+// Thin wrapper over twofaPolicy so call sites in this file keep their name.
 function effectiveRequired(admin) {
-  return admin.role === 'super_admin' || !!admin.totp_required;
+  return twofaPolicy.isEnrollmentRequired(admin);
 }
 
 // jose is ESM-only — lazy dynamic import
