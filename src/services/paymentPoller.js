@@ -92,9 +92,19 @@ class PaymentPoller {
     const maxAttempts = 60;
     console.log(`💳 Payment poller armed (first check in ${initialDelayMs / 1000}s, then every ${intervalMs / 1000}s up to ${maxAttempts}×)`);
 
+    // Run cleanup at most once every 30 minutes — clamps to at least 1 tick so
+    // a slow poll interval doesn't accidentally make this run on every tick.
+    const cleanupEveryNTicks = Math.max(1, Math.round((30 * 60 * 1000) / intervalMs));
+
     const tick = async () => {
       if (!this.running) return;
       this.attempts++;
+      if (this.attempts % cleanupEveryNTicks === 0) {
+        try {
+          const n = orderService.cleanupExpiredOrders(24);
+          if (n > 0) console.log(`🧹 Cleaned ${n} expired orders older than 24h`);
+        } catch (e) { console.error('cleanupExpiredOrders error:', e.message); }
+      }
       try { await this._poll(); } catch (e) { console.error('Poll tick error:', e.message); }
       if (this.running && this.attempts >= maxAttempts) {
         console.log(`💳 Payment poller hit ${maxAttempts}-attempt cap; going dormant`);

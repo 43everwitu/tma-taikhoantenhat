@@ -135,6 +135,13 @@ async function start() {
   app.locals.notificationService = notificationService;
   notificationService.startLowStockMonitor();
 
+  // Sweep stale expired orders (>24h) on every boot so the table doesn't grow
+  // unbounded between deploys. Cheap delete on an indexed status column.
+  try {
+    const n = require('./services/orderService').cleanupExpiredOrders(24);
+    if (n > 0) console.log(`🧹 Startup: cleaned ${n} expired orders`);
+  } catch (e) { console.error('Startup cleanup error:', e.message); }
+
   // Initialize payment poller singleton (so bot handlers can access it)
   if (config.PAYMENT_POLL_ENABLED && config.MBBANK_API_TOKEN) {
     getPaymentPoller();
