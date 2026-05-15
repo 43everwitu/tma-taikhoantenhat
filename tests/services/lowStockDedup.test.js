@@ -38,7 +38,12 @@ test('checkLowStock sends only once per product within 24h', async () => {
   await svc.checkLowStock();
   await svc.checkLowStock();
 
-  assert.strictEqual(sent.length, 1, `Expected exactly 1 send, got ${sent.length}`);
+  // Scope assertion to OUR seeded product — other tests in the same suite may
+  // leave low-stock-triggering rows behind. The admin.low_stock template
+  // includes `ID: <code>{productId}</code>` so filter by exact id.
+  const idMarker = `<code>${p.lastInsertRowid}</code>`;
+  const oursSent = sent.filter(args => String(args[1] || '').includes(idMarker));
+  assert.strictEqual(oursSent.length, 1, `Expected exactly 1 send for product ${p.lastInsertRowid}, got ${oursSent.length}`);
 
   // Cleanup
   db.prepare("DELETE FROM stock WHERE product_id = ?").run(p.lastInsertRowid);
