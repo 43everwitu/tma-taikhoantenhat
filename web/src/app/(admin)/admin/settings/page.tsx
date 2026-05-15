@@ -102,6 +102,15 @@ const GROUPS: Group[] = [
         description: 'Throttled 1 lần / 24h cho mỗi sản phẩm. An toàn để bật.' },
     ],
   },
+  {
+    title: 'Bảo mật',
+    emoji: '🔐',
+    blurb: 'Cấu hình xác thực hai yếu tố cho tất cả quản trị viên.',
+    fields: [
+      { key: 'require_2fa_all', label: 'Bắt buộc 2FA cho mọi quản trị viên', type: 'bool',
+        description: 'Bật để buộc tất cả admin/manager phải cài 2FA ở lần đăng nhập kế tiếp. Super_admin luôn bắt buộc — không phụ thuộc cờ này.' },
+    ],
+  },
 ]
 
 const KNOWN_KEYS = new Set(GROUPS.flatMap(g => g.fields.map(f => f.key)))
