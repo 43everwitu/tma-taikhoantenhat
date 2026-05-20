@@ -101,3 +101,65 @@ test('getEntityTypes: returns sorted distinct non-null values', () => {
     cleanup(ids);
   }
 });
+
+test('log: auto-fills details.entityLabel for known entity types when row exists', () => {
+  const slug = 'audit-label-' + Math.floor(Math.random() * 1e9);
+  const catInfo = db.prepare("INSERT INTO categories (name, slug) VALUES (?, ?)").run('Auto Label Cat', slug);
+  const productInfo = db.prepare(`
+    INSERT INTO products (category_id, name, slug, price, is_active)
+    VALUES (?, 'Auto Label Product', ?, 1000, 1)
+  `).run(catInfo.lastInsertRowid, 'p-' + slug);
+  const productId = productInfo.lastInsertRowid;
+
+  try {
+    auditService.log(1, 'product.test_update', 'product', productId, { foo: 'bar' }, '::1');
+    const row = db.prepare("SELECT details FROM audit_log WHERE action = 'product.test_update' ORDER BY id DESC LIMIT 1").get();
+    assert.ok(row, 'audit row created');
+    const parsed = JSON.parse(row.details);
+    assert.strictEqual(parsed.entityLabel, 'Auto Label Product');
+    assert.strictEqual(parsed.foo, 'bar', 'existing details fields preserved');
+  } finally {
+    db.prepare("DELETE FROM audit_log WHERE action = 'product.test_update'").run();
+    db.prepare('DELETE FROM products WHERE id = ?').run(productId);
+    db.prepare('DELETE FROM categories WHERE id = ?').run(catInfo.lastInsertRowid);
+  }
+});
+
+test('log: leaves details.entityLabel alone when caller already supplied it', () => {
+  const slug = 'audit-label-noop-' + Math.floor(Math.random() * 1e9);
+  const catInfo = db.prepare("INSERT INTO categories (name, slug) VALUES (?, ?)").run('Untouched Cat', slug);
+  const productInfo = db.prepare(`
+    INSERT INTO products (category_id, name, slug, price, is_active)
+    VALUES (?, 'Real Name', ?, 1000, 1)
+  `).run(catInfo.lastInsertRowid, 'p-' + slug);
+  const productId = productInfo.lastInsertRowid;
+
+  try {
+    auditService.log(1, 'product.test_pre', 'product', productId, { entityLabel: 'Snapshot Before Delete', extra: 1 }, '::1');
+    const row = db.prepare("SELECT details FROM audit_log WHERE action = 'product.test_pre' ORDER BY id DESC LIMIT 1").get();
+    const parsed = JSON.parse(row.details);
+    assert.strictEqual(parsed.entityLabel, 'Snapshot Before Delete', 'caller value preserved, not overwritten by SELECT');
+    assert.strictEqual(parsed.extra, 1);
+  } finally {
+    db.prepare("DELETE FROM audit_log WHERE action = 'product.test_pre'").run();
+    db.prepare('DELETE FROM products WHERE id = ?').run(productId);
+    db.prepare('DELETE FROM categories WHERE id = ?').run(catInfo.lastInsertRowid);
+  }
+});
+
+test('log: silently no-ops enrichment when entity row is missing or entityType unknown', () => {
+  try {
+    auditService.log(1, 'misc.action', 'unmapped_type', 99999, { keep: true }, '::1');
+    auditService.log(1, 'product.test_missing', 'product', 9999999, { keep: true }, '::1');
+
+    const r1 = JSON.parse(db.prepare("SELECT details FROM audit_log WHERE action = 'misc.action' ORDER BY id DESC LIMIT 1").get().details);
+    assert.strictEqual(r1.entityLabel, undefined, 'no enrichment for unknown type');
+    assert.strictEqual(r1.keep, true);
+
+    const r2 = JSON.parse(db.prepare("SELECT details FROM audit_log WHERE action = 'product.test_missing' ORDER BY id DESC LIMIT 1").get().details);
+    assert.strictEqual(r2.entityLabel, undefined, 'no enrichment when product row missing');
+    assert.strictEqual(r2.keep, true);
+  } finally {
+    db.prepare("DELETE FROM audit_log WHERE action IN ('misc.action','product.test_missing')").run();
+  }
+});
