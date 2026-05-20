@@ -60,8 +60,12 @@ router.put('/:id', validate(z.object({
 // DELETE /admin/categories/:id
 router.delete('/:id', (req, res) => {
   const id = parseInt(req.params.id);
+  const existing = db.prepare('SELECT name, slug FROM categories WHERE id = ?').get(id);
   db.prepare('DELETE FROM categories WHERE id = ?').run(id);
-  auditService.log(req.admin.adminId, 'category.delete', 'category', id, null, req.ip);
+  auditService.log(req.admin.adminId, 'category.delete', 'category', id, existing ? {
+    entityLabel: existing.name,
+    slug: existing.slug,
+  } : null, req.ip);
   res.json({ success: true });
 });
 

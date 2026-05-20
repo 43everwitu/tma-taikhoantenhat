@@ -60,9 +60,14 @@ router.put('/:id', validate(body.partial()), (req, res) => {
 });
 
 router.delete('/:id', (req, res) => {
+  const existing = discountService.getById(parseInt(req.params.id));
   const r = discountService.remove(parseInt(req.params.id));
   if (r.changes === 0) return res.status(404).json({ success: false, error: { code: 'NOT_FOUND' } });
-  auditService.log(req.admin.adminId, 'discount.delete', 'discount', req.params.id, null, req.ip);
+  auditService.log(req.admin.adminId, 'discount.delete', 'discount', req.params.id, existing ? {
+    entityLabel: existing.code,
+    type: existing.type,
+    amount: existing.amount,
+  } : null, req.ip);
   res.json({ success: true });
 });
 

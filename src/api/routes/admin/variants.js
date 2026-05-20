@@ -89,10 +89,14 @@ router.put('/:id', validate(variantPatch), (req, res) => {
 router.delete('/:id', (req, res) => {
   const productId = parseInt(req.params.productId);
   const variantId = parseInt(req.params.id);
-  const existing = db.prepare('SELECT id FROM product_variants WHERE id = ? AND product_id = ?').get(variantId, productId);
+  const existing = db.prepare('SELECT id, name FROM product_variants WHERE id = ? AND product_id = ?').get(variantId, productId);
   if (!existing) return res.status(404).json({ success: false, error: { code: 'NOT_FOUND' } });
   variantService.hardDelete(db, productId, variantId);
-  auditService.log(req.admin?.adminId, 'variant.delete', 'variant', variantId, { productId, hard: true }, req.ip);
+  auditService.log(req.admin?.adminId, 'variant.delete', 'variant', variantId, {
+    entityLabel: existing?.name ?? null,
+    productId,
+    hard: true,
+  }, req.ip);
   res.json({ success: true });
 });
 

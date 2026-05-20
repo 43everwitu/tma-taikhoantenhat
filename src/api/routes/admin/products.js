@@ -215,11 +215,15 @@ router.put('/:id', validate(z.object({
 // DELETE /admin/products/:id
 router.delete('/:id', (req, res) => {
   const id = parseInt(req.params.id);
-  const existing = db.prepare('SELECT id FROM products WHERE id = ?').get(id);
+  const existing = db.prepare('SELECT id, name, slug, price FROM products WHERE id = ?').get(id);
   if (!existing) return res.status(404).json({ success: false, error: { code: 'NOT_FOUND' } });
   db.prepare('DELETE FROM stock WHERE product_id = ? AND is_sold = 0').run(id);
   db.prepare('DELETE FROM products WHERE id = ?').run(id);
-  auditService.log(req.admin.adminId, 'product.delete', 'product', id, null, req.ip);
+  auditService.log(req.admin.adminId, 'product.delete', 'product', id, {
+    entityLabel: existing.name,
+    slug: existing.slug,
+    price: existing.price,
+  }, req.ip);
   eventBus.publish({ type: 'product.delete', productId: id });
   res.json({ success: true });
 });
