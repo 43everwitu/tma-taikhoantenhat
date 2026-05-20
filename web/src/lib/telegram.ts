@@ -53,6 +53,13 @@ export interface TelegramWebApp {
     selectionChanged(): void
   }
   openLink(url: string): void
+  isExpanded?: boolean
+  contentSafeAreaInset?: { top: number; bottom: number; left: number; right: number }
+  safeAreaInset?:        { top: number; bottom: number; left: number; right: number }
+  onEvent?: (event: 'safeAreaChanged' | 'contentSafeAreaChanged' | 'viewportChanged', cb: () => void) => void
+  offEvent?: (event: 'safeAreaChanged' | 'contentSafeAreaChanged' | 'viewportChanged', cb: () => void) => void
+  disableVerticalSwipes?: () => void
+  enableVerticalSwipes?: () => void
 }
 
 declare global {
@@ -94,4 +101,32 @@ export function applyThemeVars(theme: TelegramThemeParams) {
     const v = theme[src]
     if (v) document.documentElement.style.setProperty(varName, v)
   }
+}
+
+function writeInsets(wa: TelegramWebApp) {
+  const ci = wa.contentSafeAreaInset ?? { top: 0, bottom: 0, left: 0, right: 0 }
+  const sa = wa.safeAreaInset        ?? { top: 0, bottom: 0, left: 0, right: 0 }
+  const r = document.documentElement.style
+  r.setProperty('--tma-safe-top',    `${Math.max(ci.top,    sa.top)}px`)
+  r.setProperty('--tma-safe-bottom', `${Math.max(ci.bottom, sa.bottom)}px`)
+  r.setProperty('--tma-safe-left',   `${Math.max(ci.left,   sa.left)}px`)
+  r.setProperty('--tma-safe-right',  `${Math.max(ci.right,  sa.right)}px`)
+}
+
+export function useTmaViewport() {
+  useEffect(() => {
+    const wa = getWebApp()
+    if (!wa) return
+    wa.ready()
+    wa.expand()
+    wa.disableVerticalSwipes?.()
+    writeInsets(wa)
+    const onChange = () => writeInsets(wa)
+    wa.onEvent?.('safeAreaChanged', onChange)
+    wa.onEvent?.('contentSafeAreaChanged', onChange)
+    return () => {
+      wa.offEvent?.('safeAreaChanged', onChange)
+      wa.offEvent?.('contentSafeAreaChanged', onChange)
+    }
+  }, [])
 }
