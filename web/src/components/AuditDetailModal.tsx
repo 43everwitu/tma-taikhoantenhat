@@ -18,6 +18,10 @@ function prettify(details: string | null) {
   }
 }
 
+function parseDbDate(s: string): Date {
+  return new Date(s.replace(' ', 'T') + 'Z')
+}
+
 export function AuditDetailModal({ row, onClose }: Props) {
   useEffect(() => {
     if (!row) return
@@ -52,7 +56,7 @@ export function AuditDetailModal({ row, onClose }: Props) {
 
         <dl className="grid grid-cols-[max-content_1fr] gap-x-3 gap-y-1 text-sm mb-4">
           <dt className="opacity-60">Thời gian</dt>
-          <dd>{new Date(row.created_at).toLocaleString('vi-VN')}</dd>
+          <dd>{parseDbDate(row.created_at).toLocaleString('vi-VN')}</dd>
           <dt className="opacity-60">Admin</dt>
           <dd>{row.admin_name ?? '(system)'}</dd>
           <dt className="opacity-60">IP</dt>

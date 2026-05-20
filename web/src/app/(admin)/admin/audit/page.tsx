@@ -31,6 +31,19 @@ function useDebounced<T>(value: T, ms = 300): T {
   return v
 }
 
+function parseDbDate(s: string): Date {
+  // SQLite CURRENT_TIMESTAMP yields 'YYYY-MM-DD HH:MM:SS' UTC; append Z so JS parses as UTC.
+  return new Date(s.replace(' ', 'T') + 'Z')
+}
+
+function localToUtcDbString(local: string, endOfMinute = false): string {
+  const d = new Date(local) // browser parses as local time
+  const iso = d.toISOString() // 'YYYY-MM-DDTHH:MM:SS.000Z' in UTC
+  // Strip milliseconds + 'Z'; replace 'T' with ' '.
+  const base = iso.slice(0, 19).replace('T', ' ')
+  return endOfMinute ? base.slice(0, 17) + '59' : base
+}
+
 interface AdminListRow { id: number; username: string; displayName: string }
 
 export default function AuditPage() {
@@ -63,8 +76,8 @@ export default function AuditPage() {
     queryKey: ['admin', 'audit', 'list', { q: debouncedQ, from, to, adminId, entityType, page }],
     queryFn: () => audit.list({
       q: debouncedQ || undefined,
-      from: from ? from.replace('T', ' ') + ':00' : undefined,
-      to:   to   ? to.replace('T', ' ')   + ':59' : undefined,
+      from: from ? localToUtcDbString(from, false) : undefined,
+      to:   to   ? localToUtcDbString(to,   true)  : undefined,
       adminId: adminId ? Number(adminId) : undefined,
       entityType: entityType || undefined,
       page,
@@ -187,7 +200,7 @@ export default function AuditPage() {
                 onClick={() => handleRowClick(row)}
                 className="border-t border-black/5 hover:bg-black/[0.02] cursor-pointer"
               >
-                <td className="px-3 py-2 whitespace-nowrap">{new Date(row.created_at).toLocaleString('vi-VN')}</td>
+                <td className="px-3 py-2 whitespace-nowrap">{parseDbDate(row.created_at).toLocaleString('vi-VN')}</td>
                 <td className="px-3 py-2">{row.admin_name ?? '(system)'}</td>
                 <td className="px-3 py-2">
                   <span className="inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium bg-black/5">
