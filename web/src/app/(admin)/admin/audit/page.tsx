@@ -110,6 +110,16 @@ export default function AuditPage() {
     setModalRow(row)
   }
 
+  function parseDetails(s: string | null): Record<string, unknown> | null {
+    if (!s) return null
+    try {
+      const v = JSON.parse(s)
+      return v && typeof v === 'object' && !Array.isArray(v) ? (v as Record<string, unknown>) : null
+    } catch {
+      return null
+    }
+  }
+
   function truncate(s: string | null, n: number) {
     if (!s) return '—'
     return s.length > n ? s.slice(0, n) + '…' : s
@@ -207,8 +217,12 @@ export default function AuditPage() {
                   </span>
                 </td>
                 <td className="px-3 py-2 whitespace-nowrap">
-                  {row.entity_type ?? '—'}
-                  {row.entity_id !== null ? ` #${row.entity_id}` : ''}
+                  <div>{row.entity_type ?? '—'}{row.entity_id !== null ? ` #${row.entity_id}` : ''}</div>
+                  {(() => {
+                    const d = parseDetails(row.details)
+                    const label = d && typeof d.entityLabel === 'string' ? d.entityLabel : null
+                    return label ? <div className="text-xs opacity-60 truncate max-w-[220px]">{label}</div> : null
+                  })()}
                 </td>
                 <td className="px-3 py-2 max-w-[420px]">{truncate(row.details, 80)}</td>
                 <td className="px-3 py-2 whitespace-nowrap">{row.ip_address ?? '—'}</td>
