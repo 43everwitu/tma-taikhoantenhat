@@ -106,7 +106,7 @@ router.post('/', validate(z.object({
   description: z.string().max(500).optional().nullable(),
   longDescription: z.string().max(20000).nullable().optional(),
   usageInstructions: z.string().max(20000).nullable().optional(),
-  emoji: z.string().max(10).optional().default('📦'),
+  emoji: z.string().max(10).nullable().optional(),
   imageUrl: z.string().max(500).nullable().optional(),
   lowStockThreshold: z.number().int().min(0).optional().default(5),
   promotion: z.string().max(200).nullable().optional(),
@@ -132,7 +132,7 @@ router.post('/', validate(z.object({
     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
   `).run(categoryId, d.name, d.price,
     d.description ? sanitizeDescription(d.description) : null,
-    d.emoji, slug,
+    d.emoji || null, slug,
     d.imageUrl || null,
     d.longDescription ? sanitizeDescription(d.longDescription) : null,
     d.lowStockThreshold,
@@ -155,7 +155,7 @@ router.put('/:id', validate(z.object({
   description: z.string().max(500).nullable().optional(),
   longDescription: z.string().max(20000).nullable().optional(),
   usageInstructions: z.string().max(20000).nullable().optional(),
-  emoji: z.string().max(10).optional(),
+  emoji: z.string().max(10).nullable().optional(),
   promotion: z.string().max(200).nullable().optional(),
   contactOnly: z.boolean().optional(),
   contactUrl: z.string().max(500).nullable().optional(),
@@ -186,7 +186,7 @@ router.put('/:id', validate(z.object({
     sets.push('category_id = ?'); params.push(catId);
   }
   if (d.description !== undefined) { sets.push('description = ?'); params.push(d.description == null ? null : sanitizeDescription(d.description)); }
-  if (d.emoji !== undefined) { sets.push('emoji = ?'); params.push(d.emoji); }
+  if (d.emoji !== undefined) { sets.push('emoji = ?'); params.push(d.emoji || null); }
   if (d.promotion !== undefined) { sets.push('promotion = ?'); params.push(d.promotion); }
   if (d.contactOnly !== undefined) { sets.push('contact_only = ?'); params.push(d.contactOnly ? 1 : 0); }
   if (d.contactUrl !== undefined) { sets.push('contact_url = ?'); params.push(d.contactUrl); }

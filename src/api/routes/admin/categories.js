@@ -16,14 +16,14 @@ router.get('/', (req, res) => {
 // POST /admin/categories
 router.post('/', validate(z.object({
   name: z.string().min(1).max(100),
-  emoji: z.string().max(10).optional().default('📦'),
+  emoji: z.string().max(10).nullable().optional(),
   description: z.string().max(500).nullable().optional(),
   sortOrder: z.number().int().optional().default(0),
 })), (req, res) => {
   const d = req.validated;
   const result = db.prepare(
     'INSERT INTO categories (name, emoji, slug, description, sort_order) VALUES (?, ?, ?, ?, ?)'
-  ).run(d.name, d.emoji, slugify(d.name), d.description || null, d.sortOrder);
+  ).run(d.name, d.emoji || null, slugify(d.name), d.description || null, d.sortOrder);
 
   auditService.log(req.admin.adminId, 'category.create', 'category', result.lastInsertRowid, { name: d.name }, req.ip);
   const cat = db.prepare('SELECT * FROM categories WHERE id = ?').get(result.lastInsertRowid);
@@ -33,7 +33,7 @@ router.post('/', validate(z.object({
 // PUT /admin/categories/:id
 router.put('/:id', validate(z.object({
   name: z.string().min(1).max(100).optional(),
-  emoji: z.string().max(10).optional(),
+  emoji: z.string().max(10).nullable().optional(),
   description: z.string().max(500).nullable().optional(),
   sortOrder: z.number().int().optional(),
 })), (req, res) => {
@@ -43,7 +43,7 @@ router.put('/:id', validate(z.object({
   const params = [];
 
   if (d.name !== undefined) { sets.push('name = ?', 'slug = ?'); params.push(d.name, slugify(d.name)); }
-  if (d.emoji !== undefined) { sets.push('emoji = ?'); params.push(d.emoji); }
+  if (d.emoji !== undefined) { sets.push('emoji = ?'); params.push(d.emoji || null); }
   if (d.description !== undefined) { sets.push('description = ?'); params.push(d.description); }
   if (d.sortOrder !== undefined) { sets.push('sort_order = ?'); params.push(d.sortOrder); }
 
