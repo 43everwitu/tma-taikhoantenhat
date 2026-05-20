@@ -22,15 +22,15 @@ const auditService = {
     const params = [];
 
     if (filters.adminId) {
-      where += ' AND admin_id = ?';
+      where += ' AND al.admin_id = ?';
       params.push(filters.adminId);
     }
     if (filters.action) {
-      where += ' AND action LIKE ?';
+      where += ' AND al.action LIKE ?';
       params.push(`%${filters.action}%`);
     }
     if (filters.entityType) {
-      where += ' AND entity_type = ?';
+      where += ' AND al.entity_type = ?';
       params.push(filters.entityType);
     }
     if (filters.from) {
