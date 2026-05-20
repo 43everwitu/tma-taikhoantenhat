@@ -6,6 +6,7 @@ import { usePathname, useRouter } from 'next/navigation'
 import { useQuery } from '@tanstack/react-query'
 import { apiFetch } from '@/lib/miniappApi'
 import { useTelegramBackButton } from '@/lib/useTelegramBackButton'
+import { useTmaViewport } from '@/lib/telegram'
 import { Icon } from './Icon'
 import { SearchModal } from './SearchModal'
 import type { MiniappIconName } from '@/lib/miniappIcons'
@@ -32,6 +33,7 @@ export function MiniAppShell({
   showHeader?: boolean
   hasBottombar?: boolean
 }) {
+  useTmaViewport()
   const pathname = usePathname()
   const router = useRouter()
   const [searchOpen, setSearchOpen] = useState(false)
