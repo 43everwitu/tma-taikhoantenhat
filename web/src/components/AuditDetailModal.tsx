@@ -9,13 +9,30 @@ interface Props {
   onClose: () => void
 }
 
-function prettify(details: string | null) {
+function parseObject(details: string | null): Record<string, unknown> | null {
+  if (!details) return null
+  try {
+    const v = JSON.parse(details)
+    return v && typeof v === 'object' && !Array.isArray(v) ? (v as Record<string, unknown>) : null
+  } catch {
+    return null
+  }
+}
+
+function rawPretty(details: string | null): string {
   if (!details) return '—'
   try {
     return JSON.stringify(JSON.parse(details), null, 2)
   } catch {
     return details
   }
+}
+
+function renderValue(v: unknown): string {
+  if (v === null || v === undefined) return '—'
+  if (typeof v === 'string') return v
+  if (typeof v === 'number' || typeof v === 'boolean') return String(v)
+  return JSON.stringify(v)
 }
 
 function parseDbDate(s: string): Date {
@@ -64,9 +81,30 @@ export function AuditDetailModal({ row, onClose }: Props) {
         </dl>
 
         <h3 className="text-sm font-semibold mb-1">Details</h3>
-        <pre className="text-xs bg-black/5 rounded-lg p-3 overflow-auto whitespace-pre-wrap break-words">
-          {prettify(row.details)}
-        </pre>
+        {(() => {
+          const obj = parseObject(row.details)
+          if (obj) {
+            const entries = Object.entries(obj)
+            if (entries.length === 0) {
+              return <p className="text-sm opacity-60">—</p>
+            }
+            return (
+              <dl className="grid grid-cols-[max-content_1fr] gap-x-3 gap-y-1 text-sm">
+                {entries.map(([k, v]) => (
+                  <div key={k} className="contents">
+                    <dt className="opacity-60 font-mono">{k}</dt>
+                    <dd className="break-words">{renderValue(v)}</dd>
+                  </div>
+                ))}
+              </dl>
+            )
+          }
+          return (
+            <pre className="text-xs bg-black/5 rounded-lg p-3 overflow-auto whitespace-pre-wrap break-words">
+              {rawPretty(row.details)}
+            </pre>
+          )
+        })()}
       </div>
     </div>
   )
