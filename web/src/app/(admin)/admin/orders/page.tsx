@@ -6,6 +6,7 @@ import { api } from '@/lib/api'
 import { formatPrice, formatDate } from '@/lib/utils'
 import { Search, Clock, CheckCircle2, XCircle, Check, Eye, EyeOff, Copy, Send } from '@/lib/icons'
 import { ResponsiveTable, Column } from '@/components/ResponsiveTable'
+import { useHighlightId, useHighlightedRowRef } from '@/lib/useHighlightedRow'
 
 interface Order {
   id: string
@@ -167,6 +168,8 @@ const statusOptions = [
 
 export default function OrdersPage() {
   const queryClient = useQueryClient()
+  const highlightId = useHighlightId()
+  const refFor = useHighlightedRowRef(highlightId)
   const [page, setPage] = useState(1)
   const [statusFilter, setStatusFilter] = useState('')
   const [search, setSearch] = useState('')
@@ -375,6 +378,7 @@ export default function OrdersPage() {
         loading={isLoading}
         emptyText="Chưa có đơn hàng nào"
         cardActions={rowActions}
+        rowRef={refFor}
       />
 
       {/* Phân trang */}

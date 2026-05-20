@@ -5,6 +5,7 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { api } from '@/lib/api'
 import Link from 'next/link'
 import { ResponsiveTable, Column } from '@/components/ResponsiveTable'
+import { useHighlightId, useHighlightedRowRef } from '@/lib/useHighlightedRow'
 import { QuickAddKeysModal } from './QuickAddKeysModal'
 
 function VariantStockBadge({ productId }: { productId: string }) {
@@ -92,6 +93,8 @@ const columns: Column<ProductStock>[] = [
 ]
 
 export default function StockIndexPage() {
+  const highlightId = useHighlightId()
+  const refFor = useHighlightedRowRef(highlightId)
   const { data, isLoading } = useQuery({
     queryKey: ['admin', 'products'],
     queryFn: () => api.get<ProductStock[]>('/admin/products'),
@@ -198,6 +201,7 @@ export default function StockIndexPage() {
         loading={isLoading}
         emptyText="Không tìm thấy sản phẩm phù hợp"
         cardActions={cardActionsFor}
+        rowRef={refFor}
       />
 
       {expanded && (

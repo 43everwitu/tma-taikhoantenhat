@@ -3,6 +3,7 @@
 import { useState } from 'react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { api, twoFactor } from '@/lib/api'
+import { useHighlightId, useHighlightedRowRef } from '@/lib/useHighlightedRow'
 import { EditAdminModal } from './EditModal'
 
 interface Admin {
@@ -18,6 +19,8 @@ interface Admin {
 
 export default function AdminsPage() {
   const qc = useQueryClient()
+  const highlightId = useHighlightId()
+  const refFor = useHighlightedRowRef(highlightId)
   const { data, isLoading } = useQuery({
     queryKey: ['admin', 'admins'],
     queryFn: () => api.get<Admin[]>('/admin/admins'),
@@ -59,7 +62,7 @@ export default function AdminsPage() {
               ? <span className="text-[10px] font-semibold px-1.5 py-0.5 rounded bg-amber-100 text-amber-800">2FA bắt buộc — chưa bật</span>
               : <span className="text-[10px] font-semibold px-1.5 py-0.5 rounded bg-zinc-200 text-zinc-700">2FA tắt</span>
           return (
-            <div key={a.id} className="rounded-xl bg-white border border-clay-oat p-3 flex items-center gap-3 flex-wrap">
+            <div key={a.id} ref={refFor(a.id)} className="rounded-xl bg-white border border-clay-oat p-3 flex items-center gap-3 flex-wrap">
               <div className="flex-1 min-w-0">
                 <p className="font-medium text-sm flex items-center gap-2">
                   {a.displayName} <span className="opacity-60 font-normal">@{a.username}</span>

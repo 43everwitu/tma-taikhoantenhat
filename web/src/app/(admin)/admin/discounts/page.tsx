@@ -4,6 +4,7 @@ import { useState } from 'react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { api } from '@/lib/api'
 import { useToast } from '@/components/Toast'
+import { useHighlightId, useHighlightedRowRef } from '@/lib/useHighlightedRow'
 
 interface Discount {
   id: number
@@ -42,6 +43,8 @@ const empty: DiscountForm = {
 export default function DiscountsPage() {
   const qc = useQueryClient()
   const t = useToast()
+  const highlightId = useHighlightId()
+  const refFor = useHighlightedRowRef(highlightId)
   const { data, isLoading } = useQuery({
     queryKey: ['admin', 'discounts'],
     queryFn: () => api.get<Discount[]>('/admin/discounts'),
@@ -78,7 +81,7 @@ export default function DiscountsPage() {
 
       <ul className="space-y-2">
         {list.map((d) => (
-          <li key={d.id} className="clay-card p-4 flex items-center gap-3">
+          <li key={d.id} ref={refFor(d.id)} className="clay-card p-4 flex items-center gap-3">
             <div className="flex-1 min-w-0">
               <p className="font-mono font-bold text-lg">{d.code}</p>
               <p className="text-xs opacity-70">
