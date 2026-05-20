@@ -54,6 +54,8 @@ export interface TelegramWebApp {
   }
   openLink(url: string): void
   isExpanded?: boolean
+  version?: string
+  platform?: string
   contentSafeAreaInset?: { top: number; bottom: number; left: number; right: number }
   safeAreaInset?:        { top: number; bottom: number; left: number; right: number }
   onEvent?: (event: 'safeAreaChanged' | 'contentSafeAreaChanged' | 'viewportChanged', cb: () => void) => void
@@ -103,14 +105,38 @@ export function applyThemeVars(theme: TelegramThemeParams) {
   }
 }
 
+// Legacy fallback for Telegram clients on Bot API < 8.0 where
+// contentSafeAreaInset is undefined AND the iOS WebView does not honor
+// viewport-fit=cover (so env(safe-area-inset-*) also resolves to 0).
+// We measure approximate iOS Telegram chrome dimensions and pad manually.
+// Updating the Telegram app to a recent version is the real fix; this
+// keeps the layout usable in the meantime.
+function getLegacyInsets(wa: TelegramWebApp) {
+  const ver = parseFloat(wa.version ?? '6.0')
+  const isApple = wa.platform === 'ios' || wa.platform === 'macos'
+  if (ver >= 8.0 || !isApple) return { top: 0, bottom: 0, left: 0, right: 0 }
+  const landscape = typeof window !== 'undefined'
+    && typeof window.matchMedia === 'function'
+    && window.matchMedia('(orientation: landscape)').matches
+  // Portrait:  Telegram chrome row (~56px) above content; home indicator (~34px) below.
+  // Landscape: chrome cluster moves to the notch side (~64px); home-indicator gesture rail (~21px).
+  //            Notch can be on either left or right depending on rotation direction,
+  //            so pad both sides equally.
+  return landscape
+    ? { top: 0,  bottom: 21, left: 64, right: 64 }
+    : { top: 56, bottom: 34, left: 0,  right: 0  }
+}
+
 function writeInsets(wa: TelegramWebApp) {
+  if (typeof document === 'undefined') return
   const ci = wa.contentSafeAreaInset ?? { top: 0, bottom: 0, left: 0, right: 0 }
   const sa = wa.safeAreaInset        ?? { top: 0, bottom: 0, left: 0, right: 0 }
+  const lg = getLegacyInsets(wa)
   const r = document.documentElement.style
-  r.setProperty('--tma-safe-top',    `${Math.max(ci.top,    sa.top)}px`)
-  r.setProperty('--tma-safe-bottom', `${Math.max(ci.bottom, sa.bottom)}px`)
-  r.setProperty('--tma-safe-left',   `${Math.max(ci.left,   sa.left)}px`)
-  r.setProperty('--tma-safe-right',  `${Math.max(ci.right,  sa.right)}px`)
+  r.setProperty('--tma-safe-top',    `${Math.max(ci.top,    sa.top,    lg.top)}px`)
+  r.setProperty('--tma-safe-bottom', `${Math.max(ci.bottom, sa.bottom, lg.bottom)}px`)
+  r.setProperty('--tma-safe-left',   `${Math.max(ci.left,   sa.left,   lg.left)}px`)
+  r.setProperty('--tma-safe-right',  `${Math.max(ci.right,  sa.right,  lg.right)}px`)
 }
 
 export function useTmaViewport() {
@@ -124,9 +150,12 @@ export function useTmaViewport() {
     const onChange = () => writeInsets(wa)
     wa.onEvent?.('safeAreaChanged', onChange)
     wa.onEvent?.('contentSafeAreaChanged', onChange)
+    const orientation = window.matchMedia?.('(orientation: landscape)')
+    orientation?.addEventListener?.('change', onChange)
     return () => {
       wa.offEvent?.('safeAreaChanged', onChange)
       wa.offEvent?.('contentSafeAreaChanged', onChange)
+      orientation?.removeEventListener?.('change', onChange)
     }
   }, [])
 }
