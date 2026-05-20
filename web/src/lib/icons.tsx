@@ -66,4 +66,5 @@ export {
   KeyRound,
   ShieldAlert,
   ShieldOff,
+  ClipboardList,
 } from 'lucide-react'
