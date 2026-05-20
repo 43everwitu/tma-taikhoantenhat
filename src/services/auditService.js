@@ -33,6 +33,18 @@ const auditService = {
       where += ' AND entity_type = ?';
       params.push(filters.entityType);
     }
+    if (filters.from) {
+      where += ' AND al.created_at >= ?';
+      params.push(filters.from);
+    }
+    if (filters.to) {
+      where += ' AND al.created_at <= ?';
+      params.push(filters.to);
+    }
+    if (filters.q) {
+      where += ' AND (al.details LIKE ? OR al.action LIKE ?)';
+      params.push(`%${filters.q}%`, `%${filters.q}%`);
+    }
 
     const rows = db.prepare(`
       SELECT al.*, a.display_name as admin_name
@@ -43,9 +55,23 @@ const auditService = {
       LIMIT ? OFFSET ?
     `).all(...params, limit, offset);
 
-    const total = db.prepare(`SELECT COUNT(*) as c FROM audit_log WHERE ${where}`).all(...params)[0].c;
+    const total = db.prepare(`
+      SELECT COUNT(*) as c
+      FROM audit_log al
+      LEFT JOIN admins a ON al.admin_id = a.id
+      WHERE ${where}
+    `).all(...params)[0].c;
 
     return { rows, total };
+  },
+
+  getEntityTypes() {
+    return db.prepare(`
+      SELECT DISTINCT entity_type
+      FROM audit_log
+      WHERE entity_type IS NOT NULL
+      ORDER BY entity_type
+    `).all().map(r => r.entity_type);
   },
 };
 
