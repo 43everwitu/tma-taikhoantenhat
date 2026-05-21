@@ -116,3 +116,27 @@ test('self-heal resets marker when stock rises above threshold without notifySto
     cleanup(seeded);
   }
 });
+
+test('marker survives a process restart (fresh service load)', async () => {
+  const seeded = seedLowStockProduct();
+  const sentBefore = [];
+  let svc = loadServiceFresh(makeFakeBot(sentBefore));
+  try {
+    await svc.checkLowStock();
+    assert.strictEqual(sentForProduct(sentBefore, seeded.productId).length, 1);
+
+    // Simulate restart: drop the require cache and rebuild the service.
+    const sentAfter = [];
+    svc = loadServiceFresh(makeFakeBot(sentAfter));
+
+    // Stock still low, marker still set in DB — must NOT re-alert.
+    await svc.checkLowStock();
+    assert.strictEqual(
+      sentForProduct(sentAfter, seeded.productId).length,
+      0,
+      'fresh service after restart must honor the persisted marker'
+    );
+  } finally {
+    cleanup(seeded);
+  }
+});
