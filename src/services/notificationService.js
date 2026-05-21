@@ -86,8 +86,8 @@ class NotificationService {
 
   /**
    * Notify followers when stock is replenished for a product.
-   * Also resets the low-stock throttle so a fresh alert can fire if the
-   * product hits low stock again within 24h.
+   * Also resets the low-stock alert marker so a fresh alert can fire when
+   * the product hits low stock again (next episode).
    */
   async notifyStockReplenished(productId) {
     db.prepare('UPDATE products SET last_low_stock_alert_at = NULL WHERE id = ?').run(productId);
@@ -127,8 +127,9 @@ class NotificationService {
   /**
    * Check and alert admins about low stock products.
    * Called periodically (every 5 minutes). Throttled per product to once
-   * per 24h via products.last_low_stock_alert_at, so admins don't get spammed
-   * about the same product every cycle.
+   * per low-stock episode via products.last_low_stock_alert_at — marker
+   * cleared on replenish (notifyStockReplenished) or self-heal (this method's
+   * opening UPDATE when stock returns above threshold).
    */
   async checkLowStock() {
     const { effectiveLowStockProducts } = require('./lowStockQuery');
