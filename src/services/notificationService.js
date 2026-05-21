@@ -132,6 +132,26 @@ class NotificationService {
    */
   async checkLowStock() {
     const { effectiveLowStockProducts } = require('./lowStockQuery');
+
+    // Self-heal: clear the alert marker for any product whose stock is back
+    // above its effective threshold. Covers paths that don't go through
+    // notifyStockReplenished (order cancel returning reserved keys, manual
+    // DB edits, restored deletions). Keeps the "once per episode" guarantee
+    // honest: a new episode can only fire after this pass NULLs the marker.
+    db.prepare(`
+      UPDATE products
+      SET last_low_stock_alert_at = NULL
+      WHERE last_low_stock_alert_at IS NOT NULL
+        AND (
+          SELECT COUNT(*) FROM stock s
+          WHERE s.product_id = products.id AND s.is_sold = 0
+        ) > COALESCE(
+          NULLIF(low_stock_threshold, 0),
+          (SELECT CAST(value AS INTEGER) FROM settings WHERE key = 'low_stock_alert_threshold'),
+          5
+        )
+    `).run();
+
     const lowStockProducts = effectiveLowStockProducts();
 
     if (lowStockProducts.length === 0) return;

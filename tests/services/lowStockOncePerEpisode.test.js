@@ -67,3 +67,52 @@ test('no re-alert after 24h while stock still low', async () => {
     cleanup(seeded);
   }
 });
+
+test('self-heal resets marker when stock rises above threshold without notifyStockReplenished', async () => {
+  const seeded = seedLowStockProduct();
+  const sent = [];
+  const svc = loadServiceFresh(makeFakeBot(sent));
+  try {
+    // First tick — alerts and stamps marker.
+    await svc.checkLowStock();
+    assert.strictEqual(sentForProduct(sent, seeded.productId).length, 1);
+    const stamped = db.prepare(
+      'SELECT last_low_stock_alert_at FROM products WHERE id = ?'
+    ).get(seeded.productId).last_low_stock_alert_at;
+    assert.ok(stamped, 'marker should be set after first alert');
+
+    // Simulate stock rising above threshold via a code path that does NOT call
+    // notifyStockReplenished — e.g., an order cancel returning reserved keys,
+    // or a manual SQL insert. We just bulk-insert 10 more stock rows.
+    for (let i = 0; i < 10; i++) {
+      db.prepare("INSERT INTO stock (product_id, data, is_sold) VALUES (?, ?, 0)")
+        .run(seeded.productId, `k${i}`);
+    }
+
+    // Next tick — self-heal should NULL the marker (stock now > threshold).
+    await svc.checkLowStock();
+    const cleared = db.prepare(
+      'SELECT last_low_stock_alert_at FROM products WHERE id = ?'
+    ).get(seeded.productId).last_low_stock_alert_at;
+    assert.strictEqual(
+      cleared,
+      null,
+      'self-heal pass should NULL the marker once stock is above threshold'
+    );
+
+    // Now drop back to low stock — should alert again (new episode).
+    // Use 'k_%' (≥1 char after 'k') so we delete the bulk rows k0..k9 but
+    // leave the seed row data='k' in place (otherwise stock_count drops to 0
+    // and the `stock_count > 0` filter excludes the product from the alert).
+    db.prepare("DELETE FROM stock WHERE product_id = ? AND data LIKE 'k_%'")
+      .run(seeded.productId);
+    await svc.checkLowStock();
+    assert.strictEqual(
+      sentForProduct(sent, seeded.productId).length,
+      2,
+      'second episode should re-alert after self-heal cleared the marker'
+    );
+  } finally {
+    cleanup(seeded);
+  }
+});
