@@ -14,7 +14,7 @@
         "admin:reset-password": "node scripts/admin-reset-password.js"
     },
     "engines": {
-        "node": ">=20.9.0"
+        "node": ">=22.0.0"
     },
     "dependencies": {
         "bcrypt": "^6.0.0",

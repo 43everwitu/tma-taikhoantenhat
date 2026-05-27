@@ -24,19 +24,19 @@ if [ -n "$WANT_MBBANK" ] && [ "$WANT_MBBANK" != "$HAVE_MBBANK" ]; then
   "$PYTHON_BIN" -m pip install --quiet --upgrade -r mbbank-api/requirements.txt
 fi
 
-# Ensure Node 20+ even when invoked from a shell using older Node.
-# Resolve a node 20+ binary up front so concurrently child processes inherit it.
+# Ensure Node 22+ even when invoked from a shell using older Node.
+# Resolve a node 22+ binary up front so concurrently child processes inherit it.
 NODE_BIN=""
 if command -v node >/dev/null 2>&1; then
   CUR_MAJOR="$(node -p 'process.versions.node.split(".")[0]' 2>/dev/null || echo 0)"
-  [ "$CUR_MAJOR" -ge 20 ] 2>/dev/null && NODE_BIN="$(command -v node)"
+  [ "$CUR_MAJOR" -ge 22 ] 2>/dev/null && NODE_BIN="$(command -v node)"
 fi
 if [ -z "$NODE_BIN" ] && [ -s "$HOME/.nvm/nvm.sh" ]; then
   \. "$HOME/.nvm/nvm.sh" >/dev/null 2>&1
-  nvm use 20 >/dev/null 2>&1 || nvm use --lts >/dev/null 2>&1 || true
+  nvm use 22 >/dev/null 2>&1 || nvm use --lts >/dev/null 2>&1 || true
   NODE_BIN="$(command -v node)"
 fi
-[ -z "$NODE_BIN" ] && { echo "❌ node 20+ not found (install Node 20 or run via nvm)"; exit 1; }
+[ -z "$NODE_BIN" ] && { echo "❌ node 22+ not found (install Node 22 or run via nvm)"; exit 1; }
 
 # Prepend node's directory to PATH so child processes (npm, npx, next dev) use it.
 NODE_DIR="$(dirname "$NODE_BIN")"
@@ -55,6 +55,6 @@ npx concurrently \
   -c yellow,green,cyan \
   --restart-tries=-1 \
   --restart-after=2000 \
-  "bash -c 'cd mbbank-api && [ -f .env ] && { set -a; . ./.env; set +a; }; \"\$PYTHON_BIN\" -m uvicorn app.main:app --port 8000 --reload --no-use-colors 2>&1 | tee -a ../logs/mbbank.log'" \
+  "bash -c 'cd mbbank-api && \"\$PYTHON_BIN\" -m uvicorn app.main:app --port 8000 --reload --no-use-colors 2>&1 | tee -a ../logs/mbbank.log'" \
   "bash -c 'node --watch src/index.js 2>&1 | tee -a logs/api.log'" \
   "bash -c 'cd web && npm run dev 2>&1 | tee -a ../logs/web.log'"
