@@ -590,9 +590,10 @@ class PaymentPoller {
   }
 
   async _notifyExpired(order) {
+    const productName = order.product_name || `sản phẩm #${order.product_id || 'N/A'}`;
     const body = messageTemplateService.renderIfEnabled('payment_expired', {
       orderCode: order.id,
-      productName: order.product_name,
+      productName,
     });
     if (!body) return;
     await this._notifyCustomer(order.user_id, body, 'HTML');

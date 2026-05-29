@@ -248,8 +248,25 @@ body {
   }
   .miniapp-brand {
     display: inline-flex; align-items: center; gap: .5rem;
+    min-width: 0;
+    max-width: calc(100vw - 11rem);
     font-weight: 700; letter-spacing: -0.02em;
     color: var(--tg-text, var(--brand-ink));
+  }
+  .miniapp-brand-text {
+    display: flex;
+    flex-direction: column;
+    align-items: flex-start;
+    gap: .125rem;
+    min-width: 0;
+    line-height: 1.15;
+  }
+  .miniapp-brand-subtitle {
+    font-size: .6875rem;
+    font-weight: 500;
+    letter-spacing: -0.01em;
+    color: color-mix(in srgb, var(--tg-text, var(--brand-ink)) 56%, transparent);
+    white-space: nowrap;
   }
   .miniapp-brand-mark {
     display: inline-grid; place-items: center;
@@ -320,6 +337,12 @@ body {
 
   /* Section heading */
   .miniapp-section { margin-top: 1.5rem; }
+  .miniapp-section--compact { margin-top: 1rem; }
+  .miniapp-home-notifications { margin-top: .875rem; }
+  .miniapp-home-recent { margin-top: .75rem; }
+  .miniapp-home-notifications .miniapp-section-title,
+  .miniapp-home-recent .miniapp-section-title { margin-bottom: .45rem; }
+  .miniapp-home-notifications .miniapp-hscroll-track { padding-bottom: 0; }
   .miniapp-section-title {
     display: flex; align-items: center; justify-content: space-between;
     margin-bottom: .625rem;
@@ -333,16 +356,78 @@ body {
 
   /* Announcement card */
   .miniapp-ann {
-    padding: .875rem;
-    border-radius: 14px;
+    padding: .55rem .7rem;
+    border-radius: 12px;
     background: var(--brand-gold-soft);
     border: 1px solid color-mix(in srgb, var(--brand-gold) 30%, transparent);
   }
   .miniapp-ann-title {
-    font-size: .875rem; font-weight: 600; color: var(--brand-ink);
-    margin-bottom: .125rem;
+    font-size: .8125rem;
+    font-weight: 600;
+    color: var(--brand-ink);
+    line-height: 1.35;
+    margin: 0;
+    flex: 1;
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
   }
-  .miniapp-ann-body { font-size: .8125rem; color: var(--brand-ink-soft); line-height: 1.4; white-space: pre-line; }
+  .miniapp-ann-body {
+    font-size: .75rem;
+    color: var(--brand-ink-soft);
+    line-height: 1.45;
+    white-space: pre-line;
+  }
+  .miniapp-ann-body .rich-text { line-height: 1.45; }
+  .miniapp-ann-body .rich-text a { color: inherit; text-decoration: none; pointer-events: none; }
+  .miniapp-ann-body .rich-text p { margin-block: .2rem; }
+  .miniapp-ann-body .rich-text p:first-child { margin-top: 0; }
+  .miniapp-ann-body .rich-text p:last-child { margin-bottom: 0; }
+  .miniapp-ann-head {
+    display: flex;
+    align-items: baseline;
+    gap: .375rem;
+    margin-bottom: .25rem;
+  }
+  .miniapp-ann-time {
+    font-size: .6875rem;
+    font-weight: 500;
+    color: color-mix(in srgb, var(--brand-ink) 48%, transparent);
+    white-space: nowrap;
+  }
+  .miniapp-ann-rail-cell {
+    flex: 0 0 min(320px, calc(100% - 2.25rem));
+    list-style: none;
+  }
+  .miniapp-discount-meta {
+    display: flex;
+    align-items: center;
+    flex-wrap: wrap;
+    gap: .3rem;
+    margin-top: .35rem;
+    font-size: .75rem;
+    color: color-mix(in srgb, var(--brand-ink) 72%, transparent);
+  }
+  .miniapp-discount-code-chip {
+    display: inline-flex;
+    align-items: center;
+    gap: .25rem;
+    height: 24px;
+    padding: 0 .5rem;
+    border-radius: 999px;
+    border: 1px solid color-mix(in srgb, var(--brand-ink) 14%, transparent);
+    background: color-mix(in srgb, var(--tg-bg, #fff) 74%, transparent);
+    color: var(--brand-ink);
+    font-size: .6875rem;
+    font-weight: 700;
+    line-height: 1;
+  }
+  .miniapp-discount-code-chip code {
+    font-family: var(--font-jetbrains-mono), ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+  }
+  .miniapp-discount-code-chip:active { transform: scale(.97); }
+  .miniapp-discount-meta-text { opacity: .82; }
 
   /* Product card */
   .miniapp-product-card {
@@ -419,9 +504,15 @@ body {
   }
 
   .miniapp-chip-row {
-    display: flex; gap: .5rem; overflow-x: auto;
-    padding-bottom: .25rem; margin-top: .625rem;
+    display: flex;
+    gap: .5rem;
+    overflow-x: auto;
+    overflow-y: hidden;
+    padding-bottom: .25rem;
+    margin-top: .625rem;
+    min-width: 0;
     scrollbar-width: none;
+    -webkit-overflow-scrolling: touch;
   }
   .miniapp-chip-row::-webkit-scrollbar { display: none; }
   .miniapp-chip {
@@ -442,14 +533,23 @@ body {
   /* Chip row + filter button on same axis. Chips scroll horizontally;
      filter button is pinned at the end and does not shrink. */
   .miniapp-chip-filter-row {
-    display: flex; gap: .5rem; align-items: center;
+    display: flex;
+    gap: .5rem;
+    align-items: center;
+    width: 100%;
+    min-width: 0;
     margin-top: .625rem;
   }
   .miniapp-chip-filter-row > .miniapp-chip-row {
-    flex: 1 1 auto; min-width: 0; margin-top: 0;
+    flex: 1 1 0;
+    min-width: 0;
+    margin-top: 0;
   }
   .miniapp-chip-filter-row > .miniapp-filter-anchor {
     flex: 0 0 auto;
+    align-self: flex-start;
+    position: relative;
+    z-index: 6;
   }
 
   /* Primary CTA button */
@@ -694,12 +794,15 @@ body {
   }
   @media (min-width: 480px) {
     .miniapp-rail-cell { flex: 0 0 calc((100% - 1.5rem) / 3); }
+    .miniapp-ann-rail-cell { flex: 0 0 min(360px, calc((100% - .75rem) / 1.35)); }
   }
   @media (min-width: 768px) {
     .miniapp-rail-cell { flex: 0 0 calc((100% - 3rem) / 4); }
+    .miniapp-ann-rail-cell { flex: 0 0 calc((100% - 1rem) / 2); }
   }
   @media (min-width: 1024px) {
     .miniapp-rail-cell { flex: 0 0 calc((100% - 4rem) / 5); }
+    .miniapp-ann-rail-cell { flex: 0 0 calc((100% - 2rem) / 3); }
   }
 
   /* Category strip tile (uses HScroll) */
@@ -888,6 +991,10 @@ body {
     flex-wrap: wrap;
     margin-top: .5rem;
   }
+  .miniapp-filterbar--compact {
+    margin-top: 0;
+    flex-wrap: nowrap;
+  }
   .miniapp-filterbar-chip {
     display: inline-flex;
     align-items: center;
@@ -923,6 +1030,8 @@ body {
     color: var(--brand-ink);
     font-size: .8125rem;
     cursor: pointer;
+    min-height: 34px;
+    white-space: nowrap;
   }
   .miniapp-filterbar-btn-count {
     display: inline-grid;

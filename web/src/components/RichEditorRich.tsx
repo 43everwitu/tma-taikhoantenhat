@@ -32,7 +32,10 @@ export function RichEditorRich({ value, onChange, placeholder }: Props) {
   const editor = useEditor({
     immediatelyRender: false,
     extensions: [
-      StarterKit,
+      StarterKit.configure({
+        link: false,
+        underline: false,
+      }),
       UnderlineExt,
       LinkExt.configure({ openOnClick: false, HTMLAttributes: { rel: 'noopener noreferrer', target: '_blank' } }),
       ImageExt.configure({ HTMLAttributes: { loading: 'lazy' } }),

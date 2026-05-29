@@ -55,7 +55,10 @@ export function MiniAppShell({
                 {/* eslint-disable-next-line @next/next/no-img-element */}
                 <img src="/favicon.png" alt="" width={32} height={32} />
               </span>
-              <span className="line-clamp-2">{title ?? t.appName}</span>
+              <span className="miniapp-brand-text">
+                <span className="line-clamp-2">{title ?? t.appName}</span>
+                {subtitle && <span className="miniapp-brand-subtitle">{subtitle}</span>}
+              </span>
             </Link>
 
             <nav className="miniapp-topnav-actions">
@@ -124,11 +127,6 @@ export function MiniAppShell({
               </Link>
             </div>
           </div>
-          {subtitle && (
-            <div className="miniapp-container px-4">
-              <p className="text-xs opacity-60 mt-0.5 ml-10">{subtitle}</p>
-            </div>
-          )}
         </header>
       )}
 

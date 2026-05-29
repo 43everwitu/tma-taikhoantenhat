@@ -51,7 +51,12 @@ export const t = {
     cancelled: 'Đã huỷ',
     expired: 'Hết hạn',
     qrTitle: 'Quét mã để thanh toán',
-    paymentCode: 'Nội dung chuyển khoản',
+    downloadQr: 'Tải QR',
+    accountNumber: 'Số tài khoản',
+    accountName: 'Chủ tài khoản',
+    copyHint: 'Bấm để chép',
+    copied: 'Đã chép',
+    paymentCode: 'Nội dung CK',
     keysTitle: 'Tài khoản đã giao',
   },
   errors: {

@@ -11,6 +11,7 @@ export function QuickAddKeysModal({ products, onClose }: { products: Product[]; 
   const [productId, setProductId] = useState<string>(products[0]?.id ?? '')
   const [variantId, setVariantId] = useState<string>('')
   const [durationDays, setDurationDays] = useState<string>('')
+  const [notifyFollowers, setNotifyFollowers] = useState(false)
   const [text, setText] = useState('')
   const [err, setErr] = useState<string | null>(null)
   const qc = useQueryClient()
@@ -34,7 +35,7 @@ export function QuickAddKeysModal({ products, onClose }: { products: Product[]; 
       if (items.length === 0) throw new Error('Chưa nhập key nào')
       if (!productId) throw new Error('Chưa chọn sản phẩm')
       if (hasVariants && !variantId) throw new Error('Sản phẩm có biến thể — phải chọn biến thể')
-      const payload: { items: string[]; variantId?: number; durationDays?: number } = { items }
+      const payload: { items: string[]; variantId?: number; durationDays?: number; notifyFollowers?: boolean } = { items, notifyFollowers }
       if (variantId) payload.variantId = Number(variantId)
       if (durationDays && Number(durationDays) > 0) payload.durationDays = Number(durationDays)
       return api.post(`/admin/stock/${productId}`, payload)
@@ -73,6 +74,16 @@ export function QuickAddKeysModal({ products, onClose }: { products: Product[]; 
               <option key={p.id} value={p.id}>{p.name}</option>
             ))}
           </select>
+        </label>
+
+        <label className="flex items-center gap-2 mt-1 cursor-pointer select-none">
+          <input
+            type="checkbox"
+            checked={notifyFollowers}
+            onChange={(e) => setNotifyFollowers(e.target.checked)}
+            className="h-4 w-4"
+          />
+          <span className="text-xs text-clay-charcoal">Gửi thông báo tới followers sau khi thêm</span>
         </label>
 
         {hasVariants && (

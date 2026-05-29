@@ -66,7 +66,8 @@ router.post('/:productId', validate(z.object({
   items: z.array(z.string().min(1)).min(1).max(1000),
   variantId: z.number().int().positive().nullable().optional(),
   durationDays: z.number().int().min(1).max(36500).nullable().optional(),
-})), (req, res) => {
+  notifyFollowers: z.boolean().optional().default(false),
+})), async (req, res) => {
   const productId = parseInt(req.params.productId);
   const product = db.prepare('SELECT id FROM products WHERE id = ?').get(productId);
   if (!product) return res.status(404).json({ success: false, error: { code: 'NOT_FOUND' } });
@@ -74,13 +75,45 @@ router.post('/:productId', validate(z.object({
   productService.addStock(productId, req.validated.items, req.validated.variantId ?? null, req.validated.durationDays ?? null);
   auditService.log(req.admin.adminId, 'stock.add', 'product', productId, { count: req.validated.items.length, variant_id: req.validated.variantId ?? null }, req.ip);
 
-  // Notify followers
+  // Notify followers (opt-in)
+  let notifyResult = null;
   const poller = req.app.locals.notificationService;
-  if (poller) poller.notifyStockReplenished(productId).catch(() => {});
+  if (poller && req.validated.notifyFollowers) {
+    notifyResult = await poller.notifyStockReplenished(productId);
+    auditService.log(req.admin.adminId, 'stock.notify.followers', 'product', productId, {
+      sent: notifyResult.sent || 0,
+      failed: notifyResult.failed || 0,
+      total: notifyResult.total || 0,
+      skipped: notifyResult.skipped || null,
+      trigger: 'add_stock_checkbox',
+    }, req.ip);
+  }
 
   const stockCount = db.prepare('SELECT COUNT(*) as c FROM stock WHERE product_id = ? AND is_sold = 0').get(productId).c;
   eventBus.publish({ type: 'stock.change', productId, action: 'add', count: req.validated.items.length, totalAvailable: stockCount });
-  res.json({ success: true, data: { added: req.validated.items.length, totalAvailable: stockCount } });
+  res.json({ success: true, data: { added: req.validated.items.length, totalAvailable: stockCount, notify: notifyResult } });
+});
+
+router.post('/:productId/notify-followers', async (req, res) => {
+  const productId = parseInt(req.params.productId);
+  const product = db.prepare('SELECT id FROM products WHERE id = ?').get(productId);
+  if (!product) return res.status(404).json({ success: false, error: { code: 'NOT_FOUND' } });
+
+  const notificationService = req.app.locals.notificationService;
+  if (!notificationService) {
+    return res.status(500).json({ success: false, error: { code: 'SERVICE_UNAVAILABLE' } });
+  }
+
+  const result = await notificationService.notifyStockReplenished(productId);
+  auditService.log(req.admin.adminId, 'stock.notify.followers', 'product', productId, {
+    sent: result.sent || 0,
+    failed: result.failed || 0,
+    total: result.total || 0,
+    skipped: result.skipped || null,
+    trigger: 'manual',
+  }, req.ip);
+
+  res.json({ success: true, data: result });
 });
 
 // DELETE /admin/stock/:productId/unsold — Clear unsold stock

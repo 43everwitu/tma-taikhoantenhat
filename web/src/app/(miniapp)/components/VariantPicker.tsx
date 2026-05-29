@@ -16,6 +16,8 @@ export interface Variant {
   name: string
   description: string
   price: number
+  salePrice?: number
+  discountLabel?: string
   stock: number
   requiresInput: boolean
   inputLabel: string | null
@@ -47,6 +49,16 @@ function stockTone(v: Variant): 'in' | 'out' {
 
 export function VariantPicker({ variants, selectedId, onSelect, inputValues, onInputChange }: Props) {
   const selected = variants.find((v) => v.id === selectedId) ?? null
+  const priceNode = (v: Variant) => {
+    const hasDiscount = typeof v.salePrice === 'number' && v.salePrice < v.price
+    return (
+      <span className="v-price">
+        {hasDiscount ? formatPrice(v.salePrice!) : formatPrice(v.price)}
+        {hasDiscount && <span className="ml-1 opacity-50 line-through">{formatPrice(v.price)}</span>}
+      </span>
+    )
+  }
+
   const [open, setOpen] = useState(false)
   const wrapRef = useRef<HTMLDivElement>(null)
 
@@ -81,7 +93,7 @@ export function VariantPicker({ variants, selectedId, onSelect, inputValues, onI
           <span className="v-name">{selected ? selected.name : 'Chọn biến thể'}</span>
           {selected && (
             <span className="v-meta">
-              <span className="v-price">{formatPrice(selected.price)}</span>
+              {priceNode(selected)}
               <span className={`v-stock v-stock--${stockTone(selected)}`}>{stockLabel(selected)}</span>
             </span>
           )}
@@ -106,7 +118,7 @@ export function VariantPicker({ variants, selectedId, onSelect, inputValues, onI
                   >
                     <span className="v-name">{v.name}</span>
                     <span className="v-meta">
-                      <span className="v-price">{formatPrice(v.price)}</span>
+                      {priceNode(v)}
                       <span className={`v-stock v-stock--${stockTone(v)}`}>{stockLabel(v)}</span>
                     </span>
                   </button>

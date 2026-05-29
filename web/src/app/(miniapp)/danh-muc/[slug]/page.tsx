@@ -61,8 +61,8 @@ export default function CategoryPage() {
         )}
         {products.data && products.data.length > 0 && (
           <ul className="miniapp-product-grid">
-            {products.data.map((p) => (
-              <li key={p.id}><ProductCard p={p} /></li>
+            {products.data.map((p, i) => (
+              <li key={p.id}><ProductCard p={p} eager={i === 0} /></li>
             ))}
           </ul>
         )}

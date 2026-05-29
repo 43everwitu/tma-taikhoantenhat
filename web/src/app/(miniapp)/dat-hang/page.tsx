@@ -2,39 +2,94 @@
 
 import { useState } from 'react'
 import { useRouter } from 'next/navigation'
+import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { useCart } from '@/lib/cart'
 import { apiFetch } from '@/lib/miniappApi'
 import { MiniAppShell } from '../components/MiniAppShell'
 import { formatPrice } from '@/lib/utils'
 import { t } from '@/i18n/vi'
+import { DiscountCodeMeta, type DiscountMetaMode } from '../components/DiscountCodeMeta'
 
 interface CreateOrderResp {
   order: { id: number; status: string; expiresAt: string }
-  payment: { qrUrl: string; paymentCode: string; bankName: string; amount: number }
+  payment: {
+    qrUrl: string
+    paymentCode: string
+    bankName: string
+    accountNumber?: string
+    accountName?: string
+    amount: number
+    discountCode?: string | null
+    discountAmount?: number
+  }
+}
+
+interface GlobalDiscount {
+  code: string
+  type: 'percent' | 'fixed'
+  amount: number
+  maxDiscount: number | null
+  minOrder: number
+  label: string
+  title?: string
+  appMetaMode?: DiscountMetaMode
+  appMetaText?: string
+  appMessage?: string
 }
 
 export default function CheckoutPage() {
   const cart = useCart()
   const router = useRouter()
+  const qc = useQueryClient()
   const [busy, setBusy] = useState(false)
   const [err, setErr] = useState<string | null>(null)
   const [discountCode, setDiscountCode] = useState('')
-  const [applied, setApplied] = useState<{ code: string; discount: number } | null>(null)
+  const [applied, setApplied] = useState<{ code: string; discount: number; source?: 'manual' | 'global' | null } | null>(null)
   const [applyMsg, setApplyMsg] = useState<string | null>(null)
+  const [copiedGlobalCode, setCopiedGlobalCode] = useState(false)
+  const globalDiscount = useQuery({
+    queryKey: ['discounts', 'global'],
+    queryFn: () => apiFetch<GlobalDiscount | null>('/discounts/global'),
+    staleTime: 60_000,
+  })
+
+  function computeGlobalDiscount() {
+    const d = globalDiscount.data
+    if (!d || cart.items.length === 0) return null
+    const discount = cart.items.reduce((sum, it) => {
+      const subtotal = it.price * it.quantity
+      if (subtotal <= 0 || subtotal < (d.minOrder || 0)) return sum
+      let lineDiscount = d.type === 'percent' ? Math.floor(subtotal * d.amount / 100) : d.amount
+      if (d.maxDiscount != null) lineDiscount = Math.min(lineDiscount, d.maxDiscount)
+      return sum + Math.min(lineDiscount, subtotal)
+    }, 0)
+    return discount > 0 ? { code: d.code, discount, source: 'global' as const } : null
+  }
 
   async function applyDiscount() {
     setApplyMsg(null)
     if (!discountCode.trim()) return
     try {
-      const resp = await apiFetch<{ discount: number; total: number; code: string }>('/discounts/preview', {
+      const resp = await apiFetch<{ discount: number; total: number; code: string | null; source?: 'manual' | 'global' | null }>('/discounts/preview', {
         method: 'POST',
         body: JSON.stringify({ code: discountCode.trim(), subtotal: cart.total }),
       })
-      setApplied({ code: resp.code, discount: resp.discount })
-      setApplyMsg(`✅ Áp dụng: giảm ${resp.discount.toLocaleString('vi-VN')}đ`)
+      setApplied(resp.code ? { code: resp.code, discount: resp.discount, source: resp.source } : null)
+      setApplyMsg(`✅ Áp dụng ${resp.code}: giảm ${resp.discount.toLocaleString('vi-VN')}đ`)
     } catch (e) {
       setApplied(null)
       setApplyMsg(`❌ ${e instanceof Error ? e.message : 'Mã không hợp lệ'}`)
+    }
+  }
+
+  async function copyGlobalDiscountCode(code: string) {
+    if (typeof navigator === 'undefined' || !navigator.clipboard) return
+    try {
+      await navigator.clipboard.writeText(code)
+      setCopiedGlobalCode(true)
+      setTimeout(() => setCopiedGlobalCode(false), 1500)
+    } catch {
+      // No-op: clipboard can fail on unsupported clients.
     }
   }
 
@@ -44,7 +99,7 @@ export default function CheckoutPage() {
       let lastOrderId: number | null = null
       // Apply discount only to the FIRST order in the batch so we never
       // double-count: cart with N items still uses one redemption.
-      let useDiscount = applied?.code ?? null
+      let useDiscount = applied?.source === 'manual' ? applied.code : null
       for (const it of cart.items) {
         const body: Record<string, unknown> = {
           productId: Number(it.productId),
@@ -61,6 +116,26 @@ export default function CheckoutPage() {
           method: 'POST',
           body: JSON.stringify(body),
         })
+        const orderId = String(resp.order.id)
+        qc.setQueryData(['order', orderId], {
+          id: orderId,
+          status: resp.order.status,
+          totalPrice: resp.payment.amount,
+          paymentCode: resp.payment.paymentCode,
+          qrUrl: resp.payment.qrUrl,
+          bankName: resp.payment.bankName,
+          accountNumber: resp.payment.accountNumber,
+          accountName: resp.payment.accountName,
+          expiresAt: resp.order.expiresAt,
+          productName: it.name,
+          quantity: it.quantity,
+          discountCode: resp.payment.discountCode,
+          discountAmount: resp.payment.discountAmount ?? 0,
+        })
+        if (typeof window !== 'undefined') {
+          const img = new window.Image()
+          img.src = resp.payment.qrUrl
+        }
         lastOrderId = resp.order.id
       }
       cart.clear()
@@ -72,7 +147,10 @@ export default function CheckoutPage() {
     }
   }
 
-  const grandTotal = Math.max(0, cart.total - (applied?.discount ?? 0))
+  const autoGlobal = computeGlobalDiscount()
+  const effectiveDiscount = applied?.discount ?? autoGlobal?.discount ?? 0
+  const effectiveDiscountCode = applied?.code ?? autoGlobal?.code ?? null
+  const grandTotal = Math.max(0, cart.total - effectiveDiscount)
 
   const empty = cart.items.length === 0
 
@@ -112,7 +190,7 @@ export default function CheckoutPage() {
                 value={discountCode}
                 onChange={(e) => { setDiscountCode(e.target.value.toUpperCase()); setApplied(null); setApplyMsg(null) }}
                 placeholder="VD: SUMMER10"
-                className="flex-1 rounded-xl px-3 py-2 text-sm font-mono uppercase"
+                className="flex-1 rounded-xl px-3 py-2 text-sm font-mono placeholder:normal-case placeholder:opacity-60"
                 style={{ background: 'var(--tg-bg, #fff)', border: '1px solid color-mix(in srgb, var(--brand-ink) 14%, transparent)' }}
               />
               <button
@@ -132,6 +210,29 @@ export default function CheckoutPage() {
               <span>−{formatPrice(applied.discount)}</span>
             </div>
           )}
+          {!applied && autoGlobal && (
+            <div className="rounded-xl p-3 mb-3 text-sm" style={{ background: 'var(--brand-gold-soft)', color: 'var(--brand-ink)' }}>
+              <div className="flex items-start justify-between gap-3">
+                <div className="min-w-0">
+                  <p className="font-semibold leading-snug">
+                    {globalDiscount.data?.title || 'Đã tự áp dụng mã giảm giá'}
+                  </p>
+                  <DiscountCodeMeta
+                    code={autoGlobal.code}
+                    label={globalDiscount.data?.label}
+                    mode={globalDiscount.data?.appMetaMode}
+                    text={globalDiscount.data?.appMetaText}
+                    copied={copiedGlobalCode}
+                    onCopy={() => copyGlobalDiscountCode(autoGlobal.code)}
+                  />
+                  {globalDiscount.data?.appMessage && (
+                    <p className="text-xs opacity-75 mt-1 leading-relaxed">{globalDiscount.data.appMessage}</p>
+                  )}
+                </div>
+                <span className="font-semibold whitespace-nowrap">−{formatPrice(autoGlobal.discount)}</span>
+              </div>
+            </div>
+          )}
 
           <div className="rounded-2xl p-3 mb-4 text-sm" style={{ background: 'var(--brand-gold-soft)', color: 'var(--brand-ink)' }}>
             <p className="font-medium mb-1">💡 Thanh toán bằng VietQR</p>
@@ -148,6 +249,7 @@ export default function CheckoutPage() {
             <div className="self-center">
               <div className="text-xs opacity-60">{t.cart.total}</div>
               <div className="text-lg font-bold leading-tight">{formatPrice(grandTotal)}</div>
+              {effectiveDiscountCode && <div className="text-[11px] opacity-60">Đã giảm: {effectiveDiscountCode}</div>}
             </div>
             <button
               type="button"

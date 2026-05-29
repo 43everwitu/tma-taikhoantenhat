@@ -15,6 +15,7 @@ interface OrderStatus {
   id: string
   status: 'pending' | 'paid' | 'delivered' | 'cancelled' | 'expired'
   totalPrice: number; paymentCode: string; qrUrl: string; bankName: string; expiresAt: string
+  accountNumber?: string; accountName?: string
   productName: string; quantity: number
   accounts?: string[]; usageInstructions?: string | null
 }
@@ -72,10 +73,13 @@ export default function OrderDetailPage() {
 
       {order.status === 'pending' && (
         <QrPanel
+          orderId={order.id}
           qrUrl={order.qrUrl}
           paymentCode={order.paymentCode}
           amount={order.totalPrice}
           bankName={order.bankName}
+          accountNumber={order.accountNumber}
+          accountName={order.accountName}
         />
       )}
 

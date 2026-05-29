@@ -79,9 +79,14 @@ router.post('/discounts/preview', requireCustomer, validate(z.object({
   subtotal: z.number().int().nonnegative(),
 })), (req, res) => {
   const discountService = require('../../services/discountService');
-  const r = discountService.validateForOrder(req.validated.code, req.validated.subtotal, req.customer.telegramId);
+  const r = discountService.resolveBestForOrder(req.validated.code, req.validated.subtotal, req.customer.telegramId);
   if (!r.ok) return res.status(400).json({ success: false, error: { code: 'DISCOUNT_INVALID', message: r.reason } });
-  res.json({ success: true, data: { discount: r.discount, total: req.validated.subtotal - r.discount, code: r.code.code } });
+  res.json({ success: true, data: {
+    discount: r.discount,
+    total: req.validated.subtotal - r.discount,
+    code: r.code?.code || null,
+    source: r.source,
+  } });
 });
 
 // POST /orders — Create order (requires customer auth)
@@ -136,11 +141,11 @@ router.post('/orders', requireCustomer, validate(z.object({
   let totalPrice = subtotal;
   let discountCodeId = null;
   let discountAmount = 0;
-  if (discountCode) {
+  {
     const discountService = require('../../services/discountService');
-    const r = discountService.validateForOrder(discountCode, subtotal, telegramId);
+    const r = discountService.resolveBestForOrder(discountCode, subtotal, telegramId);
     if (!r.ok) return res.status(400).json({ success: false, error: { code: 'DISCOUNT_INVALID', message: r.reason } });
-    discountCodeId = r.code.id;
+    discountCodeId = r.code?.id ?? null;
     discountAmount = r.discount;
     totalPrice = Math.max(0, subtotal - r.discount);
   }
@@ -171,7 +176,11 @@ router.post('/orders', requireCustomer, validate(z.object({
         qrUrl: payment.qrUrl,
         paymentCode: payment.paymentCode,
         bankName: payment.bankName,
+        accountNumber: payment.accountNumber,
+        accountName: payment.accountName,
         amount: totalPrice,
+        discountCode: discountCodeId ? db.prepare('SELECT code FROM discount_codes WHERE id = ?').get(discountCodeId)?.code : null,
+        discountAmount,
       },
     },
   });
@@ -214,6 +223,8 @@ router.get('/orders/:id/status', (req, res) => {
     paymentCode: order.payment_code,
     qrUrl,
     bankName: order.bank_name,
+    accountNumber: bank.ACCOUNT,
+    accountName: bank.ACCOUNT_NAME,
     expiresAt: order.expires_at,
     productName: product ? product.name : '',
     quantity: order.quantity,

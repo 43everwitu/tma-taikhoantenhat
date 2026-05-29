@@ -1,5 +1,4 @@
 const db = require('../database');
-const config = require('../config');
 const adminNotifyService = require('./adminNotifyService');
 const messageTemplateService = require('./messageTemplateService');
 
@@ -93,7 +92,7 @@ class NotificationService {
     db.prepare('UPDATE products SET last_low_stock_alert_at = NULL WHERE id = ?').run(productId);
 
     const product = db.prepare('SELECT * FROM products WHERE id = ?').get(productId);
-    if (!product) return;
+    if (!product) return { sent: 0, failed: 0, total: 0, skipped: 'product_not_found' };
 
     const stockCount = db.prepare(
       'SELECT COUNT(*) as c FROM stock WHERE product_id = ? AND is_sold = 0'
@@ -103,25 +102,55 @@ class NotificationService {
       'SELECT user_id FROM product_follows WHERE product_id = ?'
     ).all(productId);
 
-    if (followers.length === 0) return;
+    if (followers.length === 0) return { sent: 0, failed: 0, total: 0, skipped: 'no_followers' };
 
     const body = messageTemplateService.renderIfEnabled('bot.stock_replenished', {
       productEmoji: product.emoji || '📦',
       productName: product.name,
       stockCount,
     });
-    if (!body) return;
+    if (!body) return { sent: 0, failed: 0, total: followers.length, skipped: 'template_disabled' };
 
     let sent = 0;
+    let failed = 0;
     for (const { user_id } of followers) {
-      await this.notify(user_id, 'stock_alert', 'Sản phẩm có hàng', body,
-        { product_id: productId });
-      sent++;
+      try {
+        await this.notify(user_id, 'stock_alert', 'Sản phẩm có hàng', body,
+          { product_id: productId });
+        sent++;
+      } catch {
+        failed++;
+      }
       // Telegram rate limit: 25/sec
       if (sent % 25 === 0) await sleep(1000);
     }
 
-    return { sent, total: followers.length };
+    return { sent, failed, total: followers.length };
+  }
+
+  formatVnd(amount) {
+    const n = Number(amount || 0);
+    return `${n.toLocaleString('vi-VN')}đ`;
+  }
+
+  async notifyNewProduct(product, adminId = null) {
+    const body = messageTemplateService.renderIfEnabled('bot.product_new', {
+      productEmoji: product.emoji || '📦',
+      productName: product.name,
+      productPrice: this.formatVnd(product.price),
+    });
+    if (!body) return { sent: 0, failed: 0, total: 0, skipped: 'template_disabled' };
+    return this.broadcast('Sản phẩm mới', body, 'all', adminId);
+  }
+
+  async notifyProductUpdated(product, adminId = null) {
+    const body = messageTemplateService.renderIfEnabled('bot.product_updated', {
+      productEmoji: product.emoji || '📦',
+      productName: product.name,
+      productPrice: this.formatVnd(product.price),
+    });
+    if (!body) return { sent: 0, failed: 0, total: 0, skipped: 'template_disabled' };
+    return this.broadcast('Cập nhật sản phẩm', body, 'all', adminId);
   }
 
   /**

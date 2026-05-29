@@ -52,6 +52,8 @@ export interface TelegramWebApp {
     notificationOccurred(type: 'error' | 'success' | 'warning'): void
     selectionChanged(): void
   }
+  downloadFile?: (params: { url: string; file_name: string }, callback?: (accepted: boolean) => void) => void
+  isVersionAtLeast?: (version: string) => boolean
   openLink(url: string): void
   isExpanded?: boolean
   version?: string
@@ -75,14 +77,46 @@ export function getWebApp(): TelegramWebApp | null {
   return window.Telegram?.WebApp ?? null
 }
 
+export function isTmaVersionAtLeast(wa: TelegramWebApp, minVersion: string): boolean {
+  const current = (wa.version ?? '0').split('.').map((part) => parseInt(part, 10) || 0)
+  const minimum = minVersion.split('.').map((part) => parseInt(part, 10) || 0)
+  const len = Math.max(current.length, minimum.length)
+  for (let i = 0; i < len; i += 1) {
+    const a = current[i] ?? 0
+    const b = minimum[i] ?? 0
+    if (a > b) return true
+    if (a < b) return false
+  }
+  return true
+}
+
+function prepareWebApp(wa: TelegramWebApp) {
+  wa.ready()
+  wa.expand()
+  // Telegram lets users pull the Mini App down with vertical swipes by default.
+  // For a shop UI with scrollable product cards, disable that gesture when the
+  // client supports it so normal content scrolling does not collapse the app.
+  wa.disableVerticalSwipes?.()
+}
+
 export function useWebApp(): TelegramWebApp | null {
-  const [wa, setWa] = useState<TelegramWebApp | null>(null)
+  const [wa, setWa] = useState<TelegramWebApp | null>(() => getWebApp())
   useEffect(() => {
     const w = getWebApp()
-    if (!w) return
-    w.ready()
-    w.expand()
-    setWa(w)
+    if (w) {
+      prepareWebApp(w)
+      return
+    }
+
+    const timer = window.setInterval(() => {
+      const next = getWebApp()
+      if (!next) return
+      prepareWebApp(next)
+      setWa(next)
+      window.clearInterval(timer)
+    }, 50)
+
+    return () => window.clearInterval(timer)
   }, [])
   return wa
 }
@@ -112,9 +146,8 @@ export function applyThemeVars(theme: TelegramThemeParams) {
 // Updating the Telegram app to a recent version is the real fix; this
 // keeps the layout usable in the meantime.
 function getLegacyInsets(wa: TelegramWebApp) {
-  const ver = parseFloat(wa.version ?? '6.0')
   const isApple = wa.platform === 'ios' || wa.platform === 'macos'
-  if (ver >= 8.0 || !isApple) return { top: 0, bottom: 0, left: 0, right: 0 }
+  if (isTmaVersionAtLeast(wa, '8.0') || !isApple) return { top: 0, bottom: 0, left: 0, right: 0 }
   const landscape = typeof window !== 'undefined'
     && typeof window.matchMedia === 'function'
     && window.matchMedia('(orientation: landscape)').matches
@@ -143,18 +176,21 @@ export function useTmaViewport() {
   useEffect(() => {
     const wa = getWebApp()
     if (!wa) return
-    wa.ready()
-    wa.expand()
-    wa.disableVerticalSwipes?.()
+    prepareWebApp(wa)
     writeInsets(wa)
     const onChange = () => writeInsets(wa)
-    wa.onEvent?.('safeAreaChanged', onChange)
-    wa.onEvent?.('contentSafeAreaChanged', onChange)
+    const supportsSafeAreaEvents = isTmaVersionAtLeast(wa, '8.0')
+    if (supportsSafeAreaEvents) {
+      wa.onEvent?.('safeAreaChanged', onChange)
+      wa.onEvent?.('contentSafeAreaChanged', onChange)
+    }
     const orientation = window.matchMedia?.('(orientation: landscape)')
     orientation?.addEventListener?.('change', onChange)
     return () => {
-      wa.offEvent?.('safeAreaChanged', onChange)
-      wa.offEvent?.('contentSafeAreaChanged', onChange)
+      if (supportsSafeAreaEvents) {
+        wa.offEvent?.('safeAreaChanged', onChange)
+        wa.offEvent?.('contentSafeAreaChanged', onChange)
+      }
       orientation?.removeEventListener?.('change', onChange)
     }
   }, [])

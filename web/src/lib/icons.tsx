@@ -67,4 +67,5 @@ export {
   ShieldAlert,
   ShieldOff,
   ClipboardList,
+  MoreHorizontal,
 } from 'lucide-react'

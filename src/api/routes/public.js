@@ -4,8 +4,22 @@ const { sanitizeProductForClient } = require('../../services/productService');
 const variantService = require('../../services/variantService');
 const config = require('../../config');
 const messageTemplateService = require('../../services/messageTemplateService');
+const paymentService = require('../../services/paymentService');
+const discountService = require('../../services/discountService');
 
 const router = Router();
+
+async function fetchQrPngBuffer(qrUrl) {
+  const resp = await fetch(qrUrl, {
+    headers: {
+      'Accept': 'image/png,image/*;q=0.9,*/*;q=0.1',
+      'User-Agent': 'taikhoantenhat-bot/qr-download',
+    },
+  });
+  if (!resp.ok) throw new Error(`QR_FETCH_${resp.status}`);
+  const arr = await resp.arrayBuffer();
+  return Buffer.from(arr);
+}
 
 // GET /shop/info
 router.get('/shop/info', (req, res) => {
@@ -24,6 +38,67 @@ router.get('/shop/info', (req, res) => {
   });
 });
 
+function discountLabel(code) {
+  if (!code) return '';
+  if (code.type === 'percent') return `Giảm ${code.amount}%`;
+  return `Giảm ${Number(code.amount || 0).toLocaleString('vi-VN')}đ`;
+}
+
+function shapeGlobalDiscount(code, basePrice = null) {
+  if (!code) return null;
+  const out = {
+    code: code.code,
+    type: code.type,
+    amount: code.amount,
+    maxDiscount: code.max_discount,
+    minOrder: code.min_order,
+    label: discountLabel(code),
+    title: code.notify_title || '',
+    appMetaMode: code.app_meta_mode || 'auto',
+    appMetaText: code.app_meta_text || '',
+    appMessage: code.app_message || '',
+  };
+  if (basePrice != null) {
+    out.discountAmount = discountService.computeDiscount(code, basePrice);
+    out.salePrice = Math.max(0, basePrice - out.discountAmount);
+  }
+  return out;
+}
+
+function normalizeAnnouncementText(raw) {
+  if (!raw) return '';
+  let text = String(raw);
+  // Keep anchor text but strip href links.
+  text = text.replace(/<a\b[^>]*>([\s\S]*?)<\/a>/gi, '$1');
+  // Never show raw URLs in the miniapp announcement rail.
+  text = text.replace(/\bhttps?:\/\/[^\s<]+/gi, '');
+  text = text.replace(/\bwww\.[^\s<]+/gi, '');
+  // Product/update announcements should stay compact and neutral.
+  text = text.replace(/[\p{Extended_Pictographic}\uFE0F]/gu, '');
+  text = text.replace(/[ \t]+\n/g, '\n').replace(/\n{3,}/g, '\n\n').trim();
+  return text;
+}
+
+function applyGlobalPricing(item, globalDiscount) {
+  if (!globalDiscount) return item;
+  const discountAmount = discountService.computeDiscount(globalDiscount, item.price);
+  if (discountAmount <= 0) return item;
+  return {
+    ...item,
+    originalPrice: item.price,
+    salePrice: Math.max(0, item.price - discountAmount),
+    discountAmount,
+    discountCode: globalDiscount.code,
+    discountLabel: discountLabel(globalDiscount),
+  };
+}
+
+// GET /discounts/global — active store-wide discount for public display.
+router.get('/discounts/global', (req, res) => {
+  const global = discountService.findActiveGlobal();
+  res.json({ success: true, data: shapeGlobalDiscount(global) });
+});
+
 // GET /categories
 router.get('/categories', (req, res) => {
   const exclude = (req.query.exclude || '').trim();
@@ -38,15 +113,51 @@ router.get('/categories', (req, res) => {
   res.json({ success: true, data: rows });
 });
 
+// GET /orders/:id/qr-download — Telegram Mini Apps downloadFile() requires an
+// HTTPS URL that returns attachment headers. Keep this public: the QR contains
+// only payment amount + memo, and Telegram downloads it outside fetch auth.
+router.get('/orders/:id/qr-download', async (req, res) => {
+  const id = parseInt(req.params.id);
+  const order = db.prepare('SELECT id, total_price, payment_code, bank_name FROM orders WHERE id = ?').get(id);
+  if (!order) return res.status(404).json({ success: false, error: { code: 'NOT_FOUND' } });
+
+  const banks = paymentService.getBanks();
+  const bank = banks.find((b) => b.NAME === order.bank_name) || banks[0];
+  const qrUrl = paymentService.generateQRUrl(order.total_price, order.payment_code, bank);
+
+  try {
+    const buf = await fetchQrPngBuffer(qrUrl);
+    const safeCode = String(order.payment_code || `order-${id}`).replace(/[^\w-]/g, '');
+    res.set({
+      'Content-Type': 'image/png',
+      'Content-Disposition': `attachment; filename="QR-${safeCode}.png"`,
+      'Access-Control-Allow-Origin': 'https://web.telegram.org',
+      'Cross-Origin-Resource-Policy': 'cross-origin',
+      'Cache-Control': 'private, max-age=60',
+    });
+    return res.send(buf);
+  } catch (e) {
+    return res.status(502).json({
+      success: false,
+      error: { code: 'QR_FETCH_FAILED', message: e?.message || 'Không tải được ảnh QR' },
+    });
+  }
+});
+
 function shapePublicProduct(p) {
   const stock = (p.display_stock != null) ? p.display_stock : (p.stock_count || 0);
-  const shaped = {
+  const priceMin = (p.variant_min != null) ? Number(p.variant_min) : Number(p.price || 0);
+  const priceMax = (p.variant_max != null) ? Number(p.variant_max) : priceMin;
+  const globalDiscount = discountService.findActiveGlobal();
+  const base = {
     id: String(p.id),
     name: p.name,
     slug: p.slug,
     emoji: p.emoji || '📦',
     imageUrl: p.image_url || '',
     price: p.price,
+    priceMin,
+    priceMax,
     stock,
     description: p.description || '',
     longDescription: p.long_description || '',
@@ -58,6 +169,13 @@ function shapePublicProduct(p) {
     categorySlug: p.category_slug || '',
     categoryId: p.category_id,
   };
+  const shaped = applyGlobalPricing(base, globalDiscount);
+  if (globalDiscount) {
+    const discountMin = discountService.computeDiscount(globalDiscount, priceMin);
+    const discountMax = discountService.computeDiscount(globalDiscount, priceMax);
+    shaped.salePriceMin = Math.max(0, priceMin - discountMin);
+    shaped.salePriceMax = Math.max(0, priceMax - discountMax);
+  }
   return sanitizeProductForClient(shaped);
 }
 
@@ -74,6 +192,8 @@ router.get('/products', (req, res) => {
     const rows = db.prepare(`
       SELECT p.*,
         (SELECT COUNT(*) FROM stock s WHERE s.product_id = p.id AND s.is_sold = 0) as stock_count,
+        (SELECT MIN(v.price) FROM product_variants v WHERE v.product_id = p.id AND v.is_active = 1) as variant_min,
+        (SELECT MAX(v.price) FROM product_variants v WHERE v.product_id = p.id AND v.is_active = 1) as variant_max,
         CASE
           WHEN (SELECT COUNT(*) FROM stock s WHERE s.product_id = p.id AND s.is_sold = 0) > 0
           THEN (SELECT COUNT(*) FROM stock s WHERE s.product_id = p.id AND s.is_sold = 0)
@@ -108,18 +228,22 @@ router.get('/products', (req, res) => {
   const priceMin = parseInt(req.query.priceMin);
   const priceMax = parseInt(req.query.priceMax);
   if (Number.isInteger(priceMin) && priceMin >= 0) {
-    where += ' AND p.price >= ?';
+    where += ' AND COALESCE((SELECT MIN(v.price) FROM product_variants v WHERE v.product_id = p.id AND v.is_active = 1), p.price) >= ?';
     params.push(priceMin);
   }
   if (Number.isInteger(priceMax) && priceMax >= 0) {
-    where += ' AND p.price <= ?';
+    where += ' AND COALESCE((SELECT MAX(v.price) FROM product_variants v WHERE v.product_id = p.id AND v.is_active = 1), p.price) <= ?';
     params.push(priceMax);
   }
 
   let orderBy;
   switch (sort) {
-    case 'price_asc': orderBy = 'p.price ASC, p.id'; break;
-    case 'price_desc': orderBy = 'p.price DESC, p.id'; break;
+    case 'price_asc':
+      orderBy = 'COALESCE((SELECT MIN(v.price) FROM product_variants v WHERE v.product_id = p.id AND v.is_active = 1), p.price) ASC, p.id';
+      break;
+    case 'price_desc':
+      orderBy = 'COALESCE((SELECT MAX(v.price) FROM product_variants v WHERE v.product_id = p.id AND v.is_active = 1), p.price) DESC, p.id';
+      break;
     case 'newest': orderBy = 'p.created_at DESC, p.id DESC'; break;
     case 'name_asc': orderBy = 'p.name COLLATE NOCASE ASC, p.id'; break;
     case 'name_desc': orderBy = 'p.name COLLATE NOCASE DESC, p.id'; break;
@@ -133,6 +257,8 @@ router.get('/products', (req, res) => {
   const rows = db.prepare(`
     SELECT p.*,
       (SELECT COUNT(*) FROM stock s WHERE s.product_id = p.id AND s.is_sold = 0) as stock_count,
+      (SELECT MIN(v.price) FROM product_variants v WHERE v.product_id = p.id AND v.is_active = 1) as variant_min,
+      (SELECT MAX(v.price) FROM product_variants v WHERE v.product_id = p.id AND v.is_active = 1) as variant_max,
       CASE
         WHEN (SELECT COUNT(*) FROM stock s WHERE s.product_id = p.id AND s.is_sold = 0) > 0
         THEN (SELECT COUNT(*) FROM stock s WHERE s.product_id = p.id AND s.is_sold = 0)
@@ -163,6 +289,8 @@ router.get('/products/featured', (req, res) => {
   const featured = db.prepare(`
     SELECT p.*,
       (SELECT COUNT(*) FROM stock s WHERE s.product_id = p.id AND s.is_sold = 0) as stock_count,
+      (SELECT MIN(v.price) FROM product_variants v WHERE v.product_id = p.id AND v.is_active = 1) as variant_min,
+      (SELECT MAX(v.price) FROM product_variants v WHERE v.product_id = p.id AND v.is_active = 1) as variant_max,
       CASE
         WHEN (SELECT COUNT(*) FROM stock s WHERE s.product_id = p.id AND s.is_sold = 0) > 0
         THEN (SELECT COUNT(*) FROM stock s WHERE s.product_id = p.id AND s.is_sold = 0)
@@ -184,6 +312,8 @@ router.get('/products/featured', (req, res) => {
   const fill = db.prepare(`
     SELECT p.*,
       (SELECT COUNT(*) FROM stock s WHERE s.product_id = p.id AND s.is_sold = 0) as stock_count,
+      (SELECT MIN(v.price) FROM product_variants v WHERE v.product_id = p.id AND v.is_active = 1) as variant_min,
+      (SELECT MAX(v.price) FROM product_variants v WHERE v.product_id = p.id AND v.is_active = 1) as variant_max,
       CASE
         WHEN (SELECT COUNT(*) FROM stock s WHERE s.product_id = p.id AND s.is_sold = 0) > 0
         THEN (SELECT COUNT(*) FROM stock s WHERE s.product_id = p.id AND s.is_sold = 0)
@@ -206,6 +336,8 @@ router.get('/products/:slug', (req, res) => {
   const product = db.prepare(`
     SELECT p.*,
       (SELECT COUNT(*) FROM stock s WHERE s.product_id = p.id AND s.is_sold = 0) as stock_count,
+      (SELECT MIN(v.price) FROM product_variants v WHERE v.product_id = p.id AND v.is_active = 1) as variant_min,
+      (SELECT MAX(v.price) FROM product_variants v WHERE v.product_id = p.id AND v.is_active = 1) as variant_max,
       CASE
         WHEN (SELECT COUNT(*) FROM stock s WHERE s.product_id = p.id AND s.is_sold = 0) > 0
         THEN (SELECT COUNT(*) FROM stock s WHERE s.product_id = p.id AND s.is_sold = 0)
@@ -223,13 +355,14 @@ router.get('/products/:slug', (req, res) => {
 
   const p = product;
   const stock = (p.display_stock != null) ? p.display_stock : (p.stock_count || 0);
+  const globalDiscount = discountService.findActiveGlobal();
   const variantRows = variantService.listByProduct(db, p.id);
   const variants = variantRows.map(v => {
     let inputFields = null;
     if (v.input_fields_json) {
       try { inputFields = JSON.parse(v.input_fields_json); } catch { inputFields = null; }
     }
-    return {
+    return applyGlobalPricing({
       id: String(v.id),
       name: v.name,
       description: v.description || '',
@@ -243,16 +376,18 @@ router.get('/products/:slug', (req, res) => {
       inputType: v.input_type || 'text',
       inputFields,
       imageUrl: v.image_url || p.image_url || '',
-    };
+    }, globalDiscount);
   });
 
-  const shaped = {
+  const shaped = applyGlobalPricing({
     id: String(p.id),
     name: p.name,
     slug: p.slug,
     emoji: p.emoji || '📦',
     imageUrl: p.image_url || '',
     price: p.price,
+    priceMin: p.variant_min != null ? Number(p.variant_min) : Number(p.price || 0),
+    priceMax: p.variant_max != null ? Number(p.variant_max) : Number(p.price || 0),
     stock,
     description: p.description || '',
     longDescription: p.long_description || '',
@@ -264,7 +399,16 @@ router.get('/products/:slug', (req, res) => {
     categorySlug: p.category_slug || '',
     categoryId: p.category_id,
     variants,
-  };
+    globalDiscount: shapeGlobalDiscount(globalDiscount, p.price),
+  }, globalDiscount);
+  if (globalDiscount) {
+    const minP = shaped.priceMin ?? shaped.price;
+    const maxP = shaped.priceMax ?? shaped.price;
+    const discountMin = discountService.computeDiscount(globalDiscount, minP);
+    const discountMax = discountService.computeDiscount(globalDiscount, maxP);
+    shaped.salePriceMin = Math.max(0, minP - discountMin);
+    shaped.salePriceMax = Math.max(0, maxP - discountMax);
+  }
   res.json({ success: true, data: sanitizeProductForClient(shaped) });
 });
 
@@ -282,8 +426,8 @@ router.get('/announcements', (req, res) => {
     success: true,
     data: rows.map(r => ({
       id: String(r.id),
-      title: r.title,
-      body: r.body,
+      title: normalizeAnnouncementText(r.title),
+      body: normalizeAnnouncementText(r.body),
       pinned: !!r.is_pinned,
       target: r.target || 'all',
       createdAt: r.created_at,

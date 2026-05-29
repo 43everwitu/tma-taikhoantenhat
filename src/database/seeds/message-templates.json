@@ -88,5 +88,17 @@
     "label": "Bot — báo có hàng lại (followers)",
     "variables": ["productEmoji", "productName", "stockCount"],
     "body": "🔔 <b>{{productEmoji}} {{productName}}</b> đã có hàng!\nCòn {{stockCount}} sản phẩm. Mua ngay: /menu"
+  },
+  "bot.product_new": {
+    "channel": "bot",
+    "label": "Bot — thông báo sản phẩm mới",
+    "variables": ["productEmoji", "productName", "productPrice"],
+    "body": "<b>{{productName}}</b> vừa lên kệ.\nGiá: <b>{{productPrice}}</b>"
+  },
+  "bot.product_updated": {
+    "channel": "bot",
+    "label": "Bot — thông báo cập nhật sản phẩm",
+    "variables": ["productEmoji", "productName", "productPrice"],
+    "body": "<b>{{productName}}</b> vừa được cập nhật.\nGiá hiện tại: <b>{{productPrice}}</b>"
   }
 }
