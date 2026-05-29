@@ -21,6 +21,7 @@ interface Order {
   createdAt: string
   keyExpiresAt?: string | null
   keyExpired?: boolean
+  hasCustomerInput?: boolean
 }
 
 interface OrderDetail extends Order {
@@ -29,29 +30,61 @@ interface OrderDetail extends Order {
   inputValueText?: string
 }
 
-function KeyCell({ orderId, status }: { orderId: string; status: string }) {
+function formatInputFieldLabel(label: string) {
+  if (!label || /^__field_\d+$/.test(label)) return null
+  return label
+}
+
+function CustomerInputBlock({ inputFields, inputValueText }: { inputFields?: Record<string, string>; inputValueText?: string }) {
+  if (!inputFields && !inputValueText) return null
+  return (
+    <div className="rounded-md bg-yellow-50 border border-yellow-200 px-2 py-1.5 text-xs">
+      <p className="font-medium opacity-70 mb-0.5">Thông tin KH:</p>
+      {inputFields
+        ? <ul className="space-y-0.5">
+            {Object.entries(inputFields).filter(([, v]) => v).map(([label, v]) => {
+              const displayLabel = formatInputFieldLabel(label)
+              return (
+                <li key={label}>
+                  {displayLabel ? <><b>{displayLabel}:</b> </> : null}
+                  <code className="font-mono">{v}</code>
+                </li>
+              )
+            })}
+          </ul>
+        : <p className="font-mono break-all">{inputValueText}</p>
+      }
+    </div>
+  )
+}
+
+function OrderExtraCell({ orderId, status, hasCustomerInput }: { orderId: string; status: string; hasCustomerInput?: boolean }) {
   const [revealed, setRevealed] = useState(false)
+  const showKeys = status === 'delivered'
+  const showCustomerOnly = !showKeys && hasCustomerInput && (status === 'paid' || status === 'pending')
+  const canReveal = showKeys || showCustomerOnly
+
   const { data, isLoading } = useQuery({
     queryKey: ['admin', 'order', orderId, 'detail'],
     queryFn: () => api.get<OrderDetail>(`/admin/orders/${orderId}`),
-    enabled: revealed,
+    enabled: revealed && canReveal,
   })
 
-  if (status !== 'delivered') {
+  if (!canReveal) {
     return <span className="text-clay-silver text-xs">—</span>
   }
 
-  // Render KeyCell as a fixed-height anchor + popover so revealing the keys
-  // doesn't push the table rows below (no CLS).
   if (!revealed) {
     return (
       <button
         onClick={() => setRevealed(true)}
         className="inline-flex items-center gap-1.5 text-xs text-clay-charcoal hover:text-clay-ink"
-        title="Hiện key"
+        title={showKeys ? 'Hiện key' : 'Xem thông tin khách'}
       >
         <Eye size={14} />
-        <span className="font-mono blur-sm select-none">••••••••••••</span>
+        {showKeys
+          ? <span className="font-mono blur-sm select-none">••••••••••••</span>
+          : <span>Thông tin KH</span>}
       </button>
     )
   }
@@ -61,7 +94,11 @@ function KeyCell({ orderId, status }: { orderId: string; status: string }) {
   }
 
   const accounts = data?.data?.accounts ?? []
-  if (accounts.length === 0 && !data?.data?.inputFields && !data?.data?.inputValueText) {
+  const inputFields = data?.data?.inputFields
+  const inputValueText = data?.data?.inputValueText
+  const hasContent = accounts.length > 0 || inputFields || inputValueText
+
+  if (!hasContent) {
     return (
       <button
         onClick={() => setRevealed(false)}
@@ -72,11 +109,6 @@ function KeyCell({ orderId, status }: { orderId: string; status: string }) {
     )
   }
 
-  const inputFields = data?.data?.inputFields
-  const inputValueText = data?.data?.inputValueText
-
-  // Popover: button stays at original height; expanded content sits
-  // absolutely positioned so the table row height never changes.
   return (
     <div className="relative inline-block">
       <button
@@ -85,25 +117,15 @@ function KeyCell({ orderId, status }: { orderId: string; status: string }) {
         title="Ẩn"
       >
         <EyeOff size={14} />
-        <span className="font-mono">{accounts.length > 0 ? `${accounts.length} key` : 'thông tin'}</span>
+        <span className="font-mono">
+          {accounts.length > 0 ? `${accounts.length} key` : 'Thông tin KH'}
+        </span>
       </button>
       <div
         className="absolute z-30 top-full mt-1 left-0 min-w-[260px] max-w-md bg-white rounded-lg shadow-xl border border-clay-oat-light p-2 space-y-1"
         onMouseDown={(e) => e.stopPropagation()}
       >
-        {(inputFields || inputValueText) && (
-          <div className="rounded-md bg-yellow-50 border border-yellow-200 px-2 py-1.5 text-xs">
-            <p className="font-medium opacity-70 mb-0.5">Thông tin KH:</p>
-            {inputFields
-              ? <ul className="space-y-0.5">
-                  {Object.entries(inputFields).filter(([, v]) => v).map(([label, v]) => (
-                    <li key={label}><b>{label}:</b> <code className="font-mono">{v}</code></li>
-                  ))}
-                </ul>
-              : <p className="font-mono break-all">{inputValueText}</p>
-            }
-          </div>
-        )}
+        <CustomerInputBlock inputFields={inputFields} inputValueText={inputValueText} />
         {accounts.map((acc, i) => (
           <div key={i} className="flex items-center gap-2 group">
             <code className="font-mono text-xs bg-clay-oat-light px-2 py-0.5 rounded flex-1 truncate" title={acc}>
@@ -255,6 +277,12 @@ export default function OrdersPage() {
   const [editOrderId, setEditOrderId] = useState<string | null>(null)
   const [editText, setEditText] = useState('')
 
+  const { data: manualOrderDetail } = useQuery({
+    queryKey: ['admin', 'order', manualOrderId, 'detail'],
+    queryFn: () => api.get<OrderDetail>(`/admin/orders/${manualOrderId}`),
+    enabled: !!manualOrderId,
+  })
+
   async function openEditKeys(order: Order) {
     setEditOrderId(order.id)
     setEditText('')
@@ -279,7 +307,7 @@ export default function OrdersPage() {
     { header: 'SL', cell: (o) => o.quantity, className: 'text-right' },
     { header: 'Tổng', cell: (o) => formatPrice(o.totalPrice), className: 'text-right font-medium' },
     { header: 'Trạng thái', cell: (o) => <StatusPill status={o.status} />, className: 'text-center' },
-    { header: 'Key', cell: (o) => <KeyCell orderId={o.id} status={o.status} /> },
+    { header: 'Key', cell: (o) => <OrderExtraCell orderId={o.id} status={o.status} hasCustomerInput={o.hasCustomerInput} /> },
     { header: 'Hết hạn', cell: (o) => o.keyExpiresAt
         ? <span className={`text-xs whitespace-nowrap ${o.keyExpired ? 'text-red-600 font-medium' : 'text-clay-silver'}`}>{o.keyExpiresAt}{o.keyExpired ? ' ⚠' : ''}</span>
         : <span className="text-xs text-clay-silver">—</span>,
@@ -414,6 +442,12 @@ export default function OrdersPage() {
               <button onClick={() => setManualOrderId(null)} className="opacity-60 text-xl leading-none">×</button>
             </div>
             <p className="text-xs opacity-70">Mỗi dòng là 1 key. Bot sẽ gửi danh sách này cho khách kèm hướng dẫn sản phẩm.</p>
+            {(manualOrderDetail?.data?.inputFields || manualOrderDetail?.data?.inputValueText) && (
+              <CustomerInputBlock
+                inputFields={manualOrderDetail.data.inputFields}
+                inputValueText={manualOrderDetail.data.inputValueText}
+              />
+            )}
             <label className="block text-sm">
               <span className="text-xs opacity-70 mb-1 inline-block">Thời hạn (ngày, trống = dùng mặc định)</span>
               <input

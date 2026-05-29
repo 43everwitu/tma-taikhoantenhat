@@ -1,8 +1,8 @@
 'use client'
 
 import Link from 'next/link'
-import { useState } from 'react'
-import { useQuery } from '@tanstack/react-query'
+import { useEffect, useState } from 'react'
+import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { apiFetch } from '@/lib/miniappApi'
 import { MiniAppShell } from './components/MiniAppShell'
 import { ProductSummary } from './components/ProductCard'
@@ -25,40 +25,44 @@ interface GlobalDiscount {
   appMetaText?: string
   appMessage?: string
 }
+interface HomePayload {
+  announcements: Announcement[]
+  globalDiscount: GlobalDiscount | null
+  categories: Category[]
+  featured: ProductSummary[]
+  newest: ProductSummary[]
+}
 
 export default function MiniAppHome() {
+  const queryClient = useQueryClient()
   const [recentIds] = useState<string[]>(() => getRecentlyViewedIds())
   const [q, setQ] = useState('')
   const [copiedGlobalCode, setCopiedGlobalCode] = useState(false)
 
-  const ann = useQuery({
-    queryKey: ['announcements'],
-    queryFn: () => apiFetch<Announcement[]>('/announcements'),
-  })
-  const globalDiscount = useQuery({
-    queryKey: ['discounts', 'global'],
-    queryFn: () => apiFetch<GlobalDiscount | null>('/discounts/global'),
+  const home = useQuery({
+    queryKey: ['home'],
+    queryFn: () => apiFetch<HomePayload>('/home'),
     staleTime: 60_000,
-  })
-  const cats = useQuery({
-    queryKey: ['categories', 'noUncat'],
-    queryFn: () => apiFetch<Category[]>('/categories?exclude=uncategorized'),
-  })
-  const featured = useQuery({
-    queryKey: ['products', 'featured'],
-    queryFn: () => apiFetch<ProductSummary[]>('/products/featured'),
-  })
-  const newest = useQuery({
-    queryKey: ['products', 'newest', 30],
-    queryFn: () => apiFetch<ProductSummary[]>('/products?sort=newest&limit=30'),
-    select: (rows) => rows.slice(0, 30),
   })
   const recently = useQuery({
     queryKey: ['products', 'recently', recentIds.join(',')],
     queryFn: () => apiFetch<ProductSummary[]>(`/products?ids=${recentIds.join(',')}`),
     enabled: recentIds.length > 0,
   })
-  const activeGlobalDiscount = globalDiscount.data
+  const ann = home.data?.announcements ?? []
+  const cats = home.data?.categories ?? []
+  const featured = home.data?.featured ?? []
+  const newest = home.data?.newest ?? []
+  const activeGlobalDiscount = home.data?.globalDiscount
+
+  useEffect(() => {
+    if (!home.data) return
+    queryClient.setQueryData(['announcements'], home.data.announcements)
+    queryClient.setQueryData(['discounts', 'global'], home.data.globalDiscount)
+    queryClient.setQueryData(['categories', 'noUncat'], home.data.categories)
+    queryClient.setQueryData(['products', 'featured'], home.data.featured)
+    queryClient.setQueryData(['products', 'newest', 30], home.data.newest)
+  }, [home.data, queryClient])
 
   async function copyGlobalDiscountCode(code: string) {
     if (typeof navigator === 'undefined' || !navigator.clipboard) return
@@ -104,12 +108,12 @@ export default function MiniAppHome() {
         <div className="miniapp-section-title">
           <span>{t.home.categoriesTitle}</span>
         </div>
-        {cats.isLoading && <p className="opacity-60 text-sm">Đang tải…</p>}
-        {cats.data && cats.data.length === 0 && (
+        {home.isLoading && <p className="opacity-60 text-sm">Đang tải…</p>}
+        {!home.isLoading && cats.length === 0 && (
           <p className="opacity-60 text-sm">{t.home.emptyCategories}</p>
         )}
-        {cats.data && cats.data.length > 0 && (
-          <CategoryStrip items={cats.data} />
+        {cats.length > 0 && (
+          <CategoryStrip items={cats} />
         )}
       </section>
 
@@ -117,7 +121,7 @@ export default function MiniAppHome() {
         <SearchBox value={q} onChange={setQ} placeholder="Tìm sản phẩm…" />
       </div>
 
-      {ann.data && ann.data.length > 0 && (
+      {ann.length > 0 && (
         <section className="miniapp-section miniapp-section--compact miniapp-home-notifications">
           <div className="miniapp-section-title">
             <span className="inline-flex items-center gap-1.5">
@@ -125,7 +129,7 @@ export default function MiniAppHome() {
               {t.home.announcementsTitle}
             </span>
           </div>
-          <AnnouncementCarousel items={ann.data} />
+          <AnnouncementCarousel items={ann} />
         </section>
       )}
 
@@ -141,7 +145,7 @@ export default function MiniAppHome() {
         </section>
       )}
 
-      {featured.data && featured.data.length > 0 && (
+      {featured.length > 0 && (
         <section className="miniapp-section">
           <div className="miniapp-section-title">
             <span className="inline-flex items-center gap-1.5">
@@ -152,11 +156,11 @@ export default function MiniAppHome() {
               Tất cả <Icon name="arrowRight" size={14} />
             </Link>
           </div>
-          <ProductRail items={featured.data} />
+          <ProductRail items={featured} eagerFirst />
         </section>
       )}
 
-      {newest.data && newest.data.length > 0 && (
+      {newest.length > 0 && (
         <section className="miniapp-section">
           <div className="miniapp-section-title">
             <span className="inline-flex items-center gap-1.5">
@@ -167,7 +171,7 @@ export default function MiniAppHome() {
               Tất cả <Icon name="arrowRight" size={14} />
             </Link>
           </div>
-          <ProductRail items={newest.data} />
+          <ProductRail items={newest} />
         </section>
       )}
     </MiniAppShell>

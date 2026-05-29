@@ -336,7 +336,9 @@ function VariantEditModal({ productId, variant, onClose, onSaved }: {
         inputPlaceholder: form.inputPlaceholder || null,
         inputType: form.inputType,
         inputFields: form.requiresInput && inputFields.length > 0
-          ? inputFields.filter((f) => f.label.trim().length > 0)
+          // Label is optional now — keep any field that has a label OR a
+          // placeholder; only drop truly-empty accidental rows.
+          ? inputFields.filter((f) => f.label.trim().length > 0 || (f.placeholder ?? '').trim().length > 0)
           : null,
         imageUrl: form.imageUrl || null,
         isBackorder: form.isBackorder,
@@ -441,13 +443,13 @@ function VariantEditModal({ productId, variant, onClose, onSaved }: {
               <div key={idx} className="space-y-1 p-2 rounded border border-gray-200 bg-gray-50">
                 <div className="grid grid-cols-2 gap-2">
                   <label className="block text-sm">
-                    <span className="text-xs opacity-70 mb-1 inline-block">Label</span>
+                    <span className="text-xs opacity-70 mb-1 inline-block">Label (tuỳ chọn)</span>
                     <input
                       value={f.label}
                       onChange={(e) => {
                         const next = [...inputFields]; next[idx] = { ...f, label: e.target.value }; setInputFields(next)
                       }}
-                      placeholder="vd: Email tài khoản"
+                      placeholder="Để trống nếu không cần nhãn"
                       className="clay-input w-full text-sm"
                     />
                   </label>

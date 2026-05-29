@@ -9,6 +9,7 @@ import { renderTemplate } from '@/lib/messages'
 import { formatPrice } from '@/lib/utils'
 import { Clock, CheckCircle2, XCircle, PartyPopper, BookOpen } from '@/lib/icons'
 import { MascotBadge } from '@/components/MascotBadge'
+import { RichText } from '@/components/RichText'
 import { t } from '@/i18n/vi'
 
 interface OrderStatus {
@@ -38,7 +39,8 @@ export default function PaymentPage() {
     },
   })
 
-  const [now, setNow] = useState(Date.now())
+  const [now, setNow] = useState(() => Date.now())
+  const [qrLoaded, setQrLoaded] = useState(false)
   useEffect(() => {
     const i = setInterval(() => setNow(Date.now()), 1000)
     return () => clearInterval(i)
@@ -109,11 +111,21 @@ export default function PaymentPage() {
           {order.status === 'pending' && (
             <>
               <div className="mt-6 flex flex-col items-center">
-                <img
-                  src={order.qrUrl}
-                  alt="Mã QR thanh toán"
-                  className="w-full max-w-xs sm:max-w-sm h-auto rounded-2xl border border-clay-oat bg-white"
-                />
+                <div className="relative w-full max-w-xs sm:max-w-sm aspect-square rounded-2xl border border-clay-oat bg-white">
+                  {!qrLoaded && (
+                    <div className="absolute inset-0 grid place-items-center" aria-hidden>
+                      <span className="miniapp-qr-spinner" />
+                    </div>
+                  )}
+                  {/* eslint-disable-next-line @next/next/no-img-element */}
+                  <img
+                    src={order.qrUrl}
+                    alt="Mã QR thanh toán"
+                    onLoad={() => setQrLoaded(true)}
+                    className="w-full h-full object-contain rounded-2xl transition-opacity duration-200"
+                    style={{ opacity: qrLoaded ? 1 : 0 }}
+                  />
+                </div>
                 <div className="text-center mt-5">
                   <div className="text-clay-charcoal text-sm">Số tiền cần chuyển</div>
                   <div className="clay-display text-4xl mt-1">{formatPrice(order.totalPrice)}</div>
@@ -154,7 +166,7 @@ export default function PaymentPage() {
                   <h3 className="font-semibold mb-2 flex items-center gap-2">
                     <BookOpen size={16} />Hướng dẫn sử dụng
                   </h3>
-                  <div className="text-sm whitespace-pre-wrap">{order.usageInstructions}</div>
+                  <RichText html={order.usageInstructions} className="text-base leading-relaxed" />
                 </div>
               )}
             </div>

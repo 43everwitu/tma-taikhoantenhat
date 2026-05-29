@@ -1,4 +1,5 @@
 const db = require('../database');
+const config = require('../config');
 const adminNotifyService = require('./adminNotifyService');
 const messageTemplateService = require('./messageTemplateService');
 
@@ -15,15 +16,21 @@ class NotificationService {
 
   /**
    * Send notification to a user on specified channels.
+   *
+   * @param {string} body   - Telegram (bot) body, HTML-formatted.
+   * @param {string} [webBody] - Separate body stored for the in-app (Mini App)
+   *   notification. `undefined` ⇒ reuse `body` (back-compat). `null`/'' ⇒ skip
+   *   the web insert entirely (web template disabled).
    */
-  async notify(userId, type, title, body, data = {}, channel = 'all') {
+  async notify(userId, type, title, body, data = {}, channel = 'all', webBody = undefined, extra = {}) {
     let sentTelegram = 0;
     let sentWeb = 0;
+    const effectiveWeb = webBody === undefined ? body : webBody;
 
     // Telegram
-    if (channel === 'all' || channel === 'telegram') {
+    if ((channel === 'all' || channel === 'telegram') && body) {
       try {
-        await this.bot.telegram.sendMessage(userId, body, { parse_mode: 'HTML' });
+        await this.bot.telegram.sendMessage(userId, body, { parse_mode: 'HTML', ...extra });
         sentTelegram = 1;
       } catch (err) {
         console.error(`❌ Notify telegram ${userId}:`, err.message);
@@ -31,11 +38,11 @@ class NotificationService {
     }
 
     // Web (insert into notifications table)
-    if (channel === 'all' || channel === 'web') {
+    if ((channel === 'all' || channel === 'web') && effectiveWeb) {
       db.prepare(`
         INSERT INTO notifications (user_id, type, title, body, data, channel, sent_telegram, sent_web)
         VALUES (?, ?, ?, ?, ?, ?, ?, 1)
-      `).run(userId, type, title, body, JSON.stringify(data), channel, sentTelegram);
+      `).run(userId, type, title, effectiveWeb, JSON.stringify(data), channel, sentTelegram);
       sentWeb = 1;
     }
 
@@ -84,9 +91,16 @@ class NotificationService {
   // ============================================================
 
   /**
-   * Notify followers when stock is replenished for a product.
+   * Notify all bot users when stock is replenished for a product.
+   * Targets everyone in the `users` table (anyone who has started the bot) —
+   * not just per-product followers — per shop owner's request.
    * Also resets the low-stock alert marker so a fresh alert can fire when
    * the product hits low stock again (next episode).
+   *
+   * The bot (Telegram chat) and the in-app (Mini App) notification render from
+   * separate templates so admins can word them differently:
+   *   - bot.stock_replenished  → Telegram chat message
+   *   - web.stock_replenished  → Mini App notification body
    */
   async notifyStockReplenished(productId) {
     db.prepare('UPDATE products SET last_low_stock_alert_at = NULL WHERE id = ?').run(productId);
@@ -98,34 +112,59 @@ class NotificationService {
       'SELECT COUNT(*) as c FROM stock WHERE product_id = ? AND is_sold = 0'
     ).get(productId).c;
 
-    const followers = db.prepare(
-      'SELECT user_id FROM product_follows WHERE product_id = ?'
-    ).all(productId);
+    const recipients = db.prepare('SELECT telegram_id FROM users').all();
 
-    if (followers.length === 0) return { sent: 0, failed: 0, total: 0, skipped: 'no_followers' };
+    if (recipients.length === 0) return { sent: 0, failed: 0, total: 0, skipped: 'no_users' };
 
-    const body = messageTemplateService.renderIfEnabled('bot.stock_replenished', {
+    const vars = {
       productEmoji: product.emoji || '📦',
       productName: product.name,
       stockCount,
-    });
-    if (!body) return { sent: 0, failed: 0, total: followers.length, skipped: 'template_disabled' };
+    };
+    const botBody = messageTemplateService.renderIfEnabled('bot.stock_replenished', vars);
+    const webBody = messageTemplateService.renderIfEnabled('web.stock_replenished', vars);
+    if (!botBody && !webBody) {
+      return { sent: 0, failed: 0, total: recipients.length, skipped: 'template_disabled' };
+    }
+
+    // "Mở cửa hàng" button → opens the Mini App (t.me deeplink; no BotFather
+    // domain registration needed, same pattern as /start).
+    const extra = this._openShopExtra();
 
     let sent = 0;
     let failed = 0;
-    for (const { user_id } of followers) {
+    let processed = 0;
+    for (const { telegram_id } of recipients) {
       try {
-        await this.notify(user_id, 'stock_alert', 'Sản phẩm có hàng', body,
-          { product_id: productId });
+        await this.notify(telegram_id, 'stock_alert', 'Sản phẩm có hàng', botBody,
+          { product_id: productId }, 'all', webBody, extra);
         sent++;
       } catch {
         failed++;
       }
+      processed++;
       // Telegram rate limit: 25/sec
-      if (sent % 25 === 0) await sleep(1000);
+      if (botBody && processed % 25 === 0) await sleep(1000);
     }
 
-    return { sent, failed, total: followers.length };
+    return { sent, failed, total: recipients.length };
+  }
+
+  /**
+   * Inline keyboard options that open the Mini App store. Returns {} when no
+   * usable link can be built (so the message still sends, just without a button).
+   */
+  _openShopExtra() {
+    const username = this.bot?.botInfo?.username;
+    const url = username
+      ? `https://t.me/${username}?startapp`
+      : (process.env.MINIAPP_URL || config.WEB_URL || '');
+    if (!url) return {};
+    return {
+      reply_markup: {
+        inline_keyboard: [[{ text: '🛍 Mở cửa hàng', url }]],
+      },
+    };
   }
 
   formatVnd(amount) {
@@ -134,23 +173,27 @@ class NotificationService {
   }
 
   async notifyNewProduct(product, adminId = null) {
-    const body = messageTemplateService.renderIfEnabled('bot.product_new', {
+    const vars = {
       productEmoji: product.emoji || '📦',
       productName: product.name,
       productPrice: this.formatVnd(product.price),
-    });
-    if (!body) return { sent: 0, failed: 0, total: 0, skipped: 'template_disabled' };
-    return this.broadcast('Sản phẩm mới', body, 'all', adminId);
+    };
+    const botBody = messageTemplateService.renderIfEnabled('bot.product_new', vars);
+    const webBody = messageTemplateService.renderIfEnabled('web.product_new', vars);
+    if (!botBody && !webBody) return { sent: 0, failed: 0, total: 0, skipped: 'template_disabled' };
+    return this.broadcast('Sản phẩm mới', botBody, 'all', adminId, webBody);
   }
 
   async notifyProductUpdated(product, adminId = null) {
-    const body = messageTemplateService.renderIfEnabled('bot.product_updated', {
+    const vars = {
       productEmoji: product.emoji || '📦',
       productName: product.name,
       productPrice: this.formatVnd(product.price),
-    });
-    if (!body) return { sent: 0, failed: 0, total: 0, skipped: 'template_disabled' };
-    return this.broadcast('Cập nhật sản phẩm', body, 'all', adminId);
+    };
+    const botBody = messageTemplateService.renderIfEnabled('bot.product_updated', vars);
+    const webBody = messageTemplateService.renderIfEnabled('web.product_updated', vars);
+    if (!botBody && !webBody) return { sent: 0, failed: 0, total: 0, skipped: 'template_disabled' };
+    return this.broadcast('Cập nhật sản phẩm', botBody, 'all', adminId, webBody);
   }
 
   /**
@@ -238,13 +281,19 @@ class NotificationService {
   /**
    * Broadcast announcement to all users.
    * Respects Telegram rate limit (~25 msg/sec).
+   *
+   * @param {string} [webBody] - Separate body for the in-app (Mini App)
+   *   notification. `undefined`/`null` ⇒ reuse `body`. When provided it lets the
+   *   bot chat and the Mini App notification read different wording.
    */
-  async broadcast(title, body, target = 'all', adminId = null) {
+  async broadcast(title, body, target = 'all', adminId = null, webBody = undefined) {
+    const effectiveWeb = (webBody === undefined || webBody === null) ? body : webBody;
+
     // Save announcement
     const result = db.prepare(`
       INSERT INTO announcements (title, body, admin_id, target)
       VALUES (?, ?, ?, ?)
-    `).run(title, body, adminId || 0, target);
+    `).run(title, body || effectiveWeb || '', adminId || 0, target);
 
     const announcementId = result.lastInsertRowid;
     const users = db.prepare('SELECT telegram_id, username FROM users').all();
@@ -255,7 +304,7 @@ class NotificationService {
 
     for (const user of users) {
       // Telegram
-      if (target === 'all' || target === 'telegram') {
+      if ((target === 'all' || target === 'telegram') && body) {
         try {
           await this.bot.telegram.sendMessage(user.telegram_id, body, { parse_mode: 'HTML' });
           sent++;
@@ -274,11 +323,11 @@ class NotificationService {
       }
 
       // Web notification
-      if (target === 'all' || target === 'web') {
+      if ((target === 'all' || target === 'web') && effectiveWeb) {
         db.prepare(`
           INSERT INTO notifications (user_id, type, title, body, channel)
           VALUES (?, 'announcement', ?, ?, ?)
-        `).run(user.telegram_id, title, body, target);
+        `).run(user.telegram_id, title, effectiveWeb, target);
       }
     }
 
@@ -327,26 +376,6 @@ async function sendDelivery(bot, order, accounts, opts = {}) {
   const { escapeHtml, richifyText, formatKeysForTelegram, shouldSendAsFile } = require('../utils/messages');
   const dbModule = require('../database');
 
-  // Build input fields block from encrypted order.input_value (JSON map).
-  // Hide values for password-ish labels.
-  let inputBlock = '';
-  if (order.input_value) {
-    try {
-      const { decryptString } = require('../utils/secrets');
-      const raw = decryptString(order.input_value);
-      const parsed = JSON.parse(raw);
-      if (parsed && typeof parsed === 'object' && Object.keys(parsed).length > 0) {
-        const lines = [];
-        for (const [label, value] of Object.entries(parsed)) {
-          if (!value) continue;
-          const isSecret = /password|pass|mật khẩu|m[aậ]t kh[aẩ]u/i.test(label);
-          lines.push(`<b>${escapeHtml(label)}:</b> ${isSecret ? '••••••' : escapeHtml(String(value))}`);
-        }
-        if (lines.length > 0) inputBlock = '\n\n📋 <b>Thông tin bạn đã nhập:</b>\n' + lines.join('\n');
-      }
-    } catch {}
-  }
-
   if (opts.qrChatId && opts.qrMessageId) {
     try {
       await bot.telegram.deleteMessage(opts.qrChatId, opts.qrMessageId);
@@ -394,8 +423,7 @@ async function sendDelivery(bot, order, accounts, opts = {}) {
       keysBlock: fileMarker,
       usageBlock: '\n\n📘 (xem ở tin nhắn dưới)',
     });
-    const captionWithInput = fullCaption + inputBlock;
-    const finalCaption = captionWithInput.length <= 1024 ? captionWithInput : minimalCaption;
+    const finalCaption = fullCaption.length <= 1024 ? fullCaption : minimalCaption;
 
     try {
       await bot.telegram.sendDocument(
@@ -429,7 +457,7 @@ async function sendDelivery(bot, order, accounts, opts = {}) {
       quantity: order.quantity,
       keysBlock: formatKeysForTelegram(accounts),
       usageBlock,
-    }) + inputBlock;
+    });
     try {
       await bot.telegram.sendMessage(order.user_id, body, sendOpts);
       sentTelegram = 1;

@@ -2,7 +2,7 @@ const orderService = require('./orderService');
 const productService = require('./productService');
 const { sendDelivery } = require('./notificationService');
 const adminNotifyService = require('./adminNotifyService');
-const { richifyText } = require('../utils/messages');
+const { richifyText, buildCustomerInputBlock } = require('../utils/messages');
 const messageTemplateService = require('./messageTemplateService');
 const { postDeliveryKeyboard } = require('../utils/keyboard');
 
@@ -18,11 +18,7 @@ async function deliverOrder(bot, orderId) {
     const orderChannelService = require('./orderChannelService');
 
     if (result.backorder) {
-        const inputBlock = order.input_value
-            ? `\n📝 Thông tin khách: <code>${(() => {
-                try { const { decryptString } = require('../utils/secrets'); return decryptString(order.input_value); } catch { return '(không giải mã được)'; }
-              })()}</code>`
-            : '';
+        const inputBlock = buildCustomerInputBlock(order.input_value);
         const body = messageTemplateService.render('admin.backorder_paid', {
             orderCode: order.id,
             productName: product.name,

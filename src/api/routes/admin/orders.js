@@ -46,6 +46,7 @@ function shapeOrder(r) {
     expiresAt: r.expires_at,
     keyExpiresAt,
     keyExpired,
+    hasCustomerInput: !!r.input_value,
   };
 }
 

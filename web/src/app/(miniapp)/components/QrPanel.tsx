@@ -20,6 +20,7 @@ export function QrPanel({ orderId, qrUrl, paymentCode, amount, bankName, account
 }) {
   const [copied, setCopied] = useState<CopyKey>(null)
   const [downloadMsg, setDownloadMsg] = useState<string | null>(null)
+  const [qrLoaded, setQrLoaded] = useState(false)
 
   function copy(text: string, key: Exclude<CopyKey, null>) {
     if (typeof navigator === 'undefined' || !navigator.clipboard) return
@@ -75,8 +76,22 @@ export function QrPanel({ orderId, qrUrl, paymentCode, amount, bankName, account
       <p className="text-xs uppercase tracking-wider opacity-60">{bankName}</p>
       <p className="text-sm font-medium mb-3">{t.order.qrTitle}</p>
 
-      <div className="miniapp-qr-code mx-auto">
-        <Image src={qrUrl} alt="VietQR" width={236} height={236} priority unoptimized />
+      <div className="miniapp-qr-code mx-auto" style={{ position: 'relative' }}>
+        {!qrLoaded && (
+          <div className="absolute inset-0 grid place-items-center" aria-hidden>
+            <span className="miniapp-qr-spinner" />
+          </div>
+        )}
+        <Image
+          src={qrUrl}
+          alt="VietQR"
+          width={236}
+          height={236}
+          priority
+          unoptimized
+          onLoad={() => setQrLoaded(true)}
+          style={{ opacity: qrLoaded ? 1 : 0, transition: 'opacity .2s ease' }}
+        />
       </div>
 
       <div className="mt-3">

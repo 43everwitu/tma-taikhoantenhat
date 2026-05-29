@@ -4,7 +4,7 @@ const topupService = require('./topupService');
 const adminNotifyService = require('./adminNotifyService');
 const messageTemplateService = require('./messageTemplateService');
 const { formatPrice } = require('../utils/keyboard');
-const { escapeHtml, richifyText, formatKeysForTelegram, shouldSendAsFile } = require('../utils/messages');
+const { escapeHtml, richifyText, formatKeysForTelegram, shouldSendAsFile, buildCustomerInputBlock } = require('../utils/messages');
 
 // Three disjoint regexes — order first (most common), then topup variants.
 // Tolerance: case-insensitive (some banks uppercase descriptions, some don't),
@@ -362,11 +362,7 @@ class PaymentPoller {
 
     if (result.success && result.backorder) {
       this.matchCount++;
-      const inputBlock = order.input_value
-        ? `\n📝 Thông tin: <code>${(() => {
-            try { const { decryptString } = require('../utils/secrets'); return decryptString(order.input_value); } catch { return '(decode err)'; }
-          })()}</code>`
-        : '';
+      const inputBlock = buildCustomerInputBlock(order.input_value);
       adminNotifyService.notify('backorder_paid',
         messageTemplateService.render('admin.backorder_paid', {
           orderCode: order.id,

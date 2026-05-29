@@ -4,9 +4,13 @@ const { sanitizeDescription } = require('../utils/richHtml');
 function sanitizeProductForClient(row) {
     const out = {
         ...row,
-        description: sanitizeDescription(row.description),
-        longDescription: sanitizeDescription(row.longDescription),
     };
+    if (Object.prototype.hasOwnProperty.call(row, 'description')) {
+        out.description = sanitizeDescription(row.description);
+    }
+    if (Object.prototype.hasOwnProperty.call(row, 'longDescription')) {
+        out.longDescription = sanitizeDescription(row.longDescription);
+    }
     if (Array.isArray(row.variants)) {
         out.variants = row.variants.map(v => ({
             ...v,

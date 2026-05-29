@@ -2,10 +2,13 @@
 
 import { useState } from 'react'
 import { useRouter } from 'next/navigation'
+import Link from 'next/link'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { useCart } from '@/lib/cart'
 import { apiFetch } from '@/lib/miniappApi'
+import { formatCartInputLines } from '@/lib/formatCartInput'
 import { MiniAppShell } from '../components/MiniAppShell'
+import { Icon } from '../components/Icon'
 import { formatPrice } from '@/lib/utils'
 import { t } from '@/i18n/vi'
 import { DiscountCodeMeta, type DiscountMetaMode } from '../components/DiscountCodeMeta'
@@ -47,6 +50,7 @@ export default function CheckoutPage() {
   const [applied, setApplied] = useState<{ code: string; discount: number; source?: 'manual' | 'global' | null } | null>(null)
   const [applyMsg, setApplyMsg] = useState<string | null>(null)
   const [copiedGlobalCode, setCopiedGlobalCode] = useState(false)
+  const [showManualDiscount, setShowManualDiscount] = useState(false)
   const globalDiscount = useQuery({
     queryKey: ['discounts', 'global'],
     queryFn: () => apiFetch<GlobalDiscount | null>('/discounts/global'),
@@ -96,11 +100,10 @@ export default function CheckoutPage() {
   async function placeOrder() {
     setBusy(true); setErr(null)
     try {
-      let lastOrderId: number | null = null
       // Apply discount only to the FIRST order in the batch so we never
       // double-count: cart with N items still uses one redemption.
       let useDiscount = applied?.source === 'manual' ? applied.code : null
-      for (const it of cart.items) {
+      const items = cart.items.map((it) => {
         const body: Record<string, unknown> = {
           productId: Number(it.productId),
           quantity: it.quantity,
@@ -112,10 +115,15 @@ export default function CheckoutPage() {
           body.discountCode = useDiscount
           useDiscount = null
         }
-        const resp = await apiFetch<CreateOrderResp>('/orders', {
-          method: 'POST',
-          body: JSON.stringify(body),
-        })
+        return { body, item: it }
+      })
+      const responses = await apiFetch<CreateOrderResp[]>('/orders/batch', {
+        method: 'POST',
+        body: JSON.stringify({ items: items.map((x) => x.body) }),
+      })
+      let lastOrderId: number | null = null
+      responses.forEach((resp, index) => {
+        const it = items[index].item
         const orderId = String(resp.order.id)
         qc.setQueryData(['order', orderId], {
           id: orderId,
@@ -137,7 +145,7 @@ export default function CheckoutPage() {
           img.src = resp.payment.qrUrl
         }
         lastOrderId = resp.order.id
-      }
+      })
       cart.clear()
       if (lastOrderId) router.push(`/don-hang/${lastOrderId}`)
     } catch (e) {
@@ -151,6 +159,7 @@ export default function CheckoutPage() {
   const effectiveDiscount = applied?.discount ?? autoGlobal?.discount ?? 0
   const effectiveDiscountCode = applied?.code ?? autoGlobal?.code ?? null
   const grandTotal = Math.max(0, cart.total - effectiveDiscount)
+  const globalAutoActive = !!autoGlobal && !applied
 
   const empty = cart.items.length === 0
 
@@ -158,59 +167,50 @@ export default function CheckoutPage() {
     <MiniAppShell title={t.checkout.title} hasBottombar={!empty}>
       {empty && (
         <div className="text-center py-16">
-          <div className="text-6xl mb-3">🧾</div>
-          <p className="opacity-60 text-sm">{t.cart.empty}</p>
+          <div className="mb-3 inline-flex p-4 rounded-full" style={{ background: 'var(--brand-gold-soft)', color: 'var(--brand-gold-deep)' }}>
+            <Icon name="cart" size={40} strokeWidth={1.25} />
+          </div>
+          <p className="opacity-60 text-sm mb-4">{t.cart.empty}</p>
+          <Link href="/" className="miniapp-btn miniapp-btn--primary inline-flex" style={{ width: 'auto', padding: '.625rem 1.25rem' }}>
+            Tiếp tục mua sắm
+          </Link>
         </div>
       )}
       {!empty && (
         <>
           <p className="text-xs uppercase tracking-wider opacity-60 mb-2">Đơn hàng của bạn</p>
           <ul className="space-y-2 mb-4">
-            {cart.items.map((it) => (
+            {cart.items.map((it) => {
+              const inputLines = formatCartInputLines(it.inputValue)
+              return (
               <li key={it.lineKey} className="rounded-2xl p-3 flex justify-between gap-2" style={{ background: 'var(--tg-bg-2)' }}>
                 <div className="min-w-0">
                   <p className="text-sm font-medium truncate">{it.name}</p>
                   {it.variantName && (
                     <p className="text-xs opacity-60 mt-0.5">{it.variantName}</p>
                   )}
-                  {it.inputValue && (
-                    <p className="text-xs opacity-50 mt-0.5">Đã ghi nhận thông tin</p>
+                  {inputLines.length > 0 && (
+                    <ul className="text-xs opacity-70 mt-1 space-y-0.5">
+                      {inputLines.map((line, idx) => {
+                        const isSecret = line.label ? /password|pass|mật khẩu|m[aậ]t kh[aẩ]u/i.test(line.label) : false
+                        return (
+                          <li key={idx}>
+                            {line.label ? <><b>{line.label}:</b> </> : null}
+                            {isSecret ? '••••••' : line.value}
+                          </li>
+                        )
+                      })}
+                    </ul>
                   )}
-                  <p className="text-xs opacity-60">{formatPrice(it.price)} × {it.quantity}</p>
+                  <p className="text-xs opacity-60 mt-1">{formatPrice(it.price)} × {it.quantity}</p>
                 </div>
                 <span className="text-sm font-semibold whitespace-nowrap">{formatPrice(it.price * it.quantity)}</span>
               </li>
-            ))}
+              )
+            })}
           </ul>
 
-          <div className="rounded-2xl p-3 mb-3" style={{ background: 'var(--tg-bg-2)' }}>
-            <p className="text-xs font-medium mb-2">Mã giảm giá</p>
-            <div className="flex gap-2">
-              <input
-                value={discountCode}
-                onChange={(e) => { setDiscountCode(e.target.value.toUpperCase()); setApplied(null); setApplyMsg(null) }}
-                placeholder="VD: SUMMER10"
-                className="flex-1 rounded-xl px-3 py-2 text-sm font-mono placeholder:normal-case placeholder:opacity-60"
-                style={{ background: 'var(--tg-bg, #fff)', border: '1px solid color-mix(in srgb, var(--brand-ink) 14%, transparent)' }}
-              />
-              <button
-                type="button"
-                onClick={applyDiscount}
-                disabled={!discountCode.trim()}
-                className="px-3 rounded-xl text-sm font-semibold disabled:opacity-50"
-                style={{ background: 'var(--brand-gold)', color: 'var(--brand-ink)' }}
-              >Áp dụng</button>
-            </div>
-            {applyMsg && <p className="text-xs mt-2 opacity-80">{applyMsg}</p>}
-          </div>
-
-          {applied && (
-            <div className="rounded-xl p-3 mb-3 text-sm flex items-center justify-between" style={{ background: '#dcfce7', color: '#166534' }}>
-              <span>Mã <code className="font-mono font-bold">{applied.code}</code></span>
-              <span>−{formatPrice(applied.discount)}</span>
-            </div>
-          )}
-          {!applied && autoGlobal && (
+          {globalAutoActive && (
             <div className="rounded-xl p-3 mb-3 text-sm" style={{ background: 'var(--brand-gold-soft)', color: 'var(--brand-ink)' }}>
               <div className="flex items-start justify-between gap-3">
                 <div className="min-w-0">
@@ -218,19 +218,58 @@ export default function CheckoutPage() {
                     {globalDiscount.data?.title || 'Đã tự áp dụng mã giảm giá'}
                   </p>
                   <DiscountCodeMeta
-                    code={autoGlobal.code}
+                    code={autoGlobal!.code}
                     label={globalDiscount.data?.label}
                     mode={globalDiscount.data?.appMetaMode}
                     text={globalDiscount.data?.appMetaText}
                     copied={copiedGlobalCode}
-                    onCopy={() => copyGlobalDiscountCode(autoGlobal.code)}
+                    onCopy={() => copyGlobalDiscountCode(autoGlobal!.code)}
                   />
                   {globalDiscount.data?.appMessage && (
                     <p className="text-xs opacity-75 mt-1 leading-relaxed">{globalDiscount.data.appMessage}</p>
                   )}
+                  {!showManualDiscount && (
+                    <button
+                      type="button"
+                      onClick={() => setShowManualDiscount(true)}
+                      className="text-xs mt-2 underline opacity-70"
+                    >
+                      Có mã khác?
+                    </button>
+                  )}
                 </div>
-                <span className="font-semibold whitespace-nowrap">−{formatPrice(autoGlobal.discount)}</span>
+                <span className="font-semibold whitespace-nowrap">−{formatPrice(autoGlobal!.discount)}</span>
               </div>
+            </div>
+          )}
+
+          {(!globalAutoActive || showManualDiscount) && !applied && (
+            <div className="rounded-2xl p-3 mb-3" style={{ background: 'var(--tg-bg-2)' }}>
+              <p className="text-xs font-medium mb-2">{globalAutoActive ? 'Mã giảm giá khác' : 'Mã giảm giá'}</p>
+              <div className="flex gap-2">
+                <input
+                  value={discountCode}
+                  onChange={(e) => { setDiscountCode(e.target.value.toUpperCase()); setApplied(null); setApplyMsg(null) }}
+                  placeholder="VD: SUMMER10"
+                  className="flex-1 rounded-xl px-3 py-2 text-sm font-mono placeholder:normal-case placeholder:opacity-60"
+                  style={{ background: 'var(--tg-bg, #fff)', border: '1px solid color-mix(in srgb, var(--brand-ink) 14%, transparent)' }}
+                />
+                <button
+                  type="button"
+                  onClick={applyDiscount}
+                  disabled={!discountCode.trim()}
+                  className="px-3 rounded-xl text-sm font-semibold disabled:opacity-50"
+                  style={{ background: 'var(--brand-gold)', color: 'var(--brand-ink)' }}
+                >Áp dụng</button>
+              </div>
+              {applyMsg && <p className="text-xs mt-2 opacity-80">{applyMsg}</p>}
+            </div>
+          )}
+
+          {applied && (
+            <div className="rounded-xl p-3 mb-3 text-sm flex items-center justify-between" style={{ background: '#dcfce7', color: '#166534' }}>
+              <span>Mã <code className="font-mono font-bold">{applied.code}</code></span>
+              <span>−{formatPrice(applied.discount)}</span>
             </div>
           )}
 
@@ -255,8 +294,9 @@ export default function CheckoutPage() {
               type="button"
               onClick={placeOrder}
               disabled={busy}
-              className="miniapp-btn miniapp-btn--primary"
+              className="miniapp-btn miniapp-btn--primary inline-flex items-center justify-center gap-2"
             >
+              {busy && <span className="miniapp-qr-spinner" style={{ width: 18, height: 18, borderWidth: 2 }} aria-hidden />}
               {busy ? t.checkout.creating : `${t.checkout.confirm} →`}
             </button>
           </div>

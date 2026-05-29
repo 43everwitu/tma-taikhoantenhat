@@ -11,6 +11,10 @@ function escapeHtml(s) {
 const TRUSTED_VARS = new Set([
   'keysBlock',
   'usageInstructions',
+  // Pre-built HTML wrapper for delivery usage instructions (📘 <b>Hướng dẫn:</b>
+  // + richified body). Must pass through unescaped or the <b>/<a> tags render
+  // as literal text in the delivery message.
+  'usageBlock',
   // Spoiler/mention HTML built by callers (orderChannelService, paymentPoller).
   'userMention',
   'userSpoiler',
@@ -27,7 +31,6 @@ const TRUSTED_VARS = new Set([
 // Templates the system needs to function. The toggle UI shows these as locked
 // on; the toggle API rejects writes against them.
 const CORE_TEMPLATE_KEYS = new Set([
-  'cmd_myid',
   'delivery_keys',
   'payment_short',
   'payment_success',

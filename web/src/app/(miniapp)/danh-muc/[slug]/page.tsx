@@ -21,8 +21,8 @@ export default function CategoryPage() {
   const [filter, setFilter] = useState<FilterValue>(DEFAULT_FILTER)
 
   const cats = useQuery({
-    queryKey: ['categories'],
-    queryFn: () => apiFetch<Category[]>('/categories'),
+    queryKey: ['categories', 'noUncat'],
+    queryFn: () => apiFetch<Category[]>('/categories?exclude=uncategorized'),
   })
   const cat = cats.data?.find((c) => c.slug === params.slug)
 

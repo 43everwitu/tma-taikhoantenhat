@@ -40,6 +40,11 @@ app.use(helmet({
   crossOriginEmbedderPolicy: false,
 }));
 
+app.use((req, res, next) => {
+  res.setHeader('X-Robots-Tag', 'noindex, nofollow, noarchive, nosnippet');
+  next();
+});
+
 app.use(express.json());
 
 // Health check

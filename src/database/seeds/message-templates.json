@@ -27,7 +27,7 @@
     "channel": "bot",
     "label": "Giao sản phẩm (keys)",
     "variables": ["orderCode", "productName", "quantity", "keysBlock", "usageBlock"],
-    "body": "✅ Đơn #{{orderCode}} — {{productName}} (×{{quantity}})\n\n🔑 Key:\n{{keysBlock}}{{usageBlock}}\n\nCảm ơn bạn đã mua hàng."
+    "body": "✅ Đơn #{{orderCode}} — {{productName}} (×{{quantity}})\n\n🔑 Key:\n{{keysBlock}}{{usageBlock}}\n\nCảm ơn bạn đã mua hàng!"
   },
   "topup_success": {
     "channel": "bot",
@@ -85,9 +85,9 @@
   },
   "bot.stock_replenished": {
     "channel": "bot",
-    "label": "Bot — báo có hàng lại (followers)",
+    "label": "Bot — báo có hàng lại (gửi tất cả user)",
     "variables": ["productEmoji", "productName", "stockCount"],
-    "body": "🔔 <b>{{productEmoji}} {{productName}}</b> đã có hàng!\nCòn {{stockCount}} sản phẩm. Mua ngay: /menu"
+    "body": "🔔 <b>{{productName}} đã có hàng!</b>\nSố lượng trong kho: <b>{{stockCount}}</b>"
   },
   "bot.product_new": {
     "channel": "bot",
@@ -100,5 +100,23 @@
     "label": "Bot — thông báo cập nhật sản phẩm",
     "variables": ["productEmoji", "productName", "productPrice"],
     "body": "<b>{{productName}}</b> vừa được cập nhật.\nGiá hiện tại: <b>{{productPrice}}</b>"
+  },
+  "web.stock_replenished": {
+    "channel": "web",
+    "label": "Web — báo có hàng lại (thông báo trong Mini App)",
+    "variables": ["productEmoji", "productName", "stockCount"],
+    "body": "{{productEmoji}} {{productName}} đã có hàng trở lại. Còn {{stockCount}} sản phẩm — mở cửa hàng để đặt ngay."
+  },
+  "web.product_new": {
+    "channel": "web",
+    "label": "Web — sản phẩm mới (thông báo trong Mini App)",
+    "variables": ["productEmoji", "productName", "productPrice"],
+    "body": "{{productName}} vừa lên kệ. Giá: {{productPrice}}."
+  },
+  "web.product_updated": {
+    "channel": "web",
+    "label": "Web — cập nhật sản phẩm (thông báo trong Mini App)",
+    "variables": ["productEmoji", "productName", "productPrice"],
+    "body": "{{productName}} vừa được cập nhật. Giá hiện tại: {{productPrice}}."
   }
 }

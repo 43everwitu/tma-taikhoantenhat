@@ -1,6 +1,6 @@
 'use client'
 
-import { useEffect, useMemo, useState } from 'react'
+import { useEffect, useState } from 'react'
 import { useQuery } from '@tanstack/react-query'
 import { useParams, useRouter } from 'next/navigation'
 import Image from 'next/image'
@@ -9,8 +9,7 @@ import { useCart } from '@/lib/cart'
 import { pushRecentlyViewed, getRecentlyViewedIds } from '@/lib/recentlyViewed'
 import { MiniAppShell } from '../../components/MiniAppShell'
 import { Icon } from '../../components/Icon'
-import { DiscountCodeMeta, type DiscountMetaMode } from '../../components/DiscountCodeMeta'
-import { VariantPicker, type Variant } from '../../components/VariantPicker'
+import { VariantPicker, variantFieldKey, type Variant } from '../../components/VariantPicker'
 import { ProductRail } from '../../components/ProductRail'
 import type { ProductSummary } from '../../components/ProductCard'
 import { formatPrice } from '@/lib/utils'
@@ -28,16 +27,8 @@ interface ProductBase {
 interface ProductDetail extends ProductBase {
   longDescription: string; description: string
   variants?: Variant[]
-  globalDiscount?: {
-    code: string
-    label: string
-    title?: string
-    appMetaMode?: DiscountMetaMode
-    appMetaText?: string
-    appMessage?: string
-    salePrice?: number
-    discountAmount?: number
-  } | null
+  relatedProducts?: ProductSummary[]
+  recentlyViewedProducts?: ProductSummary[]
 }
 
 export default function ProductDetailPage() {
@@ -47,37 +38,20 @@ export default function ProductDetailPage() {
   const [qty, setQty] = useState(1)
   const [selectedVariantId, setSelectedVariantId] = useState<string | null>(null)
   const [inputValues, setInputValues] = useState<Record<string, string>>({})
-  const [copiedGlobalCode, setCopiedGlobalCode] = useState(false)
+  const [initialRecentIds] = useState<string[]>(() => getRecentlyViewedIds())
 
   const { data: p, isLoading } = useQuery({
     queryKey: ['product', slug],
-    queryFn: () => apiFetch<ProductDetail>(`/products/${slug}`),
+    queryFn: () => {
+      const qs = initialRecentIds.length > 0 ? `?recent=${initialRecentIds.join(',')}` : ''
+      return apiFetch<ProductDetail>(`/products/${slug}${qs}`)
+    },
   })
 
-  const related = useQuery({
-    queryKey: ['products', 'related', p?.categorySlug, p?.id],
-    queryFn: () => apiFetch<ProductSummary[]>(`/products?category=${encodeURIComponent(p!.categorySlug!)}&limit=12`),
-    enabled: !!p?.categorySlug && !!p?.id,
-    select: (rows) => rows.filter((r) => r.id !== p?.id).slice(0, 10),
-  })
-
-  // Snapshot recently-viewed BEFORE pushing the current id so the rail
-  // doesn't include this page. Single effect = no waterfall.
-  const recentIds = useMemo(() => {
-    if (!p?.id) return []
-    const id = String(p.id)
-    return getRecentlyViewedIds().filter((x) => x !== id)
-  }, [p?.id])
   useEffect(() => {
     if (!p?.id) return
     pushRecentlyViewed(String(p.id))
   }, [p?.id])
-
-  const recently = useQuery({
-    queryKey: ['products', 'recently-detail', recentIds.join(',')],
-    queryFn: () => apiFetch<ProductSummary[]>(`/products?ids=${recentIds.join(',')}`),
-    enabled: recentIds.length > 0,
-  })
 
   if (isLoading) return <MiniAppShell><p className="opacity-60 text-sm">Đang tải…</p></MiniAppShell>
   if (!p) return <MiniAppShell><p>Không tìm thấy sản phẩm.</p></MiniAppShell>
@@ -91,12 +65,6 @@ export default function ProductDetailPage() {
   const effectivePrice = selected?.price ?? p?.price ?? 0
   const effectiveSalePrice = selected?.salePrice ?? p?.salePrice ?? null
   const hasDiscount = typeof effectiveSalePrice === 'number' && effectiveSalePrice < effectivePrice
-  const baseMin = p.priceMin ?? p.price
-  const baseMax = p.priceMax ?? p.price
-  const saleMin = p.salePriceMin ?? p.salePrice ?? baseMin
-  const saleMax = p.salePriceMax ?? p.salePrice ?? baseMax
-  const hasPriceRange = variants.length > 1 && baseMin !== baseMax
-  const rangeHasDiscount = hasPriceRange && (saleMin < baseMin || saleMax < baseMax)
   const effectiveStock = variants.length > 0 ? (selected?.stock ?? 0) : (p?.stock ?? 0)
   const requiresInput = !!selected?.requiresInput
   const fields = selected?.inputFields && selected.inputFields.length > 0
@@ -104,16 +72,17 @@ export default function ProductDetailPage() {
     : (requiresInput
         ? [{ label: selected!.inputLabel || 'Thông tin', placeholder: '', type: 'text' as const, required: true }]
         : [])
-  const inputValid = !requiresInput || fields.every((f) => !f.required || (inputValues[f.label] ?? '').trim().length >= 1)
+  const inputValid = !requiresInput || fields.every((f, idx) => !f.required || (inputValues[variantFieldKey(f, idx)] ?? '').trim().length >= 1)
 
   const disabled = (!selected?.isBackorder && effectiveStock <= 0) || p.contactOnly || !inputValid
   const addToCart = () => {
     const trimmed: Record<string, string> = {}
     if (requiresInput) {
-      for (const f of fields) {
-        const v = (inputValues[f.label] ?? '').trim()
-        if (v) trimmed[f.label] = v
-      }
+      fields.forEach((f, idx) => {
+        const key = variantFieldKey(f, idx)
+        const v = (inputValues[key] ?? '').trim()
+        if (v) trimmed[key] = v
+      })
     }
     cart.add({
       productId: p.id,
@@ -127,17 +96,6 @@ export default function ProductDetailPage() {
       imageUrl: p.imageUrl,
       quantity: qty,
     })
-  }
-
-  async function copyGlobalDiscountCode(code: string) {
-    if (typeof navigator === 'undefined' || !navigator.clipboard) return
-    try {
-      await navigator.clipboard.writeText(code)
-      setCopiedGlobalCode(true)
-      setTimeout(() => setCopiedGlobalCode(false), 1500)
-    } catch {
-      // No-op: clipboard can fail on unsupported clients.
-    }
   }
 
   return (
@@ -179,31 +137,8 @@ export default function ProductDetailPage() {
               />
             </div>
           )}
-          {p.globalDiscount && (
-            <div className="rounded-2xl p-3 mb-3 text-sm" style={{ background: 'var(--brand-gold-soft)', color: 'var(--brand-ink)' }}>
-              <p className="font-semibold leading-snug">
-                {p.globalDiscount.title || `${p.globalDiscount.label} tự động`}
-              </p>
-              <DiscountCodeMeta
-                code={p.globalDiscount.code}
-                label={p.globalDiscount.label}
-                mode={p.globalDiscount.appMetaMode}
-                text={p.globalDiscount.appMetaText}
-                copied={copiedGlobalCode}
-                onCopy={() => copyGlobalDiscountCode(p.globalDiscount!.code)}
-              />
-              {p.globalDiscount.appMessage && <p className="text-xs opacity-75 mt-1 leading-relaxed">{p.globalDiscount.appMessage}</p>}
-            </div>
-          )}
           <div className="flex items-end justify-between mb-2">
             <div>
-              {hasPriceRange && (
-                <p className="text-sm opacity-70 mb-1">
-                  {rangeHasDiscount
-                    ? `${formatPrice(saleMin)} - ${formatPrice(saleMax)}`
-                    : `${formatPrice(baseMin)} - ${formatPrice(baseMax)}`}
-                </p>
-              )}
               <p className="text-2xl font-bold tracking-tight">{formatPrice(hasDiscount ? effectiveSalePrice! : effectivePrice)}</p>
               {hasDiscount && (
                 <p className="text-sm opacity-50 line-through">{formatPrice(effectivePrice)}</p>
@@ -256,7 +191,7 @@ export default function ProductDetailPage() {
         </div>
       </div>
 
-      {related.data && related.data.length > 0 && (
+      {p.relatedProducts && p.relatedProducts.length > 0 && (
         <section className="miniapp-section mt-6">
           <div className="miniapp-section-title">
             <span className="inline-flex items-center gap-1.5">
@@ -264,11 +199,11 @@ export default function ProductDetailPage() {
               Sản phẩm liên quan
             </span>
           </div>
-          <ProductRail items={related.data} />
+          <ProductRail items={p.relatedProducts} />
         </section>
       )}
 
-      {recently.data && recently.data.length > 0 && (
+      {p.recentlyViewedProducts && p.recentlyViewedProducts.length > 0 && (
         <section className="miniapp-section mt-4">
           <div className="miniapp-section-title">
             <span className="inline-flex items-center gap-1.5">
@@ -276,7 +211,7 @@ export default function ProductDetailPage() {
               Sản phẩm đã xem
             </span>
           </div>
-          <ProductRail items={recently.data} />
+          <ProductRail items={p.recentlyViewedProducts} />
         </section>
       )}
 

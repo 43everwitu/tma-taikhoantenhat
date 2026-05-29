@@ -62,13 +62,16 @@ export interface TelegramWebApp {
   safeAreaInset?:        { top: number; bottom: number; left: number; right: number }
   onEvent?: (event: 'safeAreaChanged' | 'contentSafeAreaChanged' | 'viewportChanged', cb: () => void) => void
   offEvent?: (event: 'safeAreaChanged' | 'contentSafeAreaChanged' | 'viewportChanged', cb: () => void) => void
+  isVerticalSwipesEnabled?: boolean
   disableVerticalSwipes?: () => void
   enableVerticalSwipes?: () => void
+  postEvent?: (eventType: string, eventData: Record<string, unknown>) => void
 }
 
 declare global {
   interface Window {
     Telegram?: { WebApp?: TelegramWebApp }
+    TelegramWebviewProxy?: { postEvent: (eventType: string, eventData: string) => void }
   }
 }
 
@@ -90,13 +93,36 @@ export function isTmaVersionAtLeast(wa: TelegramWebApp, minVersion: string): boo
   return true
 }
 
+/** Bot API 7.7+ — disable pull-down-to-minimize on page content (header swipe may still close). */
+export function disableMiniAppVerticalSwipes(wa: TelegramWebApp): boolean {
+  if (!isTmaVersionAtLeast(wa, '7.7')) return false
+  try {
+    wa.disableVerticalSwipes?.()
+  } catch {
+    // Older web clients throw if the bridge rejects the call.
+  }
+  try {
+    wa.postEvent?.('web_app_setup_swipe_behavior', { allow_vertical_swipe: false })
+  } catch {}
+  try {
+    window.TelegramWebviewProxy?.postEvent(
+      'web_app_setup_swipe_behavior',
+      JSON.stringify({ allow_vertical_swipe: false })
+    )
+  } catch {}
+  return wa.isVerticalSwipesEnabled === false
+}
+
+function preventTopSwipeCollapse() {
+  // When scroll is pinned at 0, a downward swipe triggers minimize. Nudge 1px so
+  // content scroll absorbs the gesture (common TMA workaround on Android/iOS).
+  if (window.scrollY <= 0) window.scrollTo(0, 1)
+}
+
 function prepareWebApp(wa: TelegramWebApp) {
   wa.ready()
   wa.expand()
-  // Telegram lets users pull the Mini App down with vertical swipes by default.
-  // For a shop UI with scrollable product cards, disable that gesture when the
-  // client supports it so normal content scrolling does not collapse the app.
-  wa.disableVerticalSwipes?.()
+  disableMiniAppVerticalSwipes(wa)
 }
 
 export function useWebApp(): TelegramWebApp | null {
@@ -174,23 +200,64 @@ function writeInsets(wa: TelegramWebApp) {
 
 export function useTmaViewport() {
   useEffect(() => {
-    const wa = getWebApp()
-    if (!wa) return
-    prepareWebApp(wa)
-    writeInsets(wa)
-    const onChange = () => writeInsets(wa)
-    const supportsSafeAreaEvents = isTmaVersionAtLeast(wa, '8.0')
-    if (supportsSafeAreaEvents) {
-      wa.onEvent?.('safeAreaChanged', onChange)
-      wa.onEvent?.('contentSafeAreaChanged', onChange)
+    let wa: TelegramWebApp | null = null
+    let bootTimer: number | undefined
+    let disposed = false
+
+    function attach(w: TelegramWebApp) {
+      wa = w
+      prepareWebApp(w)
+      writeInsets(w)
     }
+
+    function onViewport() {
+      if (wa) {
+        prepareWebApp(wa)
+        writeInsets(wa)
+      }
+    }
+    function onChange() {
+      if (wa) writeInsets(wa)
+    }
+
+    function bind(w: TelegramWebApp) {
+      attach(w)
+      w.onEvent?.('viewportChanged', onViewport)
+      if (isTmaVersionAtLeast(w, '8.0')) {
+        w.onEvent?.('safeAreaChanged', onChange)
+        w.onEvent?.('contentSafeAreaChanged', onChange)
+      }
+    }
+
+    function unbind(w: TelegramWebApp) {
+      w.offEvent?.('viewportChanged', onViewport)
+      w.offEvent?.('safeAreaChanged', onChange)
+      w.offEvent?.('contentSafeAreaChanged', onChange)
+    }
+
+    const initial = getWebApp()
+    if (initial) {
+      bind(initial)
+    } else {
+      bootTimer = window.setInterval(() => {
+        if (disposed) return
+        const next = getWebApp()
+        if (!next) return
+        bind(next)
+        window.clearInterval(bootTimer)
+        bootTimer = undefined
+      }, 30)
+    }
+
+    document.addEventListener('touchstart', preventTopSwipeCollapse, { passive: true })
     const orientation = window.matchMedia?.('(orientation: landscape)')
     orientation?.addEventListener?.('change', onChange)
+
     return () => {
-      if (supportsSafeAreaEvents) {
-        wa.offEvent?.('safeAreaChanged', onChange)
-        wa.offEvent?.('contentSafeAreaChanged', onChange)
-      }
+      disposed = true
+      if (bootTimer) window.clearInterval(bootTimer)
+      if (wa) unbind(wa)
+      document.removeEventListener('touchstart', preventTopSwipeCollapse)
       orientation?.removeEventListener?.('change', onChange)
     }
   }, [])

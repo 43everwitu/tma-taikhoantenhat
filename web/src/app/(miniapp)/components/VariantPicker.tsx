@@ -11,6 +11,15 @@ export interface VariantInputField {
   required: boolean
 }
 
+// Stable key for storing a field's value. Labels are optional, so empty-label
+// fields fall back to a positional key that won't collide. The `__field_` prefix
+// is recognised server-side (delivery message) to render the value without a
+// label caption.
+export function variantFieldKey(f: { label?: string | null }, idx: number): string {
+  const l = (f.label ?? '').trim()
+  return l.length > 0 ? l : `__field_${idx}`
+}
+
 export interface Variant {
   id: string
   name: string
@@ -90,14 +99,16 @@ export function VariantPicker({ variants, selectedId, onSelect, inputValues, onI
           aria-expanded={open}
           className="miniapp-variant-select"
         >
-          <span className="v-name">{selected ? selected.name : 'Chọn biến thể'}</span>
-          {selected && (
-            <span className="v-meta">
-              {priceNode(selected)}
-              <span className={`v-stock v-stock--${stockTone(selected)}`}>{stockLabel(selected)}</span>
-            </span>
-          )}
-          <Icon name="chevronRight" size={16} className={open ? 'rotate-90' : ''} />
+          <span className="v-select-body">
+            <span className="v-name">{selected ? selected.name : 'Chọn biến thể'}</span>
+            {selected && (
+              <span className="v-meta">
+                {priceNode(selected)}
+                <span className={`v-stock v-stock--${stockTone(selected)}`}>{stockLabel(selected)}</span>
+              </span>
+            )}
+          </span>
+          <Icon name="chevronRight" size={16} className={`v-chevron shrink-0${open ? ' rotate-90' : ''}`} />
         </button>
 
         {open && (
@@ -131,7 +142,7 @@ export function VariantPicker({ variants, selectedId, onSelect, inputValues, onI
 
       {selected?.description && (
         <div
-          className="rich-text text-xs opacity-80"
+          className="rich-text opacity-80"
           dangerouslySetInnerHTML={{ __html: selected.description }}
         />
       )}
@@ -148,44 +159,50 @@ export function VariantPicker({ variants, selectedId, onSelect, inputValues, onI
                     required: true,
                   }]
 
-            return fields.map((f, idx) => (
-              <div key={`${f.label}-${idx}`}>
-                <label className="block text-xs opacity-70 mb-1">
-                  {f.label}{f.required && <span className="text-red-500"> *</span>}
-                </label>
-                {f.type === 'textarea' ? (
-                  <textarea
-                    value={inputValues[f.label] ?? ''}
-                    onChange={(e) => onInputChange({ ...inputValues, [f.label]: e.target.value })}
-                    placeholder={f.placeholder ?? ''}
-                    rows={3}
-                    className="w-full rounded-xl px-3 py-2 text-sm"
-                    style={{
-                      background: 'var(--tg-bg-2, #fff)',
-                      border: '1px solid color-mix(in srgb, var(--brand-ink) 14%, transparent)',
-                    }}
-                    minLength={f.required ? 1 : 0}
-                    maxLength={500}
-                    required={f.required}
-                  />
-                ) : (
-                  <input
-                    type={f.type}
-                    value={inputValues[f.label] ?? ''}
-                    onChange={(e) => onInputChange({ ...inputValues, [f.label]: e.target.value })}
-                    placeholder={f.placeholder ?? ''}
-                    className="w-full rounded-xl px-3 py-2 text-sm"
-                    style={{
-                      background: 'var(--tg-bg-2, #fff)',
-                      border: '1px solid color-mix(in srgb, var(--brand-ink) 14%, transparent)',
-                    }}
-                    minLength={f.required ? 1 : 0}
-                    maxLength={200}
-                    required={f.required}
-                  />
-                )}
-              </div>
-            ))
+            return fields.map((f, idx) => {
+              const key = variantFieldKey(f, idx)
+              const hasLabel = (f.label ?? '').trim().length > 0
+              return (
+                <div key={`${key}-${idx}`}>
+                  {(hasLabel || f.required) && (
+                    <label className="block text-xs opacity-70 mb-1">
+                      {f.label}{f.required && <span className="text-red-500"> *</span>}
+                    </label>
+                  )}
+                  {f.type === 'textarea' ? (
+                    <textarea
+                      value={inputValues[key] ?? ''}
+                      onChange={(e) => onInputChange({ ...inputValues, [key]: e.target.value })}
+                      placeholder={f.placeholder ?? ''}
+                      rows={3}
+                      className="w-full rounded-xl px-3 py-2 text-sm"
+                      style={{
+                        background: 'var(--tg-bg-2, #fff)',
+                        border: '1px solid color-mix(in srgb, var(--brand-ink) 14%, transparent)',
+                      }}
+                      minLength={f.required ? 1 : 0}
+                      maxLength={500}
+                      required={f.required}
+                    />
+                  ) : (
+                    <input
+                      type={f.type}
+                      value={inputValues[key] ?? ''}
+                      onChange={(e) => onInputChange({ ...inputValues, [key]: e.target.value })}
+                      placeholder={f.placeholder ?? ''}
+                      className="w-full rounded-xl px-3 py-2 text-sm"
+                      style={{
+                        background: 'var(--tg-bg-2, #fff)',
+                        border: '1px solid color-mix(in srgb, var(--brand-ink) 14%, transparent)',
+                      }}
+                      minLength={f.required ? 1 : 0}
+                      maxLength={200}
+                      required={f.required}
+                    />
+                  )}
+                </div>
+              )
+            })
           })()}
         </div>
       )}

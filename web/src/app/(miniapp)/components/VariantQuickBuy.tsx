@@ -1,10 +1,10 @@
 'use client'
 
-import { useEffect, useState } from 'react'
+import { useState } from 'react'
 import { useQuery } from '@tanstack/react-query'
 import { apiFetch } from '@/lib/miniappApi'
 import { useCart } from '@/lib/cart'
-import { VariantPicker, type Variant } from './VariantPicker'
+import { VariantPicker, variantFieldKey, type Variant } from './VariantPicker'
 import { Icon } from './Icon'
 import { formatPrice } from '@/lib/utils'
 
@@ -26,15 +26,9 @@ export function VariantQuickBuy({ slug, onClose }: Props) {
   const [busy, setBusy] = useState(false)
 
   const { data: p, isLoading } = useQuery({
-    queryKey: ['product-quickbuy', slug],
+    queryKey: ['product', slug],
     queryFn: () => apiFetch<ProductFull>(`/products/${slug}`),
   })
-
-  useEffect(() => {
-    if (!p?.variants?.length) { setSelectedVariantId(null); return }
-    const firstInStock = p.variants.find((v) => v.stock > 0)
-    setSelectedVariantId((firstInStock ?? p.variants[0]).id)
-  }, [p?.variants])
 
   if (isLoading || !p) {
     return (
@@ -47,7 +41,8 @@ export function VariantQuickBuy({ slug, onClose }: Props) {
   }
 
   const variants = p.variants ?? []
-  const selected = variants.find((v) => v.id === selectedVariantId) ?? null
+  const defaultVariant = variants.find((v) => v.stock > 0) ?? variants[0] ?? null
+  const selected = variants.find((v) => v.id === selectedVariantId) ?? defaultVariant
   const effectivePrice = selected?.price ?? p.price
   const effectiveSalePrice = selected?.salePrice ?? p.salePrice ?? null
   const hasDiscount = typeof effectiveSalePrice === 'number' && effectiveSalePrice < effectivePrice
@@ -64,7 +59,7 @@ export function VariantQuickBuy({ slug, onClose }: Props) {
     : (requiresInput
         ? [{ label: selected!.inputLabel || 'Thông tin', placeholder: '', type: 'text' as const, required: true }]
         : [])
-  const inputValid = !requiresInput || fields.every((f) => !f.required || (inputValues[f.label] ?? '').trim().length >= 1)
+  const inputValid = !requiresInput || fields.every((f, idx) => !f.required || (inputValues[variantFieldKey(f, idx)] ?? '').trim().length >= 1)
   const disabled = effectiveStock <= 0 || p.contactOnly || !inputValid || busy
 
   const product = p
@@ -72,10 +67,11 @@ export function VariantQuickBuy({ slug, onClose }: Props) {
     setBusy(true)
     const trimmed: Record<string, string> = {}
     if (requiresInput) {
-      for (const f of fields) {
-        const v = (inputValues[f.label] ?? '').trim()
-        if (v) trimmed[f.label] = v
-      }
+      fields.forEach((f, idx) => {
+        const key = variantFieldKey(f, idx)
+        const v = (inputValues[key] ?? '').trim()
+        if (v) trimmed[key] = v
+      })
     }
     cart.add({
       productId: product.id,

@@ -9,6 +9,51 @@ const discountService = require('../../services/discountService');
 
 const router = Router();
 
+const shopInfoStmt = db.prepare(`
+  SELECT key, value FROM settings
+  WHERE key IN ('shop_name', 'support_contact', 'support_url')
+`);
+const productBySlugStmt = db.prepare(`
+  ${productSelectSql()}
+  WHERE p.slug = ? AND p.is_active = 1
+`);
+const announcementsStmt = db.prepare(`
+  SELECT id, title, body, is_pinned, target, created_at
+  FROM announcements
+  WHERE target IN ('web', 'all')
+  ORDER BY is_pinned DESC, created_at DESC
+  LIMIT 10
+`);
+
+function productSelectSql() {
+  return `
+    SELECT p.*,
+      COALESCE(stock_agg.stock_count, 0) as stock_count,
+      variant_agg.variant_min,
+      variant_agg.variant_max,
+      CASE
+        WHEN COALESCE(stock_agg.stock_count, 0) > 0
+        THEN COALESCE(stock_agg.stock_count, 0)
+        ELSE COALESCE(p.sheet_stock, 0)
+      END as display_stock,
+      c.name as category_name, c.slug as category_slug
+    FROM products p
+    LEFT JOIN (
+      SELECT product_id, COUNT(*) AS stock_count
+      FROM stock
+      WHERE is_sold = 0
+      GROUP BY product_id
+    ) stock_agg ON stock_agg.product_id = p.id
+    LEFT JOIN (
+      SELECT product_id, MIN(price) AS variant_min, MAX(price) AS variant_max
+      FROM product_variants
+      WHERE is_active = 1
+      GROUP BY product_id
+    ) variant_agg ON variant_agg.product_id = p.id
+    LEFT JOIN categories c ON p.category_id = c.id
+  `;
+}
+
 async function fetchQrPngBuffer(qrUrl) {
   const resp = await fetch(qrUrl, {
     headers: {
@@ -24,7 +69,7 @@ async function fetchQrPngBuffer(qrUrl) {
 // GET /shop/info
 router.get('/shop/info', (req, res) => {
   const settings = {};
-  db.prepare('SELECT key, value FROM settings').all().forEach(r => {
+  shopInfoStmt.all().forEach(r => {
     settings[r.key] = r.value;
   });
 
@@ -102,15 +147,22 @@ router.get('/discounts/global', (req, res) => {
 // GET /categories
 router.get('/categories', (req, res) => {
   const exclude = (req.query.exclude || '').trim();
-  let sql = "SELECT id, name, slug, emoji, description FROM categories WHERE is_active = 1";
-  const params = [];
-  if (exclude) {
-    sql += ' AND slug != ?';
-    params.push(exclude);
-  }
-  sql += ' ORDER BY sort_order';
-  const rows = db.prepare(sql).all(...params);
-  res.json({ success: true, data: rows });
+  res.json({ success: true, data: listCategories(exclude) });
+});
+
+// GET /home — composite payload for the Mini App landing page.
+router.get('/home', (req, res) => {
+  const globalDiscount = discountService.findActiveGlobal();
+  res.json({
+    success: true,
+    data: {
+      announcements: listAnnouncements(),
+      globalDiscount: shapeGlobalDiscount(globalDiscount),
+      categories: listCategories('uncategorized'),
+      featured: listFeaturedProducts(8, globalDiscount),
+      newest: listNewestProducts(30, globalDiscount),
+    },
+  });
 });
 
 // GET /orders/:id/qr-download — Telegram Mini Apps downloadFile() requires an
@@ -144,11 +196,10 @@ router.get('/orders/:id/qr-download', async (req, res) => {
   }
 });
 
-function shapePublicProduct(p) {
+function shapePublicProduct(p, globalDiscount, options = {}) {
   const stock = (p.display_stock != null) ? p.display_stock : (p.stock_count || 0);
   const priceMin = (p.variant_min != null) ? Number(p.variant_min) : Number(p.price || 0);
   const priceMax = (p.variant_max != null) ? Number(p.variant_max) : priceMin;
-  const globalDiscount = discountService.findActiveGlobal();
   const base = {
     id: String(p.id),
     name: p.name,
@@ -159,9 +210,6 @@ function shapePublicProduct(p) {
     priceMin,
     priceMax,
     stock,
-    description: p.description || '',
-    longDescription: p.long_description || '',
-    usageInstructions: p.usage_instructions || '',
     promotion: p.promotion || null,
     contactOnly: !!p.contact_only,
     contactUrl: p.contact_url || '',
@@ -169,6 +217,11 @@ function shapePublicProduct(p) {
     categorySlug: p.category_slug || '',
     categoryId: p.category_id,
   };
+  if (options.includeDetails) {
+    base.description = p.description || '';
+    base.longDescription = p.long_description || '';
+    base.usageInstructions = p.usage_instructions || '';
+  }
   const shaped = applyGlobalPricing(base, globalDiscount);
   if (globalDiscount) {
     const discountMin = discountService.computeDiscount(globalDiscount, priceMin);
@@ -179,33 +232,107 @@ function shapePublicProduct(p) {
   return sanitizeProductForClient(shaped);
 }
 
+function shapePublicProductList(p, globalDiscount) {
+  return shapePublicProduct(p, globalDiscount, { includeDetails: false });
+}
+
+function shapeAnnouncement(r) {
+  return {
+    id: String(r.id),
+    title: normalizeAnnouncementText(r.title),
+    body: normalizeAnnouncementText(r.body),
+    pinned: !!r.is_pinned,
+    target: r.target || 'all',
+    createdAt: r.created_at,
+  };
+}
+
+function parseIds(idsParam, max = 50) {
+  return String(idsParam || '')
+    .split(',')
+    .map((s) => parseInt(s, 10))
+    .filter((n) => Number.isInteger(n) && n > 0)
+    .slice(0, max);
+}
+
+function productListRows({ where, params = [], orderBy = 'p.sort_order, p.id', limit = 0, offset = 0 }) {
+  const limitClause = limit > 0 ? ` LIMIT ${limit} OFFSET ${offset}` : '';
+  return db.prepare(`
+    ${productSelectSql()}
+    WHERE ${where}
+    ORDER BY ${orderBy}${limitClause}
+  `).all(...params);
+}
+
+function shapeProductList(rows, globalDiscount) {
+  return rows.map((r) => shapePublicProductList(r, globalDiscount));
+}
+
+function listFeaturedProducts(limit, globalDiscount) {
+  const featured = productListRows({
+    where: 'p.is_active = 1 AND p.is_featured = 1',
+    orderBy: 'p.sort_order, p.id',
+    limit,
+  });
+  if (featured.length >= limit) return shapeProductList(featured, globalDiscount);
+
+  const featuredIds = new Set(featured.map((r) => r.id));
+  const fillNeeded = limit - featured.length;
+  const fill = productListRows({
+    where: 'p.is_active = 1',
+    orderBy: 'p.created_at DESC, p.id DESC',
+    limit: fillNeeded + featured.length,
+  });
+  const fillFiltered = fill.filter((r) => !featuredIds.has(r.id)).slice(0, fillNeeded);
+  return shapeProductList([...featured, ...fillFiltered], globalDiscount);
+}
+
+function listNewestProducts(limit, globalDiscount) {
+  const rows = productListRows({
+    where: 'p.is_active = 1',
+    orderBy: 'p.created_at DESC, p.id DESC',
+    limit,
+  });
+  return shapeProductList(rows, globalDiscount);
+}
+
+function listProductsByIds(ids, globalDiscount) {
+  if (ids.length === 0) return [];
+  const placeholders = ids.map(() => '?').join(',');
+  const caseExpr = ids.map((id, i) => `WHEN p.id = ${id} THEN ${i}`).join(' ');
+  const rows = db.prepare(`
+    ${productSelectSql()}
+    WHERE p.id IN (${placeholders}) AND p.is_active = 1
+    ORDER BY CASE ${caseExpr} END
+  `).all(...ids);
+  return shapeProductList(rows, globalDiscount);
+}
+
+function listAnnouncements() {
+  return announcementsStmt.all().map(shapeAnnouncement);
+}
+
+function listCategories(exclude = '') {
+  let sql = 'SELECT id, name, slug, emoji, description FROM categories WHERE is_active = 1';
+  const params = [];
+  if (exclude) {
+    sql += ' AND slug != ?';
+    params.push(exclude);
+  }
+  sql += ' ORDER BY sort_order';
+  return db.prepare(sql).all(...params);
+}
+
 // GET /products
 router.get('/products', (req, res) => {
   const idsParam = (req.query.ids || '').trim();
   if (idsParam) {
-    const ids = idsParam.split(',').map((s) => parseInt(s, 10)).filter((n) => Number.isInteger(n) && n > 0).slice(0, 50);
+    const ids = parseIds(idsParam);
     if (ids.length === 0) {
       return res.json({ success: true, data: [] });
     }
-    const placeholders = ids.map(() => '?').join(',');
-    const caseExpr = ids.map((id, i) => `WHEN p.id = ${id} THEN ${i}`).join(' ');
-    const rows = db.prepare(`
-      SELECT p.*,
-        (SELECT COUNT(*) FROM stock s WHERE s.product_id = p.id AND s.is_sold = 0) as stock_count,
-        (SELECT MIN(v.price) FROM product_variants v WHERE v.product_id = p.id AND v.is_active = 1) as variant_min,
-        (SELECT MAX(v.price) FROM product_variants v WHERE v.product_id = p.id AND v.is_active = 1) as variant_max,
-        CASE
-          WHEN (SELECT COUNT(*) FROM stock s WHERE s.product_id = p.id AND s.is_sold = 0) > 0
-          THEN (SELECT COUNT(*) FROM stock s WHERE s.product_id = p.id AND s.is_sold = 0)
-          ELSE COALESCE(p.sheet_stock, 0)
-        END as display_stock,
-        c.name as category_name, c.slug as category_slug
-      FROM products p
-      LEFT JOIN categories c ON p.category_id = c.id
-      WHERE p.id IN (${placeholders}) AND p.is_active = 1
-      ORDER BY CASE ${caseExpr} END
-    `).all(...ids);
-    return res.json({ success: true, data: rows.map(shapePublicProduct) });
+    const globalDiscount = discountService.findActiveGlobal();
+    return res.json({ success: true, data: listProductsByIds(ids, globalDiscount) });
   }
 
   const q = (req.query.q || '').trim();
@@ -252,26 +379,11 @@ router.get('/products', (req, res) => {
 
   const limit = Math.min(parseInt(req.query.limit) || 0, 100);
   const offset = Math.max(parseInt(req.query.offset) || 0, 0);
-  const limitClause = limit > 0 ? ` LIMIT ${limit} OFFSET ${offset}` : '';
 
-  const rows = db.prepare(`
-    SELECT p.*,
-      (SELECT COUNT(*) FROM stock s WHERE s.product_id = p.id AND s.is_sold = 0) as stock_count,
-      (SELECT MIN(v.price) FROM product_variants v WHERE v.product_id = p.id AND v.is_active = 1) as variant_min,
-      (SELECT MAX(v.price) FROM product_variants v WHERE v.product_id = p.id AND v.is_active = 1) as variant_max,
-      CASE
-        WHEN (SELECT COUNT(*) FROM stock s WHERE s.product_id = p.id AND s.is_sold = 0) > 0
-        THEN (SELECT COUNT(*) FROM stock s WHERE s.product_id = p.id AND s.is_sold = 0)
-        ELSE COALESCE(p.sheet_stock, 0)
-      END as display_stock,
-      c.name as category_name, c.slug as category_slug
-    FROM products p
-    LEFT JOIN categories c ON p.category_id = c.id
-    WHERE ${where}
-    ORDER BY ${orderBy}${limitClause}
-  `).all(...params);
+  const rows = productListRows({ where, params, orderBy, limit, offset });
 
-  const response = { success: true, data: rows.map(shapePublicProduct) };
+  const globalDiscount = discountService.findActiveGlobal();
+  const response = { success: true, data: shapeProductList(rows, globalDiscount) };
   if (limit > 0) {
     const total = db.prepare(`
       SELECT COUNT(*) AS c FROM products p
@@ -286,68 +398,13 @@ router.get('/products', (req, res) => {
 // GET /products/featured — featured products, padded with newest if needed
 router.get('/products/featured', (req, res) => {
   const limit = 8;
-  const featured = db.prepare(`
-    SELECT p.*,
-      (SELECT COUNT(*) FROM stock s WHERE s.product_id = p.id AND s.is_sold = 0) as stock_count,
-      (SELECT MIN(v.price) FROM product_variants v WHERE v.product_id = p.id AND v.is_active = 1) as variant_min,
-      (SELECT MAX(v.price) FROM product_variants v WHERE v.product_id = p.id AND v.is_active = 1) as variant_max,
-      CASE
-        WHEN (SELECT COUNT(*) FROM stock s WHERE s.product_id = p.id AND s.is_sold = 0) > 0
-        THEN (SELECT COUNT(*) FROM stock s WHERE s.product_id = p.id AND s.is_sold = 0)
-        ELSE COALESCE(p.sheet_stock, 0)
-      END as display_stock,
-      c.name as category_name, c.slug as category_slug
-    FROM products p
-    LEFT JOIN categories c ON p.category_id = c.id
-    WHERE p.is_active = 1 AND p.is_featured = 1
-    ORDER BY p.sort_order, p.id
-    LIMIT ?
-  `).all(limit);
-
-  if (featured.length >= limit) {
-    return res.json({ success: true, data: featured.map(shapePublicProduct) });
-  }
-  const featuredIds = new Set(featured.map((r) => r.id));
-  const fillNeeded = limit - featured.length;
-  const fill = db.prepare(`
-    SELECT p.*,
-      (SELECT COUNT(*) FROM stock s WHERE s.product_id = p.id AND s.is_sold = 0) as stock_count,
-      (SELECT MIN(v.price) FROM product_variants v WHERE v.product_id = p.id AND v.is_active = 1) as variant_min,
-      (SELECT MAX(v.price) FROM product_variants v WHERE v.product_id = p.id AND v.is_active = 1) as variant_max,
-      CASE
-        WHEN (SELECT COUNT(*) FROM stock s WHERE s.product_id = p.id AND s.is_sold = 0) > 0
-        THEN (SELECT COUNT(*) FROM stock s WHERE s.product_id = p.id AND s.is_sold = 0)
-        ELSE COALESCE(p.sheet_stock, 0)
-      END as display_stock,
-      c.name as category_name, c.slug as category_slug
-    FROM products p
-    LEFT JOIN categories c ON p.category_id = c.id
-    WHERE p.is_active = 1
-    ORDER BY p.created_at DESC, p.id DESC
-    LIMIT ?
-  `).all(fillNeeded + featured.length);
-  const fillFiltered = fill.filter((r) => !featuredIds.has(r.id)).slice(0, fillNeeded);
-
-  res.json({ success: true, data: [...featured, ...fillFiltered].map(shapePublicProduct) });
+  const globalDiscount = discountService.findActiveGlobal();
+  res.json({ success: true, data: listFeaturedProducts(limit, globalDiscount) });
 });
 
 // GET /products/:slug
 router.get('/products/:slug', (req, res) => {
-  const product = db.prepare(`
-    SELECT p.*,
-      (SELECT COUNT(*) FROM stock s WHERE s.product_id = p.id AND s.is_sold = 0) as stock_count,
-      (SELECT MIN(v.price) FROM product_variants v WHERE v.product_id = p.id AND v.is_active = 1) as variant_min,
-      (SELECT MAX(v.price) FROM product_variants v WHERE v.product_id = p.id AND v.is_active = 1) as variant_max,
-      CASE
-        WHEN (SELECT COUNT(*) FROM stock s WHERE s.product_id = p.id AND s.is_sold = 0) > 0
-        THEN (SELECT COUNT(*) FROM stock s WHERE s.product_id = p.id AND s.is_sold = 0)
-        ELSE COALESCE(p.sheet_stock, 0)
-      END as display_stock,
-      c.name as category_name, c.slug as category_slug
-    FROM products p
-    LEFT JOIN categories c ON p.category_id = c.id
-    WHERE p.slug = ? AND p.is_active = 1
-  `).get(req.params.slug);
+  const product = productBySlugStmt.get(req.params.slug);
 
   if (!product) {
     return res.status(404).json({ success: false, error: { code: 'NOT_FOUND', message: 'Sản phẩm không tìm thấy' } });
@@ -357,6 +414,7 @@ router.get('/products/:slug', (req, res) => {
   const stock = (p.display_stock != null) ? p.display_stock : (p.stock_count || 0);
   const globalDiscount = discountService.findActiveGlobal();
   const variantRows = variantService.listByProduct(db, p.id);
+  const variantStockCounts = variantService.countAvailableStockByProduct(db, p.id);
   const variants = variantRows.map(v => {
     let inputFields = null;
     if (v.input_fields_json) {
@@ -368,7 +426,7 @@ router.get('/products/:slug', (req, res) => {
       description: v.description || '',
       price: v.price,
       sortOrder: v.sort_order,
-      stock: v.is_backorder ? 9999 : variantService.countAvailableStock(db, p.id, v.id),
+      stock: v.is_backorder ? 9999 : (variantStockCounts.get(v.id) || 0),
       isBackorder: !!v.is_backorder,
       requiresInput: !!v.requires_input,
       inputLabel: v.input_label || null,
@@ -400,7 +458,7 @@ router.get('/products/:slug', (req, res) => {
     categoryId: p.category_id,
     variants,
     globalDiscount: shapeGlobalDiscount(globalDiscount, p.price),
-  }, globalDiscount);
+  }, globalDiscount, { includeDetails: true });
   if (globalDiscount) {
     const minP = shaped.priceMin ?? shaped.price;
     const maxP = shaped.priceMax ?? shaped.price;
@@ -409,29 +467,27 @@ router.get('/products/:slug', (req, res) => {
     shaped.salePriceMin = Math.max(0, minP - discountMin);
     shaped.salePriceMax = Math.max(0, maxP - discountMax);
   }
+  if (p.category_slug) {
+    const relatedRows = productListRows({
+      where: 'p.is_active = 1 AND c.slug = ? AND p.id != ?',
+      params: [p.category_slug, p.id],
+      orderBy: 'p.sort_order, p.id',
+      limit: 10,
+    });
+    shaped.relatedProducts = shapeProductList(relatedRows, globalDiscount);
+  } else {
+    shaped.relatedProducts = [];
+  }
+  const recentIds = parseIds(req.query.recent || '').filter((id) => id !== p.id);
+  shaped.recentlyViewedProducts = listProductsByIds(recentIds, globalDiscount);
   res.json({ success: true, data: sanitizeProductForClient(shaped) });
 });
 
 // GET /announcements — recent public announcements (target = web | all)
 router.get('/announcements', (req, res) => {
-  const rows = db.prepare(`
-    SELECT id, title, body, is_pinned, target, created_at
-    FROM announcements
-    WHERE target IN ('web', 'all')
-    ORDER BY is_pinned DESC, created_at DESC
-    LIMIT 10
-  `).all();
-
   res.json({
     success: true,
-    data: rows.map(r => ({
-      id: String(r.id),
-      title: normalizeAnnouncementText(r.title),
-      body: normalizeAnnouncementText(r.body),
-      pinned: !!r.is_pinned,
-      target: r.target || 'all',
-      createdAt: r.created_at,
-    })),
+    data: listAnnouncements(),
   });
 });
 

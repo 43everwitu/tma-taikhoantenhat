@@ -2,10 +2,15 @@
 
 import Link from 'next/link'
 import Image from 'next/image'
+import dynamic from 'next/dynamic'
 import { useState } from 'react'
 import { Icon } from './Icon'
-import { VariantQuickBuy } from './VariantQuickBuy'
-import { formatPrice } from '@/lib/utils'
+import { formatPriceShort } from '@/lib/utils'
+
+const VariantQuickBuy = dynamic(
+  () => import('./VariantQuickBuy').then((mod) => mod.VariantQuickBuy),
+  { ssr: false }
+)
 
 export interface ProductSummary {
   id: string
@@ -59,33 +64,41 @@ export function ProductCard({ p, eager = false }: { p: ProductSummary; eager?: b
         </div>
         <div className="miniapp-product-info">
           <p className="miniapp-product-name">{p.name}</p>
-          <p className="miniapp-product-price">
-            {hasRange
-              ? `${formatPrice(hasDiscount ? salePriceMin : priceMin)} - ${formatPrice(hasDiscount ? salePriceMax : priceMax)}`
-              : hasDiscount ? formatPrice(p.salePrice!) : formatPrice(p.price)}
+          <p className={`miniapp-product-price${hasRange ? ' is-range' : ''}`}>
+            {hasRange ? (
+              <>
+                <span className="miniapp-price-num">{formatPriceShort(hasDiscount ? salePriceMin : priceMin)}</span>
+                <span className="miniapp-price-sep">–</span>
+                <span className="miniapp-price-num">{formatPriceShort(hasDiscount ? salePriceMax : priceMax)}</span>
+              </>
+            ) : (
+              <span className="miniapp-price-num">{formatPriceShort(hasDiscount ? p.salePrice! : p.price)}</span>
+            )}
           </p>
-          {hasDiscount && (
-            <p className="text-[11px] opacity-50 line-through -mt-1">
-              {hasRange
-                ? `${formatPrice(priceMin)} - ${formatPrice(priceMax)}`
-                : formatPrice(p.price)}
-            </p>
-          )}
+          <p className={`miniapp-product-price-old${hasDiscount ? '' : ' is-empty'}`} aria-hidden={!hasDiscount}>
+            {hasDiscount
+              ? (hasRange
+                ? `${formatPriceShort(priceMin)} – ${formatPriceShort(priceMax)}`
+                : formatPriceShort(p.price))
+              : '\u00a0'}
+          </p>
           <p className={`miniapp-product-stock ${inStock ? 'in' : 'out'}`}>
-            <span style={{ width: 6, height: 6, borderRadius: 999, background: 'currentColor', display: 'inline-block' }} />
+            <span className="miniapp-product-stock-dot" />
             {inStock ? `Còn ${p.stock}` : 'Hết hàng'}
           </p>
-          {inStock && (
-            <button
-              type="button"
-              aria-label="Mua nhanh"
-              onClick={(e) => { e.preventDefault(); e.stopPropagation(); setQuickOpen(true) }}
-              className="miniapp-product-quickbuy"
-            >
-              <Icon name="zap" size={14} />
-              <span>Mua nhanh</span>
-            </button>
-          )}
+          <div className="miniapp-product-actions">
+            {inStock && (
+              <button
+                type="button"
+                aria-label="Mua nhanh"
+                onClick={(e) => { e.preventDefault(); e.stopPropagation(); setQuickOpen(true) }}
+                className="miniapp-product-quickbuy"
+              >
+                <Icon name="zap" size={14} />
+                <span>Mua nhanh</span>
+              </button>
+            )}
+          </div>
         </div>
       </Link>
       {quickOpen && <VariantQuickBuy slug={p.slug} onClose={() => setQuickOpen(false)} />}

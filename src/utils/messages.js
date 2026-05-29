@@ -55,49 +55,69 @@ function richifyText(s) {
 }
 
 /**
- * Format a list of delivered keys for Telegram. Each key wrapped in <pre> code
- * block so the customer can long-press → copy without text being mangled by
- * autoformatters. No numbered prefix.
+ * Format delivered keys as plain escaped text. Telegram HTML mode auto-linkifies
+ * bare URLs (m.me/..., zalo.me/...) when they are NOT inside <code>/<pre>/<a>.
  */
-const URL_RE_KEYS = /https?:\/\/[^\s<>"']+/g;
-
-function linkifyEscaped(s) {
-  // Tokenise around URLs, escape each side, wrap URLs in <a>. Telegram HTML
-  // requires URLs OUTSIDE <pre>/<code> to render as clickable links.
-  const parts = [];
-  let lastIdx = 0;
-  let m;
-  URL_RE_KEYS.lastIndex = 0;
-  while ((m = URL_RE_KEYS.exec(s)) !== null) {
-    if (m.index > lastIdx) parts.push(escapeHtml(s.slice(lastIdx, m.index)));
-    const u = m[0];
-    parts.push(`<a href="${escapeHtml(u)}">${escapeHtml(u)}</a>`);
-    lastIdx = m.index + u.length;
-  }
-  if (lastIdx < s.length) parts.push(escapeHtml(s.slice(lastIdx)));
-  return parts.join('');
+function formatKeysForTelegram(accounts) {
+  return accounts.map((k) => escapeHtml(k)).join('\n');
 }
 
-function formatKeysForTelegram(accounts) {
-  // Keys with URLs render mixed text + clickable <a> links (no <pre> wrap
-  // since Telegram won't render anchors inside pre/code). Plain keys get
-  // <code> so they're monospaced + long-press-copy-friendly.
-  return accounts.map(k => {
-    URL_RE_KEYS.lastIndex = 0;
-    if (URL_RE_KEYS.test(k)) {
-      return linkifyEscaped(k);
+/**
+ * Build admin-facing HTML block from encrypted order.input_value (JSON field map).
+ * Returns empty string when there is no customer input.
+ */
+function buildCustomerInputBlock(inputValueEncrypted) {
+  if (!inputValueEncrypted) return '';
+  try {
+    const { decryptString } = require('./secrets');
+    const raw = decryptString(inputValueEncrypted);
+    const parsed = JSON.parse(raw);
+    if (!parsed || typeof parsed !== 'object' || Object.keys(parsed).length === 0) return '';
+    const lines = [];
+    for (const [label, value] of Object.entries(parsed)) {
+      if (!value) continue;
+      const labelless = !label || /^__field_\d+$/.test(label);
+      const isSecret = /password|pass|mật khẩu|m[aậ]t kh[aẩ]u/i.test(label);
+      const shown = isSecret ? '••••••' : escapeHtml(String(value));
+      lines.push(labelless ? shown : `<b>${escapeHtml(label)}:</b> ${shown}`);
     }
-    return `<code>${escapeHtml(k)}</code>`;
-  }).join('\n');
+    if (lines.length === 0) return '';
+    return '\n\n📋 <b>Thông tin KH:</b>\n' + lines.join('\n');
+  } catch {
+    return '';
+  }
+}
+
+/**
+ * Plain-text customer input for spoilers / group channel (no HTML).
+ */
+function formatCustomerInputPlain(inputValueEncrypted) {
+  if (!inputValueEncrypted) return null;
+  try {
+    const { decryptString } = require('./secrets');
+    const raw = decryptString(inputValueEncrypted);
+    const parsed = JSON.parse(raw);
+    if (!parsed || typeof parsed !== 'object') return String(raw);
+    const lines = [];
+    for (const [label, value] of Object.entries(parsed)) {
+      if (!value) continue;
+      const labelless = !label || /^__field_\d+$/.test(label);
+      const isSecret = /password|pass|mật khẩu|m[aậ]t kh[aẩ]u/i.test(label);
+      const shown = isSecret ? '••••••' : String(value);
+      lines.push(labelless ? shown : `${label}: ${shown}`);
+    }
+    return lines.length > 0 ? lines.join('\n') : null;
+  } catch {
+    return null;
+  }
 }
 
 /**
  * Decide whether to send keys inline vs as a .txt file attachment.
  * Telegram message body limit is 4096 chars; the delivery_keys template
- * adds ~300 chars of chrome, and formatKeysForTelegram wraps each key in
- * <pre>...</pre> (+~12 chars/key). Budget ~3000 chars of raw key data
- * before falling back to a file. Single very long keys (>2000 chars) also
- * go to file regardless of count.
+ * adds ~300 chars of chrome. Budget ~3000 chars of raw key data before
+ * falling back to a file. Single very long keys (>2000 chars) also go to
+ * file regardless of count.
  */
 function shouldSendAsFile(accounts) {
   const total = accounts.reduce((acc, k) => acc + k.length + 1, 0);
@@ -108,4 +128,6 @@ module.exports = messages;
 module.exports.escapeHtml = escapeHtml;
 module.exports.richifyText = richifyText;
 module.exports.formatKeysForTelegram = formatKeysForTelegram;
+module.exports.buildCustomerInputBlock = buildCustomerInputBlock;
+module.exports.formatCustomerInputPlain = formatCustomerInputPlain;
 module.exports.shouldSendAsFile = shouldSendAsFile;

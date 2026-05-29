@@ -9,6 +9,12 @@ export function formatPrice(amount: number): string {
   return new Intl.NumberFormat('vi-VN', { style: 'currency', currency: 'VND', maximumFractionDigits: 0 }).format(amount)
 }
 
+// Compact price for tight UI (product cards): "9.500đ" — drops the NBSP +
+// currency symbol that Intl currency style emits, so ranges fit on one line.
+export function formatPriceShort(amount: number): string {
+  return `${Math.round(amount).toLocaleString('vi-VN')}đ`
+}
+
 export function formatDate(date: string): string {
   return new Date(date).toLocaleString('vi-VN')
 }

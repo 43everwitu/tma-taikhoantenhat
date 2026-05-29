@@ -6,7 +6,8 @@
     "scripts": {
         "start": "node src/index.js",
         "dev": "node --watch src/index.js",
-        "bot-only": "node src/bot-legacy.js",
+        "build:web": "cd web && npm run build",
+        "start:web": "cd web && npm run start",
         "dev:web": "cd web && npm run dev",
         "dev:mbbank": "cd mbbank-api && python -m uvicorn app.main:app --port 8000",
         "dev:all": "./scripts/dev-all.sh",
