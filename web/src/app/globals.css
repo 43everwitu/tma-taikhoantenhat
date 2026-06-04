@@ -1064,4 +1064,15 @@ body {
     to   { transform: scale(1); opacity: 1; }
   }
   .miniapp-sheet { display: flex; flex-direction: column; gap: .5rem; }
+
+  /* Audit-page row navigation: when ?highlight=<id> matches a row,
+     useHighlightedRowRef toggles this class to briefly flash it. */
+  @keyframes highlightPulse {
+    0%   { background: color-mix(in srgb, var(--brand-gold, #ffc200) 35%, transparent); }
+    40%  { background: color-mix(in srgb, var(--brand-gold, #ffc200) 35%, transparent); }
+    100% { background: transparent; }
+  }
+  .highlight-pulse {
+    animation: highlightPulse 2.5s ease-out;
+  }
 }

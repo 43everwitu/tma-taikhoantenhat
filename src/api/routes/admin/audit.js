@@ -1,20 +1,39 @@
 const { Router } = require('express');
 const auditService = require('../../../services/auditService');
+const { requirePermission } = require('../../middleware/auth');
 
 const router = Router();
 
-// GET /admin/audit-log?adminId=&action=&entityType=&page=1&limit=50
-router.get('/', (req, res) => {
-  const { adminId, action, entityType, page = 1, limit = 50 } = req.query;
-  const offset = (parseInt(page) - 1) * parseInt(limit);
+router.use(requirePermission('audit.read'));
 
-  const result = auditService.getRecent(parseInt(limit), offset, {
+// GET /admin/audit-log/entity-types
+// Distinct entity_type values present in audit_log (for the filter dropdown).
+router.get('/entity-types', (req, res) => {
+  res.json({ success: true, data: auditService.getEntityTypes() });
+});
+
+// GET /admin/audit-log?adminId=&action=&entityType=&from=&to=&q=&page=1&limit=50
+router.get('/', (req, res) => {
+  const { adminId, action, entityType, from, to, q, page = 1, limit = 50 } = req.query;
+  const parsedPage = Math.max(1, parseInt(page) || 1);
+  const parsedLimit = Math.min(200, Math.max(1, parseInt(limit) || 50));
+  const offset = (parsedPage - 1) * parsedLimit;
+  const trimmedQ = typeof q === 'string' ? q.trim().slice(0, 200) : null;
+
+  const result = auditService.getRecent(parsedLimit, offset, {
     adminId: adminId ? parseInt(adminId) : null,
-    action: action || null,
-    entityType: entityType || null,
+    action: typeof action === 'string' && action.trim() ? action.trim() : null,
+    entityType: typeof entityType === 'string' && entityType.trim() ? entityType.trim() : null,
+    from: typeof from === 'string' && from.trim() ? from.trim() : null,
+    to: typeof to === 'string' && to.trim() ? to.trim() : null,
+    q: trimmedQ || null,
   });
 
-  res.json({ success: true, data: result.rows, meta: { page: parseInt(page), limit: parseInt(limit), total: result.total } });
+  res.json({
+    success: true,
+    data: result.rows,
+    meta: { page: parsedPage, limit: parsedLimit, total: result.total },
+  });
 });
 
 module.exports = router;

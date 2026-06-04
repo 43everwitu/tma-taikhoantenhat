@@ -286,7 +286,11 @@ router.post('/:id/cancel', (req, res) => {
   if (!order) return res.status(404).json({ success: false, error: { code: 'NOT_FOUND' } });
   const cancelled = orderService.cancel(id);
   if (!cancelled) return res.status(409).json({ success: false, error: { code: 'INVALID_STATE', message: 'Đơn không thể hủy' } });
-  auditService.log(req.admin.adminId, 'order.cancel', 'order', id, null, req.ip);
+  auditService.log(req.admin.adminId, 'order.cancel', 'order', id, {
+    entityLabel: order.payment_code,
+    total_price: order.total_price,
+    user_id: order.user_id,
+  }, req.ip);
   res.json({ success: true });
 });
 

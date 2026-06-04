@@ -1,6 +1,6 @@
 'use client'
 
-import { ReactNode } from 'react'
+import { ReactNode, Ref } from 'react'
 
 export interface Column<T> {
   /** Header label shown in the table head AND as the row-label in card view. */
@@ -23,10 +23,13 @@ interface Props<T> {
   emptyText?: string
   /** Optional render of action buttons in the card footer. */
   cardActions?: (row: T) => ReactNode
+  /** Optional: bind a ref to the row's wrapping element (used by audit
+   *  highlight). Returns the ref callback for the given row's id. */
+  rowRef?: (id: string | number) => Ref<HTMLElement>
 }
 
 export function ResponsiveTable<T>({
-  rows, columns, rowKey, loading, emptyText = 'Không có dữ liệu', cardActions,
+  rows, columns, rowKey, loading, emptyText = 'Không có dữ liệu', cardActions, rowRef,
 }: Props<T>) {
   if (loading) {
     return (
@@ -57,15 +60,22 @@ export function ResponsiveTable<T>({
               </tr>
             </thead>
             <tbody>
-              {rows.map((row, rIdx) => (
-                <tr key={rowKey(row)} className="border-b border-clay-oat-light hover:bg-clay-oat-light/40 align-top">
-                  {columns.map((col, cIdx) => (
-                    <td key={cIdx} className={`py-3 px-4 ${col.className || ''}`}>
-                      {col.cell(row, rIdx)}
-                    </td>
-                  ))}
-                </tr>
-              ))}
+              {rows.map((row, rIdx) => {
+                const k = rowKey(row)
+                return (
+                  <tr
+                    key={k}
+                    ref={rowRef ? (rowRef(k) as Ref<HTMLTableRowElement>) : undefined}
+                    className="border-b border-clay-oat-light hover:bg-clay-oat-light/40 align-top"
+                  >
+                    {columns.map((col, cIdx) => (
+                      <td key={cIdx} className={`py-3 px-4 ${col.className || ''}`}>
+                        {col.cell(row, rIdx)}
+                      </td>
+                    ))}
+                  </tr>
+                )
+              })}
             </tbody>
           </table>
         </div>
@@ -76,8 +86,13 @@ export function ResponsiveTable<T>({
         {rows.map((row, rIdx) => {
           const primary = columns.find(c => c.primary)
           const others = columns.filter(c => !c.primary && !c.hideOnCard)
+          const k = rowKey(row)
           return (
-            <li key={rowKey(row)} className="clay-card-list-item">
+            <li
+              key={k}
+              ref={rowRef ? (rowRef(k) as Ref<HTMLLIElement>) : undefined}
+              className="clay-card-list-item"
+            >
               {primary && (
                 <div className="font-semibold mb-2">{primary.cell(row, rIdx)}</div>
               )}

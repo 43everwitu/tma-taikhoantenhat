@@ -6,6 +6,7 @@ import { api } from '@/lib/api'
 import { formatPrice } from '@/lib/utils'
 import { Search, Wallet, Check, X } from '@/lib/icons'
 import { ResponsiveTable, Column } from '@/components/ResponsiveTable'
+import { useHighlightId, useHighlightedRowRef } from '@/lib/useHighlightedRow'
 
 interface Topup {
   id: number
@@ -40,6 +41,8 @@ const STATUS_BG: Record<Topup['status'], string> = {
 
 export default function TopupsPage() {
   const queryClient = useQueryClient()
+  const highlightId = useHighlightId()
+  const refFor = useHighlightedRowRef(highlightId)
   const [statusFilter, setStatusFilter] = useState<'' | Topup['status']>('')
   const [search, setSearch] = useState('')
   const [debouncedSearch, setDebouncedSearch] = useState('')
@@ -194,6 +197,7 @@ export default function TopupsPage() {
         loading={isLoading}
         emptyText="Chưa có yêu cầu nạp nào"
         cardActions={cardActions}
+        rowRef={refFor}
       />
     </div>
   )

@@ -106,3 +106,38 @@ export const templates = {
   toggle: (key: string, enabled: boolean) =>
     api.put<{ enabled: boolean }>(`/admin/messages/${key}/toggle`, { enabled }),
 }
+
+export interface AuditRow {
+  id: number
+  admin_id: number | null
+  admin_name: string | null
+  action: string
+  entity_type: string | null
+  entity_id: number | null
+  details: string | null
+  ip_address: string | null
+  created_at: string
+}
+
+export interface AuditListParams {
+  adminId?: number
+  action?: string
+  entityType?: string
+  from?: string
+  to?: string
+  q?: string
+  page?: number
+  limit?: number
+}
+
+export const audit = {
+  list: (params: AuditListParams = {}) => {
+    const qs = new URLSearchParams()
+    for (const [k, v] of Object.entries(params)) {
+      if (v !== undefined && v !== null && v !== '') qs.set(k, String(v))
+    }
+    const tail = qs.toString() ? `?${qs.toString()}` : ''
+    return api.get<AuditRow[]>(`/admin/audit-log${tail}`)
+  },
+  entityTypes: () => api.get<string[]>('/admin/audit-log/entity-types'),
+}

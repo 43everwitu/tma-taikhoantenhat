@@ -6,6 +6,7 @@ import { api } from '@/lib/api'
 import { formatPrice } from '@/lib/utils'
 import { Search, Users, Wallet, X } from '@/lib/icons'
 import { ResponsiveTable, Column } from '@/components/ResponsiveTable'
+import { useHighlightId, useHighlightedRowRef } from '@/lib/useHighlightedRow'
 
 interface UserRow {
   telegram_id: number
@@ -38,6 +39,8 @@ interface UserDetail {
 
 export default function UsersPage() {
   const queryClient = useQueryClient()
+  const highlightId = useHighlightId()
+  const refFor = useHighlightedRowRef(highlightId)
   const [search, setSearch] = useState('')
   const [debouncedSearch, setDebouncedSearch] = useState('')
   const [selectedTgid, setSelectedTgid] = useState<number | null>(null)
@@ -136,6 +139,7 @@ export default function UsersPage() {
         rowKey={(u) => u.telegram_id}
         loading={isLoading}
         emptyText="Không có người dùng nào"
+        rowRef={refFor}
       />
 
       {/* Detail drawer */}

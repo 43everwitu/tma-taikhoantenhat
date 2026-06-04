@@ -112,12 +112,20 @@ router.patch('/:productId/:itemId', validate(z.object({
 router.delete('/:productId/:itemId', (req, res) => {
   const productId = parseInt(req.params.productId);
   const itemId = parseInt(req.params.itemId);
-  const item = db.prepare('SELECT id, is_sold FROM stock WHERE id = ? AND product_id = ?').get(itemId, productId);
+  const item = db.prepare('SELECT id, is_sold, data, variant_id FROM stock WHERE id = ? AND product_id = ?').get(itemId, productId);
   if (!item) return res.status(404).json({ success: false, error: { code: 'NOT_FOUND' } });
   if (item.is_sold) return res.status(409).json({ success: false, error: { code: 'INVALID_STATE', message: 'Hàng đã bán, không thể xoá' } });
 
   db.prepare('DELETE FROM stock WHERE id = ?').run(itemId);
-  auditService.log(req.admin.adminId, 'stock.delete', 'stock', itemId, { product_id: productId }, req.ip);
+  const dataPreview = item.data
+    ? (item.data.length > 60 ? item.data.slice(0, 60) + '…' : item.data)
+    : null;
+  auditService.log(req.admin.adminId, 'stock.delete', 'stock', itemId, {
+    entityLabel: dataPreview,
+    product_id: productId,
+    variant_id: item.variant_id ?? null,
+    was_sold: !!item.is_sold,
+  }, req.ip);
   eventBus.publish({ type: 'stock.change', productId, action: 'delete' });
   res.json({ success: true });
 });

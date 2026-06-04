@@ -7,6 +7,7 @@ import { formatPrice } from '@/lib/utils'
 import Link from 'next/link'
 import { Search, Plus, Pencil, Trash2, Boxes, Sparkles, GripVertical, Copy } from '@/lib/icons'
 import { ResponsiveTable, Column } from '@/components/ResponsiveTable'
+import { useHighlightId, useHighlightedRowRef } from '@/lib/useHighlightedRow'
 import { RichEditor } from '@/components/RichEditor'
 import { RichEditorRich } from '@/components/RichEditorRich'
 import { VariantsManager } from './VariantsManager'
@@ -56,7 +57,7 @@ const emptyForm: ProductForm = {
   name: '',
   category: '',
   price: 0,
-  emoji: '📦',
+  emoji: '',
   description: '',
   longDescription: '',
   usageInstructions: '',
@@ -69,6 +70,8 @@ const emptyForm: ProductForm = {
 
 export default function ProductsPage() {
   const queryClient = useQueryClient()
+  const highlightId = useHighlightId()
+  const refFor = useHighlightedRowRef(highlightId)
   const [showModal, setShowModal] = useState(false)
   const [editingId, setEditingId] = useState<string | null>(null)
   const [form, setForm] = useState<ProductForm>(emptyForm)
@@ -328,7 +331,7 @@ export default function ProductsPage() {
       name: product.name,
       category: product.category,
       price: product.price,
-      emoji: product.emoji || '📦',
+      emoji: product.emoji || '',
       description: product.description || '',
       longDescription: product.longDescription || '',
       usageInstructions: product.usageInstructions || '',
@@ -480,6 +483,7 @@ export default function ProductsPage() {
                   return (
                     <tr
                       key={product.id}
+                      ref={refFor(product.id)}
                       draggable
                       onDragStart={(e) => handleDragStart(e, product.id)}
                       onDragOver={(e) => handleDragOver(e, product.id)}
@@ -575,6 +579,7 @@ export default function ProductsPage() {
           loading={isLoading}
           emptyText="Chưa có sản phẩm nào"
           cardActions={cardActions}
+          rowRef={refFor}
         />
       </div>
 
