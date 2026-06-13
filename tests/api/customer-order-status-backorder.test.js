@@ -127,3 +127,17 @@ test('GET /customer/orders/:id/status marks paid non-backorder variant orders', 
   assert.strictEqual(res.json.data.isBackorder, false);
   assert.strictEqual(Object.hasOwn(res.json.data, 'backorderWaitMode'), false);
 });
+
+test('GET /customer/orders/:id/status omits wait mode for delivered backorder variant orders', async (t) => {
+  const fixture = createPaidOrderFixture(true);
+  t.after(() => cleanupFixture(fixture));
+  db.prepare("UPDATE orders SET status = 'delivered' WHERE id = ?").run(fixture.orderId);
+
+  const res = await requestJson(makeApp(), 'GET', `/customer/orders/${fixture.orderId}/status`);
+
+  assert.strictEqual(res.status, 200, `unexpected body: ${JSON.stringify(res.json)}`);
+  assert.strictEqual(res.json.success, true);
+  assert.strictEqual(res.json.data.status, 'delivered');
+  assert.strictEqual(res.json.data.isBackorder, true);
+  assert.strictEqual(Object.hasOwn(res.json.data, 'backorderWaitMode'), false);
+});

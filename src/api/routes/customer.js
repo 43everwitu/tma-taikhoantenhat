@@ -229,7 +229,9 @@ router.get('/orders/:id/status', (req, res) => {
     ? db.prepare('SELECT is_backorder FROM product_variants WHERE id = ?').get(order.variant_id)
     : null;
   const isBackorder = !!variant?.is_backorder;
-  const backorderWaitMode = isBackorder ? getBackorderWaitMode() : undefined;
+  const backorderWaitMode = order.status === 'paid' && isBackorder
+    ? getBackorderWaitMode()
+    : undefined;
 
   // Derive QR from the stored payment_code so what the customer scans matches
   // what the poller searches for in MBBank transactions.
