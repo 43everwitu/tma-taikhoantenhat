@@ -35,6 +35,7 @@ module.exports = {
       max_memory_restart: '512M',
       env: {
         NODE_ENV: 'production',
+        TZ: 'Asia/Ho_Chi_Minh',
       },
       error_file: path.join(logsDir, 'pm2-api-error.log'),
       out_file: path.join(logsDir, 'pm2-api-out.log'),
@@ -52,6 +53,7 @@ module.exports = {
       max_memory_restart: '768M',
       env: {
         NODE_ENV: 'production',
+        TZ: 'Asia/Ho_Chi_Minh',
         PORT: String(WEB_PORT),
         API_BACKEND_URL,
       },
