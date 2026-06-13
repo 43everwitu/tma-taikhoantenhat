@@ -55,9 +55,24 @@ function collectTargets() {
   const transactions = orderIds.length
     ? db.prepare(`SELECT id FROM transactions WHERE matched_order_id IN (${placeholders(orderIds)})`).all(...orderIds)
     : [];
+  const notifications = db.prepare('SELECT id FROM notifications WHERE user_id = ?').all(TEST_USER_ID);
+  const walletTopups = db.prepare('SELECT id FROM wallet_topups WHERE user_id = ?').all(TEST_USER_ID);
+  const userProductFollows = db.prepare('SELECT user_id, product_id FROM product_follows WHERE user_id = ?').all(TEST_USER_ID);
   const targetUser = db.prepare('SELECT telegram_id FROM users WHERE telegram_id = ?').get(TEST_USER_ID);
 
-  return { products, productIds, orders, orderIds, nonTestUserOrders, stockRows, transactions, targetUser };
+  return {
+    products,
+    productIds,
+    orders,
+    orderIds,
+    nonTestUserOrders,
+    stockRows,
+    transactions,
+    notifications,
+    walletTopups,
+    userProductFollows,
+    targetUser,
+  };
 }
 
 function printCounts(label, targets) {
@@ -68,6 +83,9 @@ function printCounts(label, targets) {
   console.log(`non-test-user orders via product rule: ${targets.nonTestUserOrders.length}`);
   console.log(`target stock rows: ${targets.stockRows.length}`);
   console.log(`target transactions: ${targets.transactions.length}`);
+  console.log(`target notifications: ${targets.notifications.length}`);
+  console.log(`target wallet topups: ${targets.walletTopups.length}`);
+  console.log(`target user product follows: ${targets.userProductFollows.length}`);
 }
 
 function createBackup() {
@@ -93,6 +111,9 @@ function runDelete(targets) {
       db.prepare(`DELETE FROM product_follows WHERE product_id IN (${placeholders(targets.productIds)})`).run(...targets.productIds);
       db.prepare(`DELETE FROM products WHERE id IN (${placeholders(targets.productIds)})`).run(...targets.productIds);
     }
+    db.prepare('DELETE FROM notifications WHERE user_id = ?').run(TEST_USER_ID);
+    db.prepare('DELETE FROM wallet_topups WHERE user_id = ?').run(TEST_USER_ID);
+    db.prepare('DELETE FROM product_follows WHERE user_id = ?').run(TEST_USER_ID);
     const remaining = db.prepare('SELECT COUNT(*) AS c FROM orders WHERE user_id = ?').get(TEST_USER_ID).c;
     if (remaining === 0) db.prepare('DELETE FROM users WHERE telegram_id = ?').run(TEST_USER_ID);
   });
