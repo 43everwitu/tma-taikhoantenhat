@@ -15,7 +15,7 @@ Order `100479` has already been confirmed manually. This change must prevent fut
 ## Goals
 
 - Query MBBank using the Vietnam calendar date, `Asia/Ho_Chi_Minh`.
-- Set the Node/PM2 runtime timezone to `Asia/Ho_Chi_Minh` so logs, SQLite runtime functions, and process-local date behavior are consistent.
+- Set the Node/PM2 runtime timezone to `Asia/Ho_Chi_Minh` so logs, process-local date behavior, and SQLite localtime modifiers use the Vietnam timezone.
 - Keep the existing payment matching policy unchanged: pending orders, recently expired orders, topups, amount checks, and delivery behavior stay as-is.
 - Verify the boundary case where UTC date is still `2026-06-12` but Vietnam date is already `2026-06-13`.
 - Per operator request, any temporary test case added only for this verification should be removed after the fix is validated.
@@ -36,7 +36,7 @@ Use both code-level and runtime-level timezone fixes.
 3. Set `TZ=Asia/Ho_Chi_Minh` in PM2 configuration.
 4. Document the expected `TZ` value in `.env.example` if that file already carries deployment/runtime env hints.
 
-The code-level fix is the critical path because `toISOString()` ignores process timezone. The runtime `TZ` setting is still useful for consistency across logs, SQLite `datetime('now', ...)` behavior, and future date code that uses local time.
+The code-level fix is the critical path because `toISOString()` ignores process timezone. The runtime `TZ` setting is still useful for logs, process-local date behavior, and SQLite localtime modifiers. SQLite `datetime('now')` and `CURRENT_TIMESTAMP` remain UTC.
 
 ## Data Flow
 

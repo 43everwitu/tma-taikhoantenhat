@@ -4,7 +4,7 @@
 
 **Goal:** Make automatic MBBank polling use the Vietnam banking date and run the production Node processes with `TZ=Asia/Ho_Chi_Minh`.
 
-**Architecture:** Keep the existing poller flow intact and replace only the date source used for the MBBank request. Add process-level timezone configuration in PM2 and `.env.example` so runtime logs/SQLite/local dates are consistent without relying on OS timezone changes.
+**Architecture:** Keep the existing poller flow intact and replace only the date source used for the MBBank request. Add process-level timezone configuration in PM2 and `.env.example` so logs, process-local date behavior, and SQLite localtime modifiers use the Vietnam timezone without relying on OS timezone changes. SQLite `datetime('now')` and `CURRENT_TIMESTAMP` remain UTC.
 
 **Tech Stack:** Node.js 22, built-in `Intl.DateTimeFormat`, PM2 ecosystem config, Node built-in test runner (`node --test`).
 
@@ -166,8 +166,8 @@ Expected: commit includes `src/services/paymentPoller.js` only.
 In `.env.example`, under the API server and web env section after `NODE_ENV=development`, add:
 
 ```dotenv
-# Runtime timezone for logs, SQLite datetime('now'), and local Date behavior.
-# Keep this aligned with Vietnam banking days used by the payment poller.
+# Runtime timezone for logs, local Date behavior, and SQLite localtime modifiers.
+# SQLite datetime('now')/CURRENT_TIMESTAMP remain UTC.
 TZ=Asia/Ho_Chi_Minh
 ```
 
