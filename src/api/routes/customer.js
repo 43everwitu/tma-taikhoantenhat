@@ -6,6 +6,7 @@ const paymentService = require('../../services/paymentService');
 const userService = require('../../services/userService');
 const topupService = require('../../services/topupService');
 const discountService = require('../../services/discountService');
+const { getBackorderWaitMode } = require('../../utils/backorderWaitWindow');
 const { requireCustomer, optionalCustomer } = require('../middleware/auth');
 const { validate } = require('../middleware/validate');
 
@@ -224,6 +225,11 @@ router.get('/orders/:id/status', (req, res) => {
   if (!order) return res.status(404).json({ success: false, error: { code: 'NOT_FOUND' } });
 
   const product = db.prepare('SELECT * FROM products WHERE id = ?').get(order.product_id);
+  const variant = order.variant_id
+    ? db.prepare('SELECT is_backorder FROM product_variants WHERE id = ?').get(order.variant_id)
+    : null;
+  const isBackorder = !!variant?.is_backorder;
+  const backorderWaitMode = isBackorder ? getBackorderWaitMode() : undefined;
 
   // Derive QR from the stored payment_code so what the customer scans matches
   // what the poller searches for in MBBank transactions.
@@ -259,6 +265,8 @@ router.get('/orders/:id/status', (req, res) => {
     expiresAt: order.expires_at,
     productName: product ? product.name : '',
     quantity: order.quantity,
+    isBackorder,
+    backorderWaitMode,
     accounts,
     usageInstructions: order.status === 'delivered' && product ? (product.usage_instructions || null) : undefined,
   }});
