@@ -64,7 +64,7 @@ Updated flow:
 
 Verification should cover the exact boundary that caused the issue:
 
-- Simulate a timestamp such as `2026-06-12T17:48:11.000Z`.
+- Simulate a UTC evening timestamp that is already the next calendar day in Vietnam.
 - Assert the poller request body uses `from_date: "2026-06-13"` and `to_date: "2026-06-13"`.
 - Run existing payment poller recovery tests to make sure late-expired matching behavior still works.
 

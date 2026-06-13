@@ -25,23 +25,24 @@
 
 - [ ] **Step 1: Add the temporary failing boundary test**
 
-Append this test to `tests/services/paymentPollerLateRecovery.test.js`:
+Append a focused temporary boundary test to `tests/services/paymentPollerLateRecovery.test.js`:
 
 ```js
-test('temporary: poller queries MBBank using Vietnam calendar date', async (t) => {
+test('temporary boundary test: poller queries MBBank using Vietnam calendar date', async (t) => {
   const poller = new PaymentPoller(db, makeBot());
   let requestBody = null;
   const realFetch = global.fetch;
   const RealDate = global.Date;
+  const boundaryUtcTimestamp = '<a UTC evening timestamp that is already the next calendar day in Vietnam>';
 
   class FakeDate extends RealDate {
     constructor(...args) {
-      if (args.length === 0) return new RealDate('2026-06-12T17:48:11.000Z');
+      if (args.length === 0) return new RealDate(boundaryUtcTimestamp);
       return new RealDate(...args);
     }
 
     static now() {
-      return new RealDate('2026-06-12T17:48:11.000Z').getTime();
+      return new RealDate(boundaryUtcTimestamp).getTime();
     }
 
     static parse(value) {
@@ -132,7 +133,7 @@ Expected: PASS.
 
 - [ ] **Step 5: Remove the temporary test**
 
-Delete only the `temporary: poller queries MBBank using Vietnam calendar date` test block from `tests/services/paymentPollerLateRecovery.test.js`.
+Delete only the temporary boundary test block from `tests/services/paymentPollerLateRecovery.test.js`.
 
 - [ ] **Step 6: Run existing payment tests after deleting the temporary test**
 
@@ -251,7 +252,7 @@ Expected: commit includes only `ecosystem.config.cjs` and `.env.example`.
 Run:
 
 ```bash
-rg -n "temporary: poller queries MBBank|2026-06-12T17:48:11.000Z" tests/services/paymentPollerLateRecovery.test.js
+rg -n "temporary boundary test|boundaryUtcTimestamp" tests/services/paymentPollerLateRecovery.test.js
 ```
 
 Expected: no matches and exit code `1`.
