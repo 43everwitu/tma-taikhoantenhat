@@ -4,6 +4,7 @@ import { useEffect, useState } from 'react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { api } from '@/lib/api'
 import { MediaLibrary } from '@/components/admin/MediaLibrary'
+import { RichEditorBasic } from '@/components/RichEditorBasic'
 import { useToast } from '@/components/Toast'
 import { DndContext, closestCenter, KeyboardSensor, PointerSensor, useSensor, useSensors, type DragEndEvent } from '@dnd-kit/core'
 import { arrayMove, SortableContext, sortableKeyboardCoordinates, useSortable, verticalListSortingStrategy } from '@dnd-kit/sortable'
@@ -374,7 +375,11 @@ function VariantEditModal({ productId, variant, onClose, onSaved }: {
 
         <label className="block text-sm">
           <span className="text-xs opacity-70 mb-1 inline-block">Mô tả ngắn</span>
-          <textarea value={form.description} onChange={(e) => setForm({ ...form, description: e.target.value })} rows={2} className="clay-input w-full text-sm" />
+          <RichEditorBasic
+            value={form.description}
+            onChange={(html) => setForm({ ...form, description: html })}
+            placeholder="Mô tả ngắn cho biến thể..."
+          />
         </label>
 
         <div className="grid grid-cols-2 gap-2">
