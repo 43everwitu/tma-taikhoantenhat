@@ -19,6 +19,8 @@ interface OrderStatus {
   totalPrice: number; paymentCode: string; qrUrl: string; bankName: string; expiresAt: string
   accountNumber?: string; accountName?: string
   productName: string; quantity: number
+  isBackorder?: boolean
+  backorderWaitMode?: 'business_hours' | 'after_hours'
   accounts?: string[]; usageInstructions?: string | null
 }
 
@@ -93,8 +95,32 @@ export default function OrderDetailPage() {
           <div className="mb-2 inline-flex p-2.5 rounded-full" style={{ background: 'var(--brand-gold-soft)', color: 'var(--brand-gold-deep)' }}>
             <Icon name="clock" size={22} strokeWidth={1.5} />
           </div>
-          <p className="text-sm font-medium">Đang xử lý đơn hàng…</p>
-          <p className="text-xs opacity-80 mt-1">Key sẽ giao trong giây lát.</p>
+          {order.isBackorder ? (
+            order.backorderWaitMode === 'after_hours' ? (
+              <>
+                <p className="text-sm font-medium">Đơn hàng sẽ được xử lý lúc 9:00 sáng.</p>
+                <p className="text-xs opacity-80 mt-1">Shop sẽ thông báo ngay khi đơn hoàn thành.</p>
+              </>
+            ) : (
+              <>
+                <p className="text-sm font-medium">Thanh toán đã được ghi nhận.</p>
+                <p className="text-xs opacity-80 mt-1">
+                  Shop sẽ xử lý đơn hàng và thông báo khi hoàn thành. Thời gian dự kiến: 30-60 phút, hoặc theo mô tả sản phẩm.
+                </p>
+                <p className="text-xs opacity-80 mt-2">
+                  Cần hỗ trợ? Liên hệ{' '}
+                  <a href="https://t.me/taikhoantenhat" target="_blank" rel="noopener noreferrer" className="font-semibold underline underline-offset-2">
+                    @taikhoantenhat
+                  </a>
+                </p>
+              </>
+            )
+          ) : (
+            <>
+              <p className="text-sm font-medium">Đang xử lý đơn hàng…</p>
+              <p className="text-xs opacity-80 mt-1">Key sẽ giao trong giây lát.</p>
+            </>
+          )}
         </div>
       )}
 
