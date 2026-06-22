@@ -45,6 +45,18 @@ function formatDateInTimeZone(date, timeZone = VIETNAM_TIME_ZONE) {
   return `${values.year}-${values.month}-${values.day}`;
 }
 
+function parseTransactionInstant(value) {
+  if (
+    typeof value !== 'string'
+    || !/(Z|[+-]\d{2}:?\d{2})$/.test(value)
+  ) {
+    return null;
+  }
+
+  const date = new Date(value);
+  return Number.isNaN(date.getTime()) ? null : date;
+}
+
 function isEligibleOrder(order, transactionAt, amount) {
   if (order.deleted_at) return false;
   if (order.payment_method !== 'bank' && order.payment_method !== null) return false;
@@ -62,8 +74,8 @@ function isEligibleOrder(order, transactionAt, amount) {
 }
 
 function matchMemoLessTransaction(transaction, orders) {
-  const transactionAt = new Date(transaction.transactionTime);
-  if (!transaction.transactionTime || Number.isNaN(transactionAt.getTime())) {
+  const transactionAt = parseTransactionInstant(transaction.transactionTime);
+  if (!transactionAt) {
     return {
       kind: 'review',
       reason: 'missing_transaction_time',
@@ -117,8 +129,10 @@ function matchMemoLessTransaction(transaction, orders) {
 }
 
 function buildTransactionQuery(orders, topups, now = new Date()) {
-  const createdDates = [...orders, ...topups]
-    .map(row => parseSqliteUtc(row.created_at))
+  const createdDates = [
+    ...orders.map(row => parseSqliteUtc(row.created_at)),
+    ...topups.map(row => parseSqliteUtc(row.requested_at)),
+  ]
     .filter(Boolean);
   const earliest = createdDates.length
     ? new Date(Math.min(...createdDates.map(date => date.getTime())))

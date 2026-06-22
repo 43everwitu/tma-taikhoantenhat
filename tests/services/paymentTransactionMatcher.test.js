@@ -110,6 +110,21 @@ test('missing or invalid transaction timestamp requires review', () => {
   }
 });
 
+test('transaction timestamp without UTC or numeric offset requires review', () => {
+  for (const transactionTime of [
+    '2026-06-21T21:30:12',
+    '2026-06-21 21:30:12',
+  ]) {
+    const result = matchMemoLessTransaction(tx({ transactionTime }), [order()]);
+    assert.deepStrictEqual(result, {
+      kind: 'review',
+      reason: 'missing_transaction_time',
+      candidates: [],
+      candidateOrderIds: [],
+    });
+  }
+});
+
 test('transaction time boundaries are inclusive through expiry plus 24 hours', () => {
   const cases = [
     ['2026-06-21T21:27:34Z', 'none'],
@@ -225,6 +240,21 @@ test('buildTransactionQuery uses a lower topup amount and earliest valid date', 
 
   assert.deepStrictEqual(result, {
     from_date: '2026-06-22',
+    to_date: '2026-06-22',
+    min_amount: 40000,
+    sort_order: 'desc',
+  });
+});
+
+test('buildTransactionQuery reads topup requested_at for the query start date', () => {
+  const result = buildTransactionQuery(
+    [],
+    [{ amount: 50000, requested_at: '2026-06-20 20:00:00' }],
+    new Date('2026-06-22T01:00:00Z'),
+  );
+
+  assert.deepStrictEqual(result, {
+    from_date: '2026-06-21',
     to_date: '2026-06-22',
     min_amount: 40000,
     sort_order: 'desc',
