@@ -9,8 +9,14 @@ const renewalReminderLogService = require('./renewalReminderLogService');
 
 let bot = null;
 let timer = null;
+let inFlightSweep = null;
+const confirmedSentStockIds = new Set();
 
 function init(b) { bot = b; }
+
+function emptySummary() {
+  return { scanned: 0, sent: 0, skipped: 0, failed: 0, exhausted: 0 };
+}
 
 function getReminderDays() {
   const row = db.prepare("SELECT value FROM settings WHERE key = 'key_expiry_reminder_days'").get();
@@ -23,8 +29,8 @@ function getSupportContact() {
   return row?.value || '@admin';
 }
 
-async function sweep() {
-  if (!bot) return { sent: 0 };
+async function runSweep() {
+  if (!bot) return emptySummary();
   const reminderDays = getReminderDays();
   const support = getSupportContact();
 
@@ -49,7 +55,7 @@ async function sweep() {
         SELECT 1
         FROM renewal_reminder_logs r
         WHERE r.stock_id = s.id
-          AND r.status = 'exhausted'
+          AND r.status IN ('sent', 'sent_legacy', 'skipped', 'exhausted')
       )
       AND DATE(s.sold_at, '+' || (s.duration_days - ?) || ' days') <= DATE('now')
       AND DATE(s.sold_at, '+' || s.duration_days || ' days') >= DATE('now')
@@ -60,6 +66,59 @@ async function sweep() {
     INSERT INTO notifications (user_id, type, title, body, data, channel, sent_telegram, sent_web)
     VALUES (?, 'renewal_reminder', ?, ?, ?, 'all', ?, 1)
   `);
+  const getExpiryDate = db.prepare(
+    `SELECT DATE(?, '+' || ? || ' days') AS d`
+  );
+  const persistSkipped = db.transaction((r, order, lifecycle, expiryDate) => {
+    renewalReminderLogService.insertLog({
+      stockId: r.id,
+      orderId: order?.id ?? null,
+      userId: r.sold_to,
+      productId: r.product_id,
+      productName: r.product_name,
+      expiryDate,
+      daysBeforeExpiry: lifecycle?.remainingDays ?? null,
+      status: 'skipped',
+      errorMessage: 'Template bot.expiry_reminder disabled',
+    });
+    markSent.run(r.id);
+  });
+  const persistSuccessfulSend = db.transaction((r, order, lifecycle, expiryDate, body) => {
+    let notificationId = null;
+    if (order && lifecycle?.renewUrl) {
+      const notificationBody = `Đơn #${order.id} còn ${Math.max(0, lifecycle.remainingDays)} ngày sử dụng. Gia hạn trước ${lifecycle.expiryDate} để tránh gián đoạn.`;
+      const notification = insertNotification.run(
+        r.sold_to,
+        `${r.product_name} sắp hết hạn`,
+        notificationBody,
+        JSON.stringify({
+          orderId: String(order.id),
+          productId: String(r.product_id),
+          productSlug: lifecycle.productSlug,
+          expiryDate: lifecycle.expiryDate,
+          remainingDays: lifecycle.remainingDays,
+          renewUrl: lifecycle.renewUrl,
+          orderUrl: lifecycle.orderUrl,
+        }),
+        1,
+      );
+      notificationId = notification.lastInsertRowid;
+    }
+    renewalReminderLogService.insertLog({
+      stockId: r.id,
+      orderId: order?.id ?? null,
+      userId: r.sold_to,
+      productId: r.product_id,
+      productName: r.product_name,
+      expiryDate: lifecycle?.expiryDate ?? expiryDate,
+      daysBeforeExpiry: lifecycle?.remainingDays ?? null,
+      telegramSent: 1,
+      webNotificationId: notificationId,
+      status: 'sent',
+      messageBody: body,
+    });
+    markSent.run(r.id);
+  });
 
   let sent = 0;
   let skipped = 0;
@@ -69,30 +128,36 @@ async function sweep() {
     let order = null;
     let lifecycle = null;
     let body = null;
-    const expiryDate = db.prepare(
-      `SELECT DATE(?, '+' || ? || ' days') AS d`
-    ).get(r.sold_at, r.duration_days).d;
+    let expiryDate = null;
 
-    if (
-      renewalReminderLogService.countFailedAttempts(r.id)
-      >= renewalReminderLogService.MAX_FAILED_ATTEMPTS
-    ) {
-      if (!renewalReminderLogService.hasExhausted(r.id)) {
-        renewalReminderLogService.insertLog({
-          stockId: r.id,
-          userId: r.sold_to,
-          productId: r.product_id,
-          productName: r.product_name,
-          expiryDate,
-          status: 'exhausted',
-          errorMessage: `Reached ${renewalReminderLogService.MAX_FAILED_ATTEMPTS} failed reminder attempts`,
-        });
-      }
-      exhausted++;
+    if (confirmedSentStockIds.has(r.id)) {
+      console.error(
+        `keyExpiryReminder skipped stock #${r.id}: Telegram send was confirmed but database recovery is still pending`,
+      );
       continue;
     }
 
     try {
+      expiryDate = getExpiryDate.get(r.sold_at, r.duration_days).d;
+      if (
+        renewalReminderLogService.countFailedAttempts(r.id)
+        >= renewalReminderLogService.MAX_FAILED_ATTEMPTS
+      ) {
+        if (!renewalReminderLogService.hasExhausted(r.id)) {
+          renewalReminderLogService.insertLog({
+            stockId: r.id,
+            userId: r.sold_to,
+            productId: r.product_id,
+            productName: r.product_name,
+            expiryDate,
+            status: 'exhausted',
+            errorMessage: `Reached ${renewalReminderLogService.MAX_FAILED_ATTEMPTS} failed reminder attempts`,
+          });
+        }
+        exhausted++;
+        continue;
+      }
+
       // Lookup order id for the user/product window (best-effort; one user
       // may have several orders of the same product).
       order = orderExpiryService.findDeliveredOrderForStock(r);
@@ -105,57 +170,17 @@ async function sweep() {
         supportContact: support,
       });
       if (!body) {
-        renewalReminderLogService.insertLog({
-          stockId: r.id,
-          orderId: order?.id ?? null,
-          userId: r.sold_to,
-          productId: r.product_id,
-          productName: r.product_name,
-          expiryDate,
-          daysBeforeExpiry: lifecycle?.remainingDays ?? null,
-          status: 'skipped',
-          errorMessage: 'Template bot.expiry_reminder disabled',
-        });
-        markSent.run(r.id);
+        persistSkipped(r, order, lifecycle, expiryDate);
         skipped++;
         continue;
       }
+    } catch (err) {
+      console.error(`keyExpiryReminder preflight failed for stock #${r.id}:`, err.message);
+      continue;
+    }
+
+    try {
       await bot.telegram.sendMessage(r.sold_to, body, { parse_mode: 'HTML' });
-      let notificationId = null;
-      if (order && lifecycle?.renewUrl) {
-        const notificationBody = `Đơn #${order.id} còn ${Math.max(0, lifecycle.remainingDays)} ngày sử dụng. Gia hạn trước ${lifecycle.expiryDate} để tránh gián đoạn.`;
-        const notification = insertNotification.run(
-          r.sold_to,
-          `${r.product_name} sắp hết hạn`,
-          notificationBody,
-          JSON.stringify({
-            orderId: String(order.id),
-            productId: String(r.product_id),
-            productSlug: lifecycle.productSlug,
-            expiryDate: lifecycle.expiryDate,
-            remainingDays: lifecycle.remainingDays,
-            renewUrl: lifecycle.renewUrl,
-            orderUrl: lifecycle.orderUrl,
-          }),
-          1,
-        );
-        notificationId = notification.lastInsertRowid;
-      }
-      renewalReminderLogService.insertLog({
-        stockId: r.id,
-        orderId: order?.id ?? null,
-        userId: r.sold_to,
-        productId: r.product_id,
-        productName: r.product_name,
-        expiryDate: lifecycle?.expiryDate ?? expiryDate,
-        daysBeforeExpiry: lifecycle?.remainingDays ?? null,
-        telegramSent: 1,
-        webNotificationId: notificationId,
-        status: 'sent',
-        messageBody: body,
-      });
-      markSent.run(r.id);
-      sent++;
     } catch (err) {
       try {
         renewalReminderLogService.insertLog({
@@ -170,12 +195,69 @@ async function sweep() {
           errorMessage: err.message,
           messageBody: body,
         });
-      } catch {}
+      } catch (logError) {
+        console.error(
+          `keyExpiryReminder Telegram failure log could not be persisted for stock #${r.id}:`,
+          logError.message,
+        );
+        throw logError;
+      }
       failed++;
-      console.error(`keyExpiryReminder failed for stock #${r.id}:`, err.message);
+      console.error(`keyExpiryReminder Telegram send failed for stock #${r.id}:`, err.message);
+      continue;
     }
+
+    confirmedSentStockIds.add(r.id);
+    try {
+      persistSuccessfulSend(r, order, lifecycle, expiryDate, body);
+      confirmedSentStockIds.delete(r.id);
+    } catch (err) {
+      console.error(
+        `keyExpiryReminder Telegram sent but persistence failed for stock #${r.id}:`,
+        err.message,
+      );
+      let recovered = false;
+      try {
+        recovered = markSent.run(r.id).changes > 0;
+      } catch (markerError) {
+        console.error(
+          `keyExpiryReminder sent-marker recovery failed for stock #${r.id}:`,
+          markerError.message,
+        );
+      }
+      try {
+        renewalReminderLogService.insertLog({
+          stockId: r.id,
+          orderId: order?.id ?? null,
+          userId: r.sold_to,
+          productId: r.product_id,
+          productName: r.product_name,
+          expiryDate: lifecycle?.expiryDate ?? expiryDate,
+          daysBeforeExpiry: lifecycle?.remainingDays ?? null,
+          telegramSent: 1,
+          status: 'sent',
+          messageBody: body,
+        });
+        recovered = true;
+      } catch (logError) {
+        console.error(
+          `keyExpiryReminder sent-log recovery failed for stock #${r.id}:`,
+          logError.message,
+        );
+      }
+      if (recovered) confirmedSentStockIds.delete(r.id);
+    }
+    sent++;
   }
   return { scanned: rows.length, sent, skipped, failed, exhausted };
+}
+
+function sweep() {
+  if (inFlightSweep) return inFlightSweep;
+  inFlightSweep = runSweep().finally(() => {
+    inFlightSweep = null;
+  });
+  return inFlightSweep;
 }
 
 // Compute ms until next 09:00 Asia/Ho_Chi_Minh (UTC+7, no DST).

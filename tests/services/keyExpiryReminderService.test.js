@@ -244,3 +244,226 @@ test('three failed attempts become exhausted without a fourth send or duplicate 
   const stock = db.prepare('SELECT reminder_sent_at FROM stock WHERE id = ?').get(seed.stockId);
   assert.strictEqual(stock.reminder_sent_at, null);
 });
+
+test('sweep without a bot returns the full empty summary', async () => {
+  const service = freshService();
+
+  const result = await service.sweep();
+
+  assert.deepStrictEqual(result, {
+    scanned: 0,
+    sent: 0,
+    skipped: 0,
+    failed: 0,
+    exhausted: 0,
+  });
+});
+
+test('concurrent sweeps share one in-flight send and one persisted result', async (t) => {
+  const seed = seedDueReminder();
+  t.after(() => cleanup(seed));
+  let releaseSend;
+  let signalSendStarted;
+  let sendAttempts = 0;
+  const sendStarted = new Promise((resolve) => {
+    signalSendStarted = resolve;
+  });
+  const sendGate = new Promise((resolve) => {
+    releaseSend = resolve;
+  });
+  const service = freshService();
+  service.init({
+    telegram: {
+      async sendMessage() {
+        sendAttempts++;
+        signalSendStarted();
+        await sendGate;
+      },
+    },
+  });
+
+  const firstSweep = service.sweep();
+  await sendStarted;
+  const secondSweep = service.sweep();
+
+  assert.strictEqual(secondSweep, firstSweep);
+  releaseSend();
+  const [firstResult, secondResult] = await Promise.all([firstSweep, secondSweep]);
+
+  assert.deepStrictEqual(firstResult, {
+    scanned: 1,
+    sent: 1,
+    skipped: 0,
+    failed: 0,
+    exhausted: 0,
+  });
+  assert.deepStrictEqual(secondResult, firstResult);
+  assert.strictEqual(sendAttempts, 1);
+
+  const logs = db.prepare('SELECT status FROM renewal_reminder_logs WHERE stock_id = ?').all(seed.stockId);
+  assert.deepStrictEqual(logs.map((log) => log.status), ['sent']);
+  const stock = db.prepare('SELECT reminder_sent_at FROM stock WHERE id = ?').get(seed.stockId);
+  assert.ok(stock.reminder_sent_at);
+});
+
+test('post-send persistence failure recovers sent state without retrying Telegram', async (t) => {
+  const seed = seedDueReminder();
+  t.after(() => cleanup(seed));
+  const renewalReminderLogService = require('../../src/services/renewalReminderLogService');
+  const originalInsertLog = renewalReminderLogService.insertLog;
+  t.after(() => {
+    renewalReminderLogService.insertLog = originalInsertLog;
+  });
+  let failSentLogOnce = true;
+  renewalReminderLogService.insertLog = (input) => {
+    if (input.status === 'sent' && failSentLogOnce) {
+      failSentLogOnce = false;
+      throw new Error('Forced sent log failure');
+    }
+    return originalInsertLog(input);
+  };
+
+  let sendAttempts = 0;
+  const service = freshService();
+  service.init({
+    telegram: {
+      async sendMessage() {
+        sendAttempts++;
+      },
+    },
+  });
+
+  const consoleErrors = [];
+  const originalConsoleError = console.error;
+  console.error = (...args) => consoleErrors.push(args.join(' '));
+  let firstResult;
+  let secondResult;
+  try {
+    firstResult = await service.sweep();
+    secondResult = await service.sweep();
+  } finally {
+    console.error = originalConsoleError;
+  }
+
+  assert.deepStrictEqual(firstResult, {
+    scanned: 1,
+    sent: 1,
+    skipped: 0,
+    failed: 0,
+    exhausted: 0,
+  });
+  assert.deepStrictEqual(secondResult, {
+    scanned: 0,
+    sent: 0,
+    skipped: 0,
+    failed: 0,
+    exhausted: 0,
+  });
+  assert.strictEqual(sendAttempts, 1);
+  assert.ok(consoleErrors.some((message) => message.includes('Telegram sent but persistence failed')));
+
+  const logs = db.prepare(`
+    SELECT status, telegram_sent
+    FROM renewal_reminder_logs
+    WHERE stock_id = ?
+    ORDER BY id
+  `).all(seed.stockId);
+  assert.deepStrictEqual(logs, [{ status: 'sent', telegram_sent: 1 }]);
+  const stock = db.prepare('SELECT reminder_sent_at FROM stock WHERE id = ?').get(seed.stockId);
+  assert.ok(stock.reminder_sent_at);
+});
+
+test('failed Telegram log insertion rejects instead of reporting a recorded failure', async (t) => {
+  const seed = seedDueReminder();
+  t.after(() => cleanup(seed));
+  const renewalReminderLogService = require('../../src/services/renewalReminderLogService');
+  const originalInsertLog = renewalReminderLogService.insertLog;
+  t.after(() => {
+    renewalReminderLogService.insertLog = originalInsertLog;
+  });
+  renewalReminderLogService.insertLog = (input) => {
+    if (input.status === 'failed') {
+      throw new Error('Forced failed log insertion error');
+    }
+    return originalInsertLog(input);
+  };
+
+  const service = freshService();
+  service.init({
+    telegram: {
+      async sendMessage() {
+        throw new Error('Telegram unavailable');
+      },
+    },
+  });
+
+  const originalConsoleError = console.error;
+  console.error = () => {};
+  try {
+    await assert.rejects(service.sweep(), /Forced failed log insertion error/);
+  } finally {
+    console.error = originalConsoleError;
+  }
+
+  const logs = db.prepare('SELECT status FROM renewal_reminder_logs WHERE stock_id = ?').all(seed.stockId);
+  assert.deepStrictEqual(logs, []);
+  const stock = db.prepare('SELECT reminder_sent_at FROM stock WHERE id = ?').get(seed.stockId);
+  assert.strictEqual(stock.reminder_sent_at, null);
+});
+
+test('one row preflight failure does not abort later reminder rows', async (t) => {
+  const firstSeed = seedDueReminder();
+  const secondSeed = seedDueReminder();
+  t.after(() => {
+    cleanup(secondSeed);
+    cleanup(firstSeed);
+  });
+  const renewalReminderLogService = require('../../src/services/renewalReminderLogService');
+  const originalCountFailedAttempts = renewalReminderLogService.countFailedAttempts;
+  t.after(() => {
+    renewalReminderLogService.countFailedAttempts = originalCountFailedAttempts;
+  });
+  let countCalls = 0;
+  renewalReminderLogService.countFailedAttempts = (stockId) => {
+    countCalls++;
+    if (countCalls === 1) {
+      throw new Error('Forced preflight failure');
+    }
+    return originalCountFailedAttempts(stockId);
+  };
+
+  let sendAttempts = 0;
+  const service = freshService();
+  service.init({
+    telegram: {
+      async sendMessage() {
+        sendAttempts++;
+      },
+    },
+  });
+
+  const originalConsoleError = console.error;
+  console.error = () => {};
+  let result;
+  try {
+    result = await service.sweep();
+  } finally {
+    console.error = originalConsoleError;
+  }
+
+  assert.deepStrictEqual(result, {
+    scanned: 2,
+    sent: 1,
+    skipped: 0,
+    failed: 0,
+    exhausted: 0,
+  });
+  assert.strictEqual(sendAttempts, 1);
+  const logs = db.prepare(`
+    SELECT status
+    FROM renewal_reminder_logs
+    WHERE stock_id IN (?, ?)
+    ORDER BY id
+  `).all(firstSeed.stockId, secondSeed.stockId);
+  assert.deepStrictEqual(logs.map((log) => log.status), ['sent']);
+});
