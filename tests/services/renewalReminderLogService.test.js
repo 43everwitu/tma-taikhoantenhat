@@ -49,6 +49,29 @@ function logInput(seed, status) {
   };
 }
 
+test('MAX_FAILED_ATTEMPTS remains 3', () => {
+  assert.strictEqual(renewalReminderLogService.MAX_FAILED_ATTEMPTS, 3);
+});
+
+test('insertLog stores telegramSent true as SQLite integer 1', () => {
+  const seed = seedFixture();
+  try {
+    const result = renewalReminderLogService.insertLog({
+      ...logInput(seed, 'sent'),
+      telegramSent: true,
+    });
+    const row = db.prepare(`
+      SELECT telegram_sent
+      FROM renewal_reminder_logs
+      WHERE id = ?
+    `).get(result.lastInsertRowid);
+
+    assert.strictEqual(row.telegram_sent, 1);
+  } finally {
+    cleanup(seed);
+  }
+});
+
 test('countFailedAttempts counts only failed logs for a stock and ignores sent', () => {
   const seed = seedFixture();
   try {

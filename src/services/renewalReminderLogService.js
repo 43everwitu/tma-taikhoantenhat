@@ -60,7 +60,7 @@ function insertLog({
     productName,
     expiryDate,
     daysBeforeExpiry,
-    telegramSent,
+    telegramSent ? 1 : 0,
     webNotificationId,
     status,
     errorMessage,
