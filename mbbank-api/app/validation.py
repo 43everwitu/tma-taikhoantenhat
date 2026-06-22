@@ -1,11 +1,17 @@
 import re
 from datetime import datetime, timedelta
 from typing import Optional, Any
+from zoneinfo import ZoneInfo
 from pydantic import BaseModel, Field, validator, ValidationError
 from fastapi import HTTPException
 from .logger import log_security_event, get_logger
 
 logger = get_logger("validation")
+VIETNAM_TIME_ZONE = ZoneInfo("Asia/Ho_Chi_Minh")
+
+
+def current_vietnam_date():
+    return datetime.now(VIETNAM_TIME_ZONE).date()
 
 
 class SecureLoginRequest(BaseModel):
@@ -147,15 +153,16 @@ class SecureTransactionsRequest(BaseModel):
             return v
 
         try:
-            date_obj = datetime.strptime(v, "%Y-%m-%d")
+            date_obj = datetime.strptime(v, "%Y-%m-%d").date()
+            today = current_vietnam_date()
 
             # Check if date is not too far in the past (max 2 years)
-            two_years_ago = datetime.now() - timedelta(days=730)
+            two_years_ago = today - timedelta(days=730)
             if date_obj < two_years_ago:
                 raise ValueError('From date cannot be more than 2 years ago')
 
             # Check if date is not in the future
-            if date_obj > datetime.now():
+            if date_obj > today:
                 raise ValueError('From date cannot be in the future')
 
             return v
@@ -172,10 +179,10 @@ class SecureTransactionsRequest(BaseModel):
             return v
 
         try:
-            date_obj = datetime.strptime(v, "%Y-%m-%d")
+            date_obj = datetime.strptime(v, "%Y-%m-%d").date()
 
             # Check if date is not in the future
-            if date_obj > datetime.now():
+            if date_obj > current_vietnam_date():
                 raise ValueError('To date cannot be in the future')
 
             return v
@@ -191,8 +198,8 @@ class SecureTransactionsRequest(BaseModel):
         if v is None or 'from_date' not in values or values['from_date'] is None:
             return v
 
-        from_date = datetime.strptime(values['from_date'], "%Y-%m-%d")
-        to_date = datetime.strptime(v, "%Y-%m-%d")
+        from_date = datetime.strptime(values['from_date'], "%Y-%m-%d").date()
+        to_date = datetime.strptime(v, "%Y-%m-%d").date()
 
         # Check if from_date is before to_date
         if from_date > to_date:
