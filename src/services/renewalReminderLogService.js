@@ -90,24 +90,70 @@ function insertLog(input) {
 function findMissingLegacyLogs({ limit = 500, database } = {}) {
   const db = database || getDefaultDb();
   return db.prepare(`
+    WITH matched_logs AS (
+      SELECT
+        s.id AS stock_id,
+        u.telegram_id AS user_id,
+        p.id AS product_id,
+        p.name AS product_name,
+        s.sold_at,
+        s.duration_days,
+        s.reminder_sent_at,
+        DATE(s.sold_at, '+' || s.duration_days || ' days') AS expiry_date,
+        CAST(
+          julianday(DATE(s.sold_at, '+' || s.duration_days || ' days'))
+          - julianday(DATE(s.reminder_sent_at))
+          AS INTEGER
+        ) AS days_before_expiry,
+        (
+          SELECT o.id
+          FROM orders o
+          WHERE o.user_id = s.sold_to
+            AND o.product_id = s.product_id
+            AND o.status = 'delivered'
+            AND (
+              (o.variant_id IS NULL AND s.variant_id IS NULL)
+              OR o.variant_id = s.variant_id
+            )
+            AND json_valid(o.delivered_keys_json) = 1
+            AND EXISTS (
+              SELECT 1
+              FROM json_each(o.delivered_keys_json) delivered_key
+              WHERE CAST(delivered_key.value AS TEXT) = s.data
+            )
+          ORDER BY o.delivered_at DESC, o.id DESC
+          LIMIT 1
+        ) AS order_id
+      FROM stock s
+      JOIN products p ON p.id = s.product_id
+      JOIN users u ON u.telegram_id = s.sold_to
+      WHERE s.reminder_sent_at IS NOT NULL
+        AND NOT EXISTS (
+          SELECT 1
+          FROM renewal_reminder_logs r
+          WHERE r.stock_id = s.id
+        )
+    )
     SELECT
-      s.id AS stock_id,
-      u.telegram_id AS user_id,
-      p.id AS product_id,
-      p.name AS product_name,
-      s.sold_at,
-      s.duration_days,
-      s.reminder_sent_at
-    FROM stock s
-    JOIN products p ON p.id = s.product_id
-    JOIN users u ON u.telegram_id = s.sold_to
-    WHERE s.reminder_sent_at IS NOT NULL
-      AND NOT EXISTS (
-        SELECT 1
-        FROM renewal_reminder_logs r
-        WHERE r.stock_id = s.id
-      )
-    ORDER BY s.reminder_sent_at ASC, s.id ASC
+      matched_logs.*,
+      (
+        SELECT n.id
+        FROM notifications n
+        WHERE matched_logs.order_id IS NOT NULL
+          AND n.user_id = matched_logs.user_id
+          AND n.type = 'renewal_reminder'
+          AND json_valid(n.data) = 1
+          AND CAST(json_extract(n.data, '$.orderId') AS TEXT)
+            = CAST(matched_logs.order_id AS TEXT)
+          AND ABS(
+            strftime('%s', n.created_at)
+            - strftime('%s', matched_logs.reminder_sent_at)
+          ) <= 300
+        ORDER BY n.id DESC
+        LIMIT 1
+      ) AS web_notification_id
+    FROM matched_logs
+    ORDER BY matched_logs.reminder_sent_at ASC, matched_logs.stock_id ASC
     LIMIT ?
   `).all(limit);
 }
@@ -125,25 +171,22 @@ function backfillMissingLegacyLogs({ apply = false, limit = 1000, database } = {
     WHERE stock_id = ?
     LIMIT 1
   `);
-  const getExpiryDate = db.prepare(`
-    SELECT DATE(?, '+' || ? || ' days') AS expiry_date
-  `);
   const insertAll = db.transaction(() => {
     let created = 0;
 
     for (const row of rows) {
       if (hasLog.get(row.stock_id)) continue;
 
-      const expiryDate = row.sold_at && row.duration_days != null
-        ? getExpiryDate.get(row.sold_at, row.duration_days).expiry_date
-        : null;
       insertLogWithDatabase(db, {
         stockId: row.stock_id,
+        orderId: row.order_id,
         userId: row.user_id,
         productId: row.product_id,
         productName: row.product_name,
-        expiryDate,
+        expiryDate: row.expiry_date,
+        daysBeforeExpiry: row.days_before_expiry,
         telegramSent: 1,
+        webNotificationId: row.web_notification_id,
         status: 'sent_legacy',
         createdAt: row.reminder_sent_at,
       });

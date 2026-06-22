@@ -27,6 +27,7 @@ async function createBackup({
     path.dirname(sourcePath),
     `${path.basename(sourcePath)}.bak-pre-renewal-log-backfill-${nowStamp()}`,
   ),
+  backupDatabase = (database, targetPath) => database.backup(targetPath),
 } = {}) {
   if (!fs.existsSync(sourcePath)) {
     throw new Error(`DB file not found: ${sourcePath}`);
@@ -42,19 +43,22 @@ async function createBackup({
     fileMustExist: true,
   });
   try {
-    await database.backup(destinationPath);
+    await backupDatabase(database, destinationPath);
     return destinationPath;
+  } catch (error) {
+    fs.rmSync(destinationPath, { force: true });
+    throw error;
   } finally {
     database.close();
   }
 }
 
-function openReadOnlyDatabase(sourcePath) {
+function openDatabasePath(sourcePath, { readonly = false } = {}) {
   if (!fs.existsSync(sourcePath)) {
     throw new Error(`DB file not found: ${sourcePath}`);
   }
   return new Database(sourcePath, {
-    readonly: true,
+    readonly,
     fileMustExist: true,
   });
 }
@@ -74,14 +78,14 @@ async function run({
   sourcePath = dbPath,
   limit = DEFAULT_LIMIT,
   createBackupFn = createBackup,
-  openDatabase = openReadOnlyDatabase,
+  openDatabase = openDatabasePath,
   loadService: loadServiceFn = loadService,
   log = console.log,
 } = {}) {
   if (!apply) {
     let database;
     try {
-      database = openDatabase(sourcePath);
+      database = openDatabase(sourcePath, { readonly: true });
       const { backfillMissingLegacyLogs } = loadServiceFn();
       const result = backfillMissingLegacyLogs({ limit, database });
       log(`Missing renewal reminder logs: ${result.scanned}`);
@@ -96,11 +100,21 @@ async function run({
   const backupPath = await createBackupFn({ sourcePath });
   log(`Backup created: ${backupPath}`);
 
-  const { backfillMissingLegacyLogs } = loadServiceFn();
-  const result = backfillMissingLegacyLogs({ apply: true, limit });
-  log(`Created renewal reminder logs: ${result.created}`);
-  logBatchNote(result, limit, log);
-  return result;
+  let database;
+  try {
+    database = openDatabase(sourcePath);
+    const { backfillMissingLegacyLogs } = loadServiceFn();
+    const result = backfillMissingLegacyLogs({
+      apply: true,
+      limit,
+      database,
+    });
+    log(`Created renewal reminder logs: ${result.created}`);
+    logBatchNote(result, limit, log);
+    return result;
+  } finally {
+    if (database && database.open) database.close();
+  }
 }
 
 if (require.main === module) {

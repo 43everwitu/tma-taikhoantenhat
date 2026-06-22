@@ -9,6 +9,7 @@ const Database = require('better-sqlite3');
 const scriptPath = require.resolve('../../scripts/backfill-renewal-logs');
 const servicePath = require.resolve('../../src/services/renewalReminderLogService');
 const standardDatabasePath = require.resolve('../../src/database');
+const runtimeDatabasePath = path.join(__dirname, '..', '..', 'data', 'shop.db');
 
 function freshScript() {
   delete require.cache[scriptPath];
@@ -46,10 +47,28 @@ function createLegacyDatabase(t) {
     CREATE TABLE stock (
       id INTEGER PRIMARY KEY,
       product_id INTEGER NOT NULL,
+      variant_id INTEGER,
+      data TEXT NOT NULL,
       sold_to INTEGER NOT NULL,
       sold_at TEXT,
       duration_days INTEGER,
       reminder_sent_at TEXT
+    );
+    CREATE TABLE orders (
+      id INTEGER PRIMARY KEY,
+      user_id INTEGER NOT NULL,
+      product_id INTEGER NOT NULL,
+      variant_id INTEGER,
+      status TEXT NOT NULL,
+      delivered_at TEXT,
+      delivered_keys_json TEXT
+    );
+    CREATE TABLE notifications (
+      id INTEGER PRIMARY KEY,
+      user_id INTEGER NOT NULL,
+      type TEXT NOT NULL,
+      data TEXT,
+      created_at TEXT
     );
     CREATE TABLE renewal_reminder_logs (
       id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -81,19 +100,51 @@ function createLegacyDatabase(t) {
     INSERT INTO stock (
       id,
       product_id,
+      variant_id,
+      data,
       sold_to,
       sold_at,
       duration_days,
       reminder_sent_at
     )
-    VALUES (?, ?, ?, ?, ?, ?)
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?)
   `).run(
     71,
     41,
+    9,
+    'legacy-key-71',
     898000001,
     '2026-05-21 02:00:00',
     30,
-    '2026-06-20 02:00:00',
+    '2026-06-18 02:00:00',
+  );
+  database.prepare(`
+    INSERT INTO orders (
+      id,
+      user_id,
+      product_id,
+      variant_id,
+      status,
+      delivered_at,
+      delivered_keys_json
+    )
+    VALUES (?, ?, ?, ?, 'delivered', ?, ?)
+  `).run(
+    81,
+    898000001,
+    41,
+    9,
+    '2026-05-21 02:00:00',
+    JSON.stringify(['legacy-key-71']),
+  );
+  database.prepare(`
+    INSERT INTO notifications (id, user_id, type, data, created_at)
+    VALUES (?, ?, 'renewal_reminder', ?, ?)
+  `).run(
+    91,
+    898000001,
+    JSON.stringify({ orderId: '81' }),
+    '2026-06-18 02:01:00',
   );
 
   return { database, sourcePath, tempDir };
@@ -164,6 +215,30 @@ test('WAL-safe backup contains committed schema and row still present in WAL', a
   );
 });
 
+test('failed backup removes a partial destination file', async (t) => {
+  const tempDir = createTempDir(t);
+  const sourcePath = path.join(tempDir, 'shop.db');
+  const destinationPath = path.join(tempDir, 'shop.db.backup');
+  const source = new Database(sourcePath);
+  source.exec('CREATE TABLE baseline (id INTEGER PRIMARY KEY)');
+  source.close();
+
+  const { createBackup } = freshScript();
+  await assert.rejects(
+    createBackup({
+      sourcePath,
+      destinationPath,
+      backupDatabase: async (_database, targetPath) => {
+        fs.writeFileSync(targetPath, 'partial backup');
+        throw new Error('simulated backup failure');
+      },
+    }),
+    /simulated backup failure/,
+  );
+
+  assert.strictEqual(fs.existsSync(destinationPath), false);
+});
+
 test('dry-run uses an injected read-only DB, creates no log, and creates no backup', async (t) => {
   const { database, sourcePath, tempDir } = createLegacyDatabase(t);
   database.close();
@@ -227,14 +302,14 @@ test('apply helper creates exact legacy fields once and remains idempotent', asy
     assert.strictEqual(first.created, 1);
     assert.strictEqual(row.status, 'sent_legacy');
     assert.strictEqual(row.telegram_sent, 1);
-    assert.strictEqual(row.created_at, '2026-06-20 02:00:00');
+    assert.strictEqual(row.created_at, '2026-06-18 02:00:00');
     assert.strictEqual(row.expiry_date, '2026-06-20');
     assert.strictEqual(row.user_id, 898000001);
     assert.strictEqual(row.product_id, 41);
     assert.strictEqual(row.product_name, 'Backfill Renewal Product');
-    assert.strictEqual(row.order_id, null);
-    assert.strictEqual(row.web_notification_id, null);
-    assert.strictEqual(row.days_before_expiry, null);
+    assert.strictEqual(row.order_id, 81);
+    assert.strictEqual(row.web_notification_id, 91);
+    assert.strictEqual(row.days_before_expiry, 2);
     assert.strictEqual(row.error_message, null);
     assert.strictEqual(row.message_body, null);
 
@@ -253,6 +328,72 @@ test('apply helper creates exact legacy fields once and remains idempotent', asy
     assert.strictEqual(second.created, 0);
     assert.strictEqual(total, 1);
   });
+});
+
+test('apply backs up and mutates only the requested source database', async (t) => {
+  const { database, sourcePath, tempDir } = createLegacyDatabase(t);
+  database.close();
+  const runtime = new Database(runtimeDatabasePath, {
+    readonly: true,
+    fileMustExist: true,
+  });
+  const runtimeCountBefore = runtime.prepare(`
+    SELECT COUNT(*) AS count
+    FROM renewal_reminder_logs
+  `).get().count;
+  runtime.close();
+
+  await withoutStandardDatabase(async () => {
+    const { run } = freshScript();
+    const result = await run({
+      apply: true,
+      sourcePath,
+      loadService: () => {
+        const service = freshService();
+        return {
+          backfillMissingLegacyLogs(options) {
+            assert.strictEqual(options.database.readonly, false);
+            return service.backfillMissingLegacyLogs(options);
+          },
+        };
+      },
+      log: () => {},
+    });
+
+    assert.strictEqual(result.scanned, 1);
+    assert.strictEqual(result.created, 1);
+  });
+
+  const backupNames = fs.readdirSync(tempDir)
+    .filter((name) => name.includes('.bak-pre-renewal-log-backfill-'));
+  assert.strictEqual(backupNames.length, 1);
+
+  const backup = new Database(path.join(tempDir, backupNames[0]), {
+    readonly: true,
+    fileMustExist: true,
+  });
+  assert.strictEqual(
+    backup.prepare('SELECT COUNT(*) AS count FROM renewal_reminder_logs').get().count,
+    0,
+  );
+  backup.close();
+
+  const source = new Database(sourcePath, { readonly: true, fileMustExist: true });
+  assert.strictEqual(
+    source.prepare('SELECT COUNT(*) AS count FROM renewal_reminder_logs').get().count,
+    1,
+  );
+  source.close();
+
+  const runtimeAfter = new Database(runtimeDatabasePath, {
+    readonly: true,
+    fileMustExist: true,
+  });
+  assert.strictEqual(
+    runtimeAfter.prepare('SELECT COUNT(*) AS count FROM renewal_reminder_logs').get().count,
+    runtimeCountBefore,
+  );
+  runtimeAfter.close();
 });
 
 test('backup failure prevents loading the service and applying changes', async (t) => {
