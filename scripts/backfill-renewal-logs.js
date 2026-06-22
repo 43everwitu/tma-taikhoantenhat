@@ -1,9 +1,11 @@
 #!/usr/bin/env node
 const fs = require('fs');
 const path = require('path');
+const Database = require('better-sqlite3');
 
 const repoRoot = path.join(__dirname, '..');
 const dbPath = path.join(repoRoot, 'data', 'shop.db');
+const DEFAULT_LIMIT = 1000;
 
 function nowStamp() {
   const date = new Date();
@@ -19,41 +21,96 @@ function nowStamp() {
   ].join('');
 }
 
-function createBackup() {
-  if (!fs.existsSync(dbPath)) {
-    throw new Error(`DB file not found: ${dbPath}`);
+async function createBackup({
+  sourcePath = dbPath,
+  destinationPath = path.join(
+    path.dirname(sourcePath),
+    `${path.basename(sourcePath)}.bak-pre-renewal-log-backfill-${nowStamp()}`,
+  ),
+} = {}) {
+  if (!fs.existsSync(sourcePath)) {
+    throw new Error(`DB file not found: ${sourcePath}`);
+  }
+  if (fs.existsSync(destinationPath)) {
+    const error = new Error(`Backup file already exists: ${destinationPath}`);
+    error.code = 'EEXIST';
+    throw error;
   }
 
-  const backupPath = path.join(
-    repoRoot,
-    'data',
-    `shop.db.bak-pre-renewal-log-backfill-${nowStamp()}`,
-  );
-  fs.copyFileSync(dbPath, backupPath, fs.constants.COPYFILE_EXCL);
-  return backupPath;
+  const database = new Database(sourcePath, {
+    readonly: true,
+    fileMustExist: true,
+  });
+  try {
+    await database.backup(destinationPath);
+    return destinationPath;
+  } finally {
+    database.close();
+  }
 }
 
-function main() {
-  const apply = process.argv.includes('--apply');
-  if (apply && !fs.existsSync(dbPath)) {
-    throw new Error(`DB file not found: ${dbPath}`);
+function openReadOnlyDatabase(sourcePath) {
+  if (!fs.existsSync(sourcePath)) {
+    throw new Error(`DB file not found: ${sourcePath}`);
   }
+  return new Database(sourcePath, {
+    readonly: true,
+    fileMustExist: true,
+  });
+}
 
-  const { backfillMissingLegacyLogs } = require('../src/services/renewalReminderLogService');
+function loadService() {
+  return require('../src/services/renewalReminderLogService');
+}
 
+function logBatchNote(result, limit, log) {
+  if (result.scanned === limit) {
+    log(`Scanned the batch limit (${limit}); another batch may remain.`);
+  }
+}
+
+async function run({
+  apply = process.argv.includes('--apply'),
+  sourcePath = dbPath,
+  limit = DEFAULT_LIMIT,
+  createBackupFn = createBackup,
+  openDatabase = openReadOnlyDatabase,
+  loadService: loadServiceFn = loadService,
+  log = console.log,
+} = {}) {
   if (!apply) {
-    const result = backfillMissingLegacyLogs();
-    console.log(`Missing renewal reminder logs: ${result.scanned}`);
-    console.log('Dry run only. Re-run with --apply to create a backup and backfill these rows.');
-    return;
+    let database;
+    try {
+      database = openDatabase(sourcePath);
+      const { backfillMissingLegacyLogs } = loadServiceFn();
+      const result = backfillMissingLegacyLogs({ limit, database });
+      log(`Missing renewal reminder logs: ${result.scanned}`);
+      logBatchNote(result, limit, log);
+      log('Dry run only. Re-run with --apply to create a backup and backfill these rows.');
+      return result;
+    } finally {
+      if (database && database.open) database.close();
+    }
   }
 
-  const backupPath = createBackup();
-  console.log(`Backup created: ${backupPath}`);
-  const result = backfillMissingLegacyLogs({ apply: true });
-  console.log(`Created renewal reminder logs: ${result.created}`);
+  const backupPath = await createBackupFn({ sourcePath });
+  log(`Backup created: ${backupPath}`);
+
+  const { backfillMissingLegacyLogs } = loadServiceFn();
+  const result = backfillMissingLegacyLogs({ apply: true, limit });
+  log(`Created renewal reminder logs: ${result.created}`);
+  logBatchNote(result, limit, log);
+  return result;
 }
 
 if (require.main === module) {
-  main();
+  run().catch((error) => {
+    console.error(error);
+    process.exitCode = 1;
+  });
 }
+
+module.exports = {
+  createBackup,
+  run,
+};

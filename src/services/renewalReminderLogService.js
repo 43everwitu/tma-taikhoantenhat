@@ -1,8 +1,11 @@
-const db = require('../database');
-
 const MAX_FAILED_ATTEMPTS = 3;
 
+function getDefaultDb() {
+  return require('../database');
+}
+
 function countFailedAttempts(stockId) {
+  const db = getDefaultDb();
   const row = db.prepare(`
     SELECT COUNT(*) AS count
     FROM renewal_reminder_logs
@@ -13,6 +16,7 @@ function countFailedAttempts(stockId) {
 }
 
 function hasExhausted(stockId) {
+  const db = getDefaultDb();
   const row = db.prepare(`
     SELECT 1
     FROM renewal_reminder_logs
@@ -23,7 +27,7 @@ function hasExhausted(stockId) {
   return !!row;
 }
 
-function insertLog({
+function insertLogWithDatabase(db, {
   stockId,
   orderId = null,
   userId,
@@ -79,7 +83,12 @@ function insertLog({
   `).run(...values);
 }
 
-function findMissingLegacyLogs({ limit = 500 } = {}) {
+function insertLog(input) {
+  return insertLogWithDatabase(getDefaultDb(), input);
+}
+
+function findMissingLegacyLogs({ limit = 500, database } = {}) {
+  const db = database || getDefaultDb();
   return db.prepare(`
     SELECT
       s.id AS stock_id,
@@ -103,8 +112,9 @@ function findMissingLegacyLogs({ limit = 500 } = {}) {
   `).all(limit);
 }
 
-function backfillMissingLegacyLogs({ apply = false, limit = 1000 } = {}) {
-  const rows = findMissingLegacyLogs({ limit });
+function backfillMissingLegacyLogs({ apply = false, limit = 1000, database } = {}) {
+  const db = database || getDefaultDb();
+  const rows = findMissingLegacyLogs({ limit, database: db });
   if (!apply) {
     return { scanned: rows.length, created: 0, rows };
   }
@@ -127,7 +137,7 @@ function backfillMissingLegacyLogs({ apply = false, limit = 1000 } = {}) {
       const expiryDate = row.sold_at && row.duration_days != null
         ? getExpiryDate.get(row.sold_at, row.duration_days).expiry_date
         : null;
-      insertLog({
+      insertLogWithDatabase(db, {
         stockId: row.stock_id,
         userId: row.user_id,
         productId: row.product_id,
