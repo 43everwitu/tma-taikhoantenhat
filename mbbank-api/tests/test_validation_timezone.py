@@ -27,8 +27,10 @@ logger_stub.get_logger = lambda _name: DummyLogger()
 missing_module = object()
 previous_fastapi = sys.modules.get("fastapi", missing_module)
 previous_logger = sys.modules.get("app.logger", missing_module)
+previous_validation = sys.modules.get("app.validation", missing_module)
 sys.modules["fastapi"] = fastapi_stub
 sys.modules["app.logger"] = logger_stub
+sys.modules.pop("app.validation", None)
 
 try:
     from app.validation import SecureTransactionsRequest
@@ -42,6 +44,11 @@ finally:
         sys.modules.pop("app.logger", None)
     else:
         sys.modules["app.logger"] = previous_logger
+
+    if previous_validation is missing_module:
+        sys.modules.pop("app.validation", None)
+    else:
+        sys.modules["app.validation"] = previous_validation
 
 
 class FrozenDateTime(RealDateTime):
