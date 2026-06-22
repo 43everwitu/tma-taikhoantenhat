@@ -103,10 +103,54 @@ function findMissingLegacyLogs({ limit = 500 } = {}) {
   `).all(limit);
 }
 
+function backfillMissingLegacyLogs({ apply = false, limit = 1000 } = {}) {
+  const rows = findMissingLegacyLogs({ limit });
+  if (!apply) {
+    return { scanned: rows.length, created: 0, rows };
+  }
+
+  const hasLog = db.prepare(`
+    SELECT 1
+    FROM renewal_reminder_logs
+    WHERE stock_id = ?
+    LIMIT 1
+  `);
+  const getExpiryDate = db.prepare(`
+    SELECT DATE(?, '+' || ? || ' days') AS expiry_date
+  `);
+  const insertAll = db.transaction(() => {
+    let created = 0;
+
+    for (const row of rows) {
+      if (hasLog.get(row.stock_id)) continue;
+
+      const expiryDate = row.sold_at && row.duration_days != null
+        ? getExpiryDate.get(row.sold_at, row.duration_days).expiry_date
+        : null;
+      insertLog({
+        stockId: row.stock_id,
+        userId: row.user_id,
+        productId: row.product_id,
+        productName: row.product_name,
+        expiryDate,
+        telegramSent: 1,
+        status: 'sent_legacy',
+        createdAt: row.reminder_sent_at,
+      });
+      created += 1;
+    }
+
+    return created;
+  });
+
+  return { scanned: rows.length, created: insertAll(), rows };
+}
+
 module.exports = {
   MAX_FAILED_ATTEMPTS,
   countFailedAttempts,
   hasExhausted,
   insertLog,
   findMissingLegacyLogs,
+  backfillMissingLegacyLogs,
 };
