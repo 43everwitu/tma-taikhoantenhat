@@ -1,12 +1,48 @@
 from __future__ import annotations
 
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 from typing import Any, Dict, List, Optional
 import time
 from concurrent.futures import ThreadPoolExecutor, TimeoutError as FutureTimeoutError
+from zoneinfo import ZoneInfo
 
 from pydantic import BaseModel
 from .config import load_settings
+
+
+VIETNAM_TIME_ZONE = ZoneInfo("Asia/Ho_Chi_Minh")
+
+
+def _format_utc_iso(value: datetime) -> str:
+    utc_value = value.astimezone(timezone.utc).replace(microsecond=0)
+    return utc_value.isoformat().replace("+00:00", "Z")
+
+
+def normalize_bank_transaction_time(raw_value: Any) -> Optional[str]:
+    if raw_value is None:
+        return None
+
+    value = str(raw_value).strip()
+    if not value:
+        return None
+
+    for pattern in ("%d/%m/%Y %H:%M:%S", "%d/%m/%Y %H:%M"):
+        try:
+            local_value = datetime.strptime(value, pattern).replace(
+                tzinfo=VIETNAM_TIME_ZONE
+            )
+            return _format_utc_iso(local_value)
+        except ValueError:
+            pass
+
+    try:
+        iso_value = datetime.fromisoformat(value.replace("Z", "+00:00"))
+    except ValueError:
+        return None
+
+    if iso_value.tzinfo is None:
+        return None
+    return _format_utc_iso(iso_value)
 
 
 class LoginRequest(BaseModel):
@@ -82,23 +118,6 @@ class MBBankClient:
             if not all_transactions:
                 return []
 
-            # Convert transaction objects to standardized format
-            def tx_to_standard(tx):
-                tx_dict = self._to_mapping(tx)
-                if not tx_dict:
-                    return None
-
-                # Convert to standard format matching the image example
-                credit_amount = self._parse_amount(
-                    tx_dict.get('creditAmount'))
-
-                return {
-                    "transactionNumber": tx_dict.get('refNo', ''),
-                    "amount": credit_amount,  # Only return credit amount for IN transactions
-                    "description": tx_dict.get('description', ''),
-                    "type": "IN"  # This method only returns credit transactions
-                }
-
             # Process all transactions and filter credits
             standardized_transactions = []
             for tx in all_transactions:
@@ -109,9 +128,11 @@ class MBBankClient:
                 credit_amount = self._parse_amount(tx_dict.get('creditAmount'))
 
                 if credit_amount > 0:  # Only credit transactions (IN)
-                    std_tx = tx_to_standard(tx)
-                    if std_tx:
-                        standardized_transactions.append(std_tx)
+                    standardized_transactions.append(
+                        self._standardize_transaction(
+                            tx, "IN", credit_amount
+                        )
+                    )
 
             # Apply smart filters
             filtered_transactions = self._apply_filters(
@@ -151,44 +172,29 @@ class MBBankClient:
             if not all_transactions:
                 return []
 
-            # Convert transaction objects to standardized format
-            def tx_to_standard(tx):
+            # Process all transactions
+            standardized_transactions = []
+            for tx in all_transactions:
                 tx_dict = self._to_mapping(tx)
                 if not tx_dict:
-                    return None
+                    continue
 
-                # Convert to standard format matching the image example
                 credit_amount = self._parse_amount(
                     tx_dict.get('creditAmount'))
                 debit_amount = self._parse_amount(tx_dict.get('debitAmount'))
 
-                # Determine transaction type and amount based on MBBank logic
                 if credit_amount > 0:
-                    # Credit transaction = money IN
-                    return {
-                        "transactionNumber": tx_dict.get('refNo', ''),
-                        "amount": credit_amount,
-                        "description": tx_dict.get('description', ''),
-                        "type": "IN"
-                    }
+                    standardized_transactions.append(
+                        self._standardize_transaction(
+                            tx, "IN", credit_amount
+                        )
+                    )
                 elif debit_amount > 0:
-                    # Debit transaction = money OUT
-                    return {
-                        "transactionNumber": tx_dict.get('refNo', ''),
-                        "amount": debit_amount,
-                        "description": tx_dict.get('description', ''),
-                        "type": "OUT"
-                    }
-                else:
-                    # No amount, skip this transaction
-                    return None
-
-            # Process all transactions
-            standardized_transactions = []
-            for tx in all_transactions:
-                std_tx = tx_to_standard(tx)
-                if std_tx:
-                    standardized_transactions.append(std_tx)
+                    standardized_transactions.append(
+                        self._standardize_transaction(
+                            tx, "OUT", debit_amount
+                        )
+                    )
 
             # Apply smart filters
             filtered_transactions = self._apply_filters(
@@ -263,6 +269,27 @@ class MBBankClient:
             return raw_dict
 
         return {}
+
+    def _standardize_transaction(
+        self,
+        tx: Any,
+        transaction_type: str,
+        amount: float
+    ) -> Dict[str, Any]:
+        tx_dict = self._to_mapping(tx)
+        transaction_date_raw = tx_dict.get("transactionDate")
+        posting_date_raw = tx_dict.get("postingDate")
+        source_time = transaction_date_raw or posting_date_raw
+
+        return {
+            "transactionNumber": tx_dict.get("refNo", ""),
+            "amount": amount,
+            "description": tx_dict.get("description", ""),
+            "type": transaction_type,
+            "transactionTime": normalize_bank_transaction_time(source_time),
+            "transactionDateRaw": transaction_date_raw,
+            "postingDateRaw": posting_date_raw,
+        }
 
     def _parse_amount(self, amount: Any) -> float:
         if amount in (None, ""):
