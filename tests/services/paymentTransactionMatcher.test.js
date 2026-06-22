@@ -147,6 +147,22 @@ test('excludes ineligible orders and accepts null payment method as bank', () =>
   assert.strictEqual(nullMethod.kind, 'unique');
 });
 
+test('rejects empty and missing payment methods while accepting null', () => {
+  for (const payment_method of ['', undefined]) {
+    const result = matchMemoLessTransaction(
+      tx(),
+      [order({ payment_method })],
+    );
+    assert.strictEqual(result.kind, 'none');
+  }
+
+  const nullMethod = matchMemoLessTransaction(
+    tx(),
+    [order({ payment_method: null })],
+  );
+  assert.strictEqual(nullMethod.kind, 'unique');
+});
+
 test('parseSqliteUtc parses only valid SQLite timestamps as UTC', () => {
   assert.strictEqual(
     parseSqliteUtc('2026-06-21 21:27:35').toISOString(),

@@ -47,7 +47,7 @@ function formatDateInTimeZone(date, timeZone = VIETNAM_TIME_ZONE) {
 
 function isEligibleOrder(order, transactionAt, amount) {
   if (order.deleted_at) return false;
-  if (order.payment_method && order.payment_method !== 'bank') return false;
+  if (order.payment_method !== 'bank' && order.payment_method !== null) return false;
   if (order.status !== 'pending' && order.status !== 'expired') return false;
 
   const createdAt = parseSqliteUtc(order.created_at);
