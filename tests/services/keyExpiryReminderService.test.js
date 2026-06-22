@@ -2,55 +2,92 @@ const assert = require('node:assert');
 const test = require('node:test');
 const db = require('../../src/database');
 
-function seedDueReminder() {
-  const suffix = `${Date.now()}_${Math.floor(Math.random() * 100000)}`;
-  const userId = 895_000_000 + Math.floor(Math.random() * 100000);
-  db.prepare('INSERT INTO settings (key, value) VALUES (?, ?) ON CONFLICT(key) DO UPDATE SET value = excluded.value')
-    .run('key_expiry_reminder_days', '3');
-  db.prepare("UPDATE message_templates SET is_enabled = 1 WHERE key = 'bot.expiry_reminder'").run();
-  db.prepare('INSERT INTO users (telegram_id, full_name) VALUES (?, ?)').run(userId, `Reminder User ${suffix}`);
-  const category = db.prepare('INSERT INTO categories (name, slug) VALUES (?, ?)').run(
-    `reminder-cat-${suffix}`,
-    `reminder-cat-${suffix}`,
-  );
-  const product = db.prepare(`
-    INSERT INTO products (category_id, name, slug, price, is_active)
-    VALUES (?, ?, ?, 1000, 1)
-  `).run(category.lastInsertRowid, `Reminder product ${suffix}`, `reminder-product-${suffix}`);
-  const variant = db.prepare(`
-    INSERT INTO product_variants (product_id, name, price, default_duration_days)
-    VALUES (?, 'Reminder variant', 1000, 30)
-  `).run(product.lastInsertRowid);
-  const order = db.prepare(`
-    INSERT INTO orders (user_id, product_id, variant_id, quantity, total_price, payment_code, status, source, delivered_at, delivered_keys_json)
-    VALUES (?, ?, ?, 1, 1000, ?, 'delivered', 'telegram', datetime('now', '-27 days'), ?)
-  `).run(userId, product.lastInsertRowid, variant.lastInsertRowid, `PNS_REMINDER_${suffix}`, JSON.stringify([`key-${suffix}`]));
-  const stock = db.prepare(`
-    INSERT INTO stock (product_id, variant_id, data, duration_days, is_sold, sold_to, sold_at)
-    VALUES (?, ?, ?, 30, 1, ?, datetime('now', '-27 days'))
-  `).run(product.lastInsertRowid, variant.lastInsertRowid, `key-${suffix}`, userId);
-
+function snapshotReminderConfig() {
   return {
-    userId,
-    categoryId: category.lastInsertRowid,
-    productId: product.lastInsertRowid,
-    variantId: variant.lastInsertRowid,
-    productSlug: `reminder-product-${suffix}`,
-    orderId: order.lastInsertRowid,
-    stockId: stock.lastInsertRowid,
+    setting: db.prepare("SELECT key, value, updated_at FROM settings WHERE key = 'key_expiry_reminder_days'").get() || null,
+    templateIsEnabled: db.prepare("SELECT is_enabled FROM message_templates WHERE key = 'bot.expiry_reminder'").get()?.is_enabled,
   };
 }
 
+function restoreReminderConfig(snapshot) {
+  if (snapshot.setting) {
+    db.prepare(`
+      INSERT INTO settings (key, value, updated_at)
+      VALUES (?, ?, ?)
+      ON CONFLICT(key) DO UPDATE SET
+        value = excluded.value,
+        updated_at = excluded.updated_at
+    `).run(snapshot.setting.key, snapshot.setting.value, snapshot.setting.updated_at);
+  } else {
+    db.prepare("DELETE FROM settings WHERE key = 'key_expiry_reminder_days'").run();
+  }
+
+  if (snapshot.templateIsEnabled !== undefined) {
+    db.prepare("UPDATE message_templates SET is_enabled = ? WHERE key = 'bot.expiry_reminder'")
+      .run(snapshot.templateIsEnabled);
+  }
+}
+
+function seedDueReminder() {
+  const reminderConfigSnapshot = snapshotReminderConfig();
+  const suffix = `${Date.now()}_${Math.floor(Math.random() * 100000)}`;
+  const userId = 895_000_000 + Math.floor(Math.random() * 100000);
+  try {
+    db.prepare('INSERT INTO settings (key, value) VALUES (?, ?) ON CONFLICT(key) DO UPDATE SET value = excluded.value')
+      .run('key_expiry_reminder_days', '3');
+    db.prepare("UPDATE message_templates SET is_enabled = 1 WHERE key = 'bot.expiry_reminder'").run();
+    db.prepare('INSERT INTO users (telegram_id, full_name) VALUES (?, ?)').run(userId, `Reminder User ${suffix}`);
+    const category = db.prepare('INSERT INTO categories (name, slug) VALUES (?, ?)').run(
+      `reminder-cat-${suffix}`,
+      `reminder-cat-${suffix}`,
+    );
+    const product = db.prepare(`
+      INSERT INTO products (category_id, name, slug, price, is_active)
+      VALUES (?, ?, ?, 1000, 1)
+    `).run(category.lastInsertRowid, `Reminder product ${suffix}`, `reminder-product-${suffix}`);
+    const variant = db.prepare(`
+      INSERT INTO product_variants (product_id, name, price, default_duration_days)
+      VALUES (?, 'Reminder variant', 1000, 30)
+    `).run(product.lastInsertRowid);
+    const order = db.prepare(`
+      INSERT INTO orders (user_id, product_id, variant_id, quantity, total_price, payment_code, status, source, delivered_at, delivered_keys_json)
+      VALUES (?, ?, ?, 1, 1000, ?, 'delivered', 'telegram', datetime('now', '-27 days'), ?)
+    `).run(userId, product.lastInsertRowid, variant.lastInsertRowid, `PNS_REMINDER_${suffix}`, JSON.stringify([`key-${suffix}`]));
+    const stock = db.prepare(`
+      INSERT INTO stock (product_id, variant_id, data, duration_days, is_sold, sold_to, sold_at)
+      VALUES (?, ?, ?, 30, 1, ?, datetime('now', '-27 days'))
+    `).run(product.lastInsertRowid, variant.lastInsertRowid, `key-${suffix}`, userId);
+
+    return {
+      userId,
+      categoryId: category.lastInsertRowid,
+      productId: product.lastInsertRowid,
+      variantId: variant.lastInsertRowid,
+      productSlug: `reminder-product-${suffix}`,
+      orderId: order.lastInsertRowid,
+      stockId: stock.lastInsertRowid,
+      reminderConfigSnapshot,
+    };
+  } catch (error) {
+    restoreReminderConfig(reminderConfigSnapshot);
+    throw error;
+  }
+}
+
 function cleanup(seed) {
-  const hasLogs = db.prepare("SELECT name FROM sqlite_master WHERE type = 'table' AND name = 'renewal_reminder_logs'").get();
-  if (hasLogs) db.prepare('DELETE FROM renewal_reminder_logs WHERE stock_id = ?').run(seed.stockId);
-  db.prepare('DELETE FROM notifications WHERE user_id = ?').run(seed.userId);
-  db.prepare('DELETE FROM stock WHERE id = ?').run(seed.stockId);
-  db.prepare('DELETE FROM orders WHERE id = ?').run(seed.orderId);
-  db.prepare('DELETE FROM product_variants WHERE id = ?').run(seed.variantId);
-  db.prepare('DELETE FROM products WHERE id = ?').run(seed.productId);
-  db.prepare('DELETE FROM categories WHERE id = ?').run(seed.categoryId);
-  db.prepare('DELETE FROM users WHERE telegram_id = ?').run(seed.userId);
+  try {
+    const hasLogs = db.prepare("SELECT name FROM sqlite_master WHERE type = 'table' AND name = 'renewal_reminder_logs'").get();
+    if (hasLogs) db.prepare('DELETE FROM renewal_reminder_logs WHERE stock_id = ?').run(seed.stockId);
+    db.prepare('DELETE FROM notifications WHERE user_id = ?').run(seed.userId);
+    db.prepare('DELETE FROM stock WHERE id = ?').run(seed.stockId);
+    db.prepare('DELETE FROM orders WHERE id = ?').run(seed.orderId);
+    db.prepare('DELETE FROM product_variants WHERE id = ?').run(seed.variantId);
+    db.prepare('DELETE FROM products WHERE id = ?').run(seed.productId);
+    db.prepare('DELETE FROM categories WHERE id = ?').run(seed.categoryId);
+    db.prepare('DELETE FROM users WHERE telegram_id = ?').run(seed.userId);
+  } finally {
+    restoreReminderConfig(seed.reminderConfigSnapshot);
+  }
 }
 
 function freshService() {
