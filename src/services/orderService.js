@@ -379,8 +379,10 @@ const orderService = {
    */
   expireStaleOrders() {
     const stale = db.prepare(`
-      SELECT id, user_id, product_id FROM orders
-      WHERE status = 'pending' AND expires_at IS NOT NULL AND expires_at <= datetime('now')
+      SELECT o.id, o.user_id, o.product_id, p.name as product_name
+      FROM orders o
+      LEFT JOIN products p ON o.product_id = p.id
+      WHERE o.status = 'pending' AND o.expires_at IS NOT NULL AND o.expires_at <= datetime('now')
     `).all();
 
     if (stale.length > 0) {

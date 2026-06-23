@@ -46,7 +46,201 @@ function shapeOrder(r) {
     expiresAt: r.expires_at,
     keyExpiresAt,
     keyExpired,
+    hasCustomerInput: !!r.input_value,
   };
+}
+
+function variantLabel(name) {
+  return name?.trim() || 'mặc định/legacy';
+}
+
+function getOrderCustomer(order) {
+  const customer = db.prepare(`
+    SELECT telegram_id, full_name, username
+    FROM users
+    WHERE telegram_id = ?
+  `).get(order.user_id);
+
+  return {
+    telegramId: String(customer?.telegram_id ?? order.user_id),
+    fullName: customer?.full_name ?? null,
+    username: customer?.username ?? null,
+  };
+}
+
+function getOrderProduct(order) {
+  const product = db.prepare(`
+    SELECT p.id, p.name, v.id AS variant_id, v.name AS variant_name
+    FROM products p
+    LEFT JOIN product_variants v
+      ON v.id = ? AND v.product_id = p.id
+    WHERE p.id = ?
+  `).get(order.variant_id ?? null, order.product_id);
+
+  if (!product) return null;
+  return {
+    id: String(product.id),
+    name: product.name,
+    variantId: order.variant_id == null ? null : String(order.variant_id),
+    variantName: product.variant_name || null,
+    variantLabel: variantLabel(product.variant_name),
+  };
+}
+
+function getOrderStockItems(order, accounts) {
+  let snapshot = [];
+  try {
+    const parsed = JSON.parse(order.delivered_keys_json || '[]');
+    if (Array.isArray(parsed)) snapshot = parsed.filter(value => typeof value === 'string');
+  } catch {}
+
+  const stockSelect = `
+    SELECT
+      s.id,
+      s.data,
+      s.variant_id,
+      v.name AS variant_name,
+      s.sold_at,
+      s.duration_days,
+      CASE
+        WHEN s.sold_at IS NOT NULL AND s.duration_days IS NOT NULL
+        THEN DATE(s.sold_at, '+' || s.duration_days || ' days')
+        ELSE NULL
+      END AS expires_at,
+      CASE
+        WHEN s.sold_at IS NOT NULL AND s.duration_days IS NOT NULL
+        THEN DATE(s.sold_at, '+' || s.duration_days || ' days') < DATE('now')
+        ELSE 0
+      END AS expired
+    FROM stock s
+    LEFT JOIN product_variants v ON v.id = s.variant_id
+  `;
+  let rows;
+  if (snapshot.length > 0 && accounts?.length > 0) {
+    const placeholders = accounts.map(() => '?').join(', ');
+    rows = db.prepare(`
+      ${stockSelect}
+      WHERE s.sold_to = ?
+        AND s.product_id = ?
+        AND s.data IN (${placeholders})
+      ORDER BY
+        CASE
+          WHEN ? IS NOT NULL AND s.sold_at <= ? THEN 0
+          ELSE 1
+        END,
+        CASE
+          WHEN ? IS NOT NULL
+          THEN ABS(strftime('%s', s.sold_at) - strftime('%s', ?))
+          ELSE 0
+        END,
+        s.id DESC
+      LIMIT ?
+    `).all(
+      order.user_id,
+      order.product_id,
+      ...accounts,
+      order.delivered_at,
+      order.delivered_at,
+      order.delivered_at,
+      order.delivered_at,
+      order.quantity,
+    );
+  } else {
+    const variantWhere = order.variant_id == null
+      ? 's.variant_id IS NULL'
+      : 's.variant_id = ?';
+    const variantParams = order.variant_id == null ? [] : [order.variant_id];
+    const deliveredWhere = order.delivered_at ? 'AND s.sold_at <= ?' : '';
+    const deliveredParams = order.delivered_at ? [order.delivered_at] : [];
+    rows = db.prepare(`
+      ${stockSelect}
+      WHERE s.sold_to = ?
+        AND s.product_id = ?
+        AND s.is_sold = 1
+        AND ${variantWhere}
+        ${deliveredWhere}
+      ORDER BY s.sold_at DESC, s.id DESC
+      LIMIT ?
+    `).all(
+      order.user_id,
+      order.product_id,
+      ...variantParams,
+      ...deliveredParams,
+      order.quantity,
+    );
+  }
+
+  return rows.map(row => ({
+    id: String(row.id),
+    value: row.data,
+    variantId: row.variant_id == null ? null : String(row.variant_id),
+    variantName: row.variant_name || null,
+    soldAt: row.sold_at,
+    durationDays: row.duration_days,
+    expiresAt: row.expires_at,
+    expired: !!row.expired,
+  }));
+}
+
+function getMatchedTransaction(orderId) {
+  const hasBankTransactionAt = db.prepare('PRAGMA table_info(transactions)').all()
+    .some(column => column.name === 'bank_transaction_at');
+  const bankTransactionSelect = hasBankTransactionAt
+    ? 'bank_transaction_at'
+    : 'NULL AS bank_transaction_at';
+  const transaction = db.prepare(`
+    SELECT
+      id,
+      amount,
+      description,
+      mb_transaction_number,
+      detected_at,
+      ${bankTransactionSelect}
+    FROM transactions
+    WHERE matched_order_id = ?
+      AND match_status = 'matched'
+    ORDER BY detected_at DESC, id DESC
+    LIMIT 1
+  `).get(orderId);
+
+  if (!transaction) return null;
+  return {
+    id: String(transaction.id),
+    amount: transaction.amount,
+    description: transaction.description ?? null,
+    transactionDate: transaction.bank_transaction_at ?? transaction.detected_at ?? null,
+    bankReference: transaction.mb_transaction_number ?? null,
+  };
+}
+
+function getRenewalLogs(orderId, stockItems) {
+  const stockIds = stockItems.map(item => Number(item.id));
+  const stockWhere = stockIds.length > 0
+    ? ` OR stock_id IN (${stockIds.map(() => '?').join(', ')})`
+    : '';
+  const rows = db.prepare(`
+    SELECT
+      id,
+      stock_id,
+      status,
+      expiry_date,
+      days_before_expiry,
+      message_body,
+      created_at
+    FROM renewal_reminder_logs
+    WHERE order_id = ?${stockWhere}
+    ORDER BY created_at DESC, id DESC
+  `).all(orderId, ...stockIds);
+
+  return rows.map(row => ({
+    id: String(row.id),
+    stockId: row.stock_id == null ? null : String(row.stock_id),
+    status: row.status,
+    expiryDate: row.expiry_date,
+    daysBeforeExpiry: row.days_before_expiry,
+    messagePreview: (row.message_body || '').slice(0, 180),
+    createdAt: row.created_at,
+  }));
 }
 
 // GET /admin/orders?status=pending&page=1&limit=20&from=&to=&userId=
@@ -153,12 +347,29 @@ router.get('/:id', (req, res) => {
     } else if (order.delivered_at) {
       const accounts = db.prepare(`
         SELECT data FROM stock
-        WHERE sold_to = ? AND product_id = ? AND sold_at <= ?
+        WHERE sold_to = ? AND product_id = ? AND is_sold = 1 AND sold_at <= ?
+          AND (
+            (? IS NULL AND variant_id IS NULL)
+            OR variant_id = ?
+          )
         ORDER BY sold_at DESC LIMIT ?
-      `).all(order.user_id, order.product_id, order.delivered_at, order.quantity);
+      `).all(
+        order.user_id,
+        order.product_id,
+        order.delivered_at,
+        order.variant_id ?? null,
+        order.variant_id ?? null,
+        order.quantity,
+      );
       shaped.accounts = accounts.map(a => a.data);
     }
   }
+
+  shaped.customer = getOrderCustomer(order);
+  shaped.product = getOrderProduct(order);
+  shaped.stockItems = getOrderStockItems(order, shaped.accounts);
+  shaped.matchedTransaction = getMatchedTransaction(order.id);
+  shaped.renewalLogs = getRenewalLogs(order.id, shaped.stockItems);
 
   res.json({ success: true, data: shaped });
 });
@@ -286,7 +497,11 @@ router.post('/:id/cancel', (req, res) => {
   if (!order) return res.status(404).json({ success: false, error: { code: 'NOT_FOUND' } });
   const cancelled = orderService.cancel(id);
   if (!cancelled) return res.status(409).json({ success: false, error: { code: 'INVALID_STATE', message: 'Đơn không thể hủy' } });
-  auditService.log(req.admin.adminId, 'order.cancel', 'order', id, null, req.ip);
+  auditService.log(req.admin.adminId, 'order.cancel', 'order', id, {
+    entityLabel: order.payment_code,
+    total_price: order.total_price,
+    user_id: order.user_id,
+  }, req.ip);
   res.json({ success: true });
 });
 

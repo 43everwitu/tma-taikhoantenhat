@@ -63,6 +63,7 @@ export default function StockPage() {
   const hasVariants = variants.length > 0
   const [variantId, setVariantId] = useState<string>('')
   const [durationDays, setDurationDays] = useState<string>('')
+  const [notifyFollowers, setNotifyFollowers] = useState(false)
 
   useEffect(() => {
     if (hasVariants && !variantId) setVariantId(variants[0].id)
@@ -72,7 +73,7 @@ export default function StockPage() {
 
   const addMutation = useMutation({
     mutationFn: (items: string[]) => {
-      const payload: { items: string[]; variantId?: number; durationDays?: number } = { items }
+      const payload: { items: string[]; variantId?: number; durationDays?: number; notifyFollowers?: boolean } = { items, notifyFollowers }
       if (variantId) payload.variantId = Number(variantId)
       if (durationDays && Number(durationDays) > 0) payload.durationDays = Number(durationDays)
       return api.post(`/admin/stock/${productId}`, payload)
@@ -116,6 +117,18 @@ export default function StockPage() {
       t.success('Đã xoá key')
     },
     onError: (e) => t.error(`Lỗi: ${e instanceof Error ? e.message : 'xoá thất bại'}`),
+  })
+
+  const notifyFollowersMutation = useMutation({
+    mutationFn: () => api.post<{ sent?: number; failed?: number; skipped?: string | null }>(`/admin/stock/${productId}/notify-followers`, {}),
+    onSuccess: (res) => {
+      if (res.data?.skipped) {
+        t.error(`Bỏ qua gửi thông báo (${res.data.skipped})`)
+      } else {
+        t.success(`Đã gửi followers: ${res.data?.sent ?? 0} thành công, ${res.data?.failed ?? 0} lỗi`)
+      }
+    },
+    onError: (e) => t.error(`Lỗi: ${e instanceof Error ? e.message : 'gửi thông báo thất bại'}`),
   })
 
   const [editingId, setEditingId] = useState<string | null>(null)
@@ -321,7 +334,23 @@ export default function StockPage() {
           <span className="text-sm text-clay-silver">
             {newItems.split('\n').filter((l) => l.trim()).length} dòng
           </span>
+          <label className="flex items-center gap-2 text-sm text-clay-charcoal">
+            <input
+              type="checkbox"
+              checked={notifyFollowers}
+              onChange={(e) => setNotifyFollowers(e.target.checked)}
+              className="h-4 w-4"
+            />
+            Gửi thông báo tới followers
+          </label>
           <div className="flex gap-3">
+            <button
+              onClick={() => notifyFollowersMutation.mutate()}
+              disabled={notifyFollowersMutation.isPending}
+              className="clay-btn text-sm disabled:opacity-50"
+            >
+              {notifyFollowersMutation.isPending ? 'Đang gửi...' : 'Gửi thông báo followers'}
+            </button>
             <button
               onClick={handleClearUnsold}
               disabled={clearUnsoldMutation.isPending}

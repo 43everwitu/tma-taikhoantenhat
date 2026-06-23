@@ -119,8 +119,12 @@ router.post('/:id/resend', async (req, res) => {
 // DELETE /admin/announcements/:id
 router.delete('/:id', (req, res) => {
   const id = parseInt(req.params.id);
+  const annSnap = db.prepare('SELECT title, target FROM announcements WHERE id = ?').get(id);
   db.prepare('DELETE FROM announcements WHERE id = ?').run(id);
-  auditService.log(req.admin.adminId, 'announcement.delete', 'announcement', id, null, req.ip);
+  auditService.log(req.admin.adminId, 'announcement.delete', 'announcement', id, annSnap ? {
+    entityLabel: annSnap.title,
+    target: annSnap.target,
+  } : null, req.ip);
   res.json({ success: true });
 });
 

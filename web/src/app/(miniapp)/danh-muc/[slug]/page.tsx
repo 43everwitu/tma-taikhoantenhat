@@ -21,8 +21,8 @@ export default function CategoryPage() {
   const [filter, setFilter] = useState<FilterValue>(DEFAULT_FILTER)
 
   const cats = useQuery({
-    queryKey: ['categories'],
-    queryFn: () => apiFetch<Category[]>('/categories'),
+    queryKey: ['categories', 'noUncat'],
+    queryFn: () => apiFetch<Category[]>('/categories?exclude=uncategorized'),
   })
   const cat = cats.data?.find((c) => c.slug === params.slug)
 
@@ -61,8 +61,8 @@ export default function CategoryPage() {
         )}
         {products.data && products.data.length > 0 && (
           <ul className="miniapp-product-grid">
-            {products.data.map((p) => (
-              <li key={p.id}><ProductCard p={p} /></li>
+            {products.data.map((p, i) => (
+              <li key={p.id}><ProductCard p={p} eager={i === 0} /></li>
             ))}
           </ul>
         )}

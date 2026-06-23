@@ -4,7 +4,7 @@ const topupService = require('./topupService');
 const adminNotifyService = require('./adminNotifyService');
 const messageTemplateService = require('./messageTemplateService');
 const { formatPrice } = require('../utils/keyboard');
-const { escapeHtml, richifyText, formatKeysForTelegram, shouldSendAsFile } = require('../utils/messages');
+const { escapeHtml, richifyText, formatKeysForTelegram, shouldSendAsFile, buildCustomerInputBlock } = require('../utils/messages');
 
 // Three disjoint regexes — order first (most common), then topup variants.
 // Tolerance: case-insensitive (some banks uppercase descriptions, some don't),
@@ -20,6 +20,21 @@ const { escapeHtml, richifyText, formatKeysForTelegram, shouldSendAsFile } = req
 const ORDER_CODE_REGEX = /PNS\s?(\d{4,})\b/i;
 const TOPUP_USERNAME_REGEX = /PNS\s?([A-Za-z][A-Za-z0-9_]{4,31})\b/i;
 const TOPUP_TGID_REGEX = /PNSU\s?(\d{5,})\b/i;
+const VIETNAM_TIME_ZONE = 'Asia/Ho_Chi_Minh';
+
+function formatDateInTimeZone(date = new Date(), timeZone = VIETNAM_TIME_ZONE) {
+  const parts = new Intl.DateTimeFormat('en-US', {
+    timeZone,
+    year: 'numeric',
+    month: '2-digit',
+    day: '2-digit',
+  }).formatToParts(date).reduce((acc, part) => {
+    if (part.type !== 'literal') acc[part.type] = part.value;
+    return acc;
+  }, {});
+
+  return `${parts.year}-${parts.month}-${parts.day}`;
+}
 
 function normalizeCode(raw) {
   // Strip space + uppercase. Order ids are pure digits → no info loss.
@@ -226,7 +241,7 @@ class PaymentPoller {
   }
 
   async _fetchTransactions(minAmount) {
-    const today = new Date().toISOString().split('T')[0];
+    const today = formatDateInTimeZone();
 
     try {
       const controller = new AbortController();
@@ -362,11 +377,7 @@ class PaymentPoller {
 
     if (result.success && result.backorder) {
       this.matchCount++;
-      const inputBlock = order.input_value
-        ? `\n📝 Thông tin: <code>${(() => {
-            try { const { decryptString } = require('../utils/secrets'); return decryptString(order.input_value); } catch { return '(decode err)'; }
-          })()}</code>`
-        : '';
+      const inputBlock = buildCustomerInputBlock(order.input_value);
       adminNotifyService.notify('backorder_paid',
         messageTemplateService.render('admin.backorder_paid', {
           orderCode: order.id,
@@ -590,9 +601,10 @@ class PaymentPoller {
   }
 
   async _notifyExpired(order) {
+    const productName = order.product_name || `sản phẩm #${order.product_id || 'N/A'}`;
     const body = messageTemplateService.renderIfEnabled('payment_expired', {
       orderCode: order.id,
-      productName: order.product_name,
+      productName,
     });
     if (!body) return;
     await this._notifyCustomer(order.user_id, body, 'HTML');

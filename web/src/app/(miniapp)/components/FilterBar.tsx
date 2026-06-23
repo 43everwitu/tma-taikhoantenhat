@@ -12,6 +12,7 @@ export interface FilterValue {
 interface Props {
   value: FilterValue
   onChange: (v: FilterValue) => void
+  compact?: boolean
 }
 
 const SORTS: { k: FilterValue['sort']; label: string }[] = [
@@ -44,7 +45,7 @@ function priceLabel(min: FilterValue['priceMin'], max: FilterValue['priceMax']) 
   return `≤ ${formatVndShort(max as number)}`
 }
 
-export function FilterBar({ value, onChange }: Props) {
+export function FilterBar({ value, onChange, compact = false }: Props) {
   const [open, setOpen] = useState(false)
   const wrapRef = useRef<HTMLDivElement>(null)
 
@@ -74,8 +75,8 @@ export function FilterBar({ value, onChange }: Props) {
 
   return (
     <div ref={wrapRef} className="relative">
-      <div className="miniapp-filterbar">
-        {sortLabel && (
+      <div className={`miniapp-filterbar ${compact ? 'miniapp-filterbar--compact' : ''}`}>
+        {!compact && sortLabel && (
           <span className="miniapp-filterbar-chip">
             {sortLabel}
             <button type="button" onClick={clearSort} aria-label="Bỏ sắp xếp">
@@ -83,7 +84,7 @@ export function FilterBar({ value, onChange }: Props) {
             </button>
           </span>
         )}
-        {pLabel && (
+        {!compact && pLabel && (
           <span className="miniapp-filterbar-chip">
             {pLabel}
             <button type="button" onClick={clearPrice} aria-label="Bỏ khoảng giá">
@@ -91,7 +92,7 @@ export function FilterBar({ value, onChange }: Props) {
             </button>
           </span>
         )}
-        <span className="miniapp-filterbar-spacer" />
+        {!compact && <span className="miniapp-filterbar-spacer" />}
         <button
           type="button"
           className="miniapp-filterbar-btn"

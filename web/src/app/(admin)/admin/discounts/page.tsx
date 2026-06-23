@@ -4,6 +4,7 @@ import { useState } from 'react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { api } from '@/lib/api'
 import { useToast } from '@/components/Toast'
+import { useHighlightId, useHighlightedRowRef } from '@/lib/useHighlightedRow'
 
 interface Discount {
   id: number
@@ -18,6 +19,12 @@ interface Discount {
   startsAt: string | null
   endsAt: string | null
   isActive: boolean
+  isGlobal: boolean
+  notifyTitle: string | null
+  appMetaMode: 'auto' | 'custom' | 'hidden'
+  appMetaText: string | null
+  appMessage: string | null
+  botMessage: string | null
 }
 
 type DiscountForm = {
@@ -31,17 +38,26 @@ type DiscountForm = {
   startsAt: string
   endsAt: string
   isActive: boolean
+  isGlobal: boolean
+  notifyTitle: string
+  appMetaMode: 'auto' | 'custom' | 'hidden'
+  appMetaText: string
+  appMessage: string
+  botMessage: string
 }
 
 const empty: DiscountForm = {
   code: '', type: 'percent', amount: 10,
   maxDiscount: '', minOrder: 0, usageLimit: '', perUserLimit: '',
-  startsAt: '', endsAt: '', isActive: true,
+  startsAt: '', endsAt: '', isActive: true, isGlobal: false,
+  notifyTitle: '', appMetaMode: 'auto', appMetaText: '', appMessage: '', botMessage: '',
 }
 
 export default function DiscountsPage() {
   const qc = useQueryClient()
   const t = useToast()
+  const highlightId = useHighlightId()
+  const refFor = useHighlightedRowRef(highlightId)
   const { data, isLoading } = useQuery({
     queryKey: ['admin', 'discounts'],
     queryFn: () => api.get<Discount[]>('/admin/discounts'),
@@ -49,6 +65,17 @@ export default function DiscountsPage() {
   })
   const list = data?.data ?? []
   const [editing, setEditing] = useState<Discount | 'new' | null>(null)
+  const [copiedId, setCopiedId] = useState<number | null>(null)
+
+  async function copyCode(d: Discount) {
+    try {
+      await navigator.clipboard.writeText(d.code)
+      setCopiedId(d.id)
+      setTimeout(() => setCopiedId(null), 1500)
+    } catch {
+      t.error('Không sao chép được mã')
+    }
+  }
 
   const createMut = useMutation({
     mutationFn: (body: object) => api.post('/admin/discounts', body),
@@ -65,6 +92,14 @@ export default function DiscountsPage() {
     onSuccess: () => { t.success('Đã xoá'); qc.invalidateQueries({ queryKey: ['admin', 'discounts'] }) },
     onError: (e) => t.error(`Lỗi: ${e instanceof Error ? e.message : 'Xoá thất bại'}`),
   })
+  const notifyMut = useMutation({
+    mutationFn: (id: number) => api.post(`/admin/discounts/${id}/notify`, {}),
+    onSuccess: (r) => {
+      const d = r.data as { sent?: number; failed?: number }
+      t.success(`Đã gửi thông báo: ${d.sent ?? 0} thành công, ${d.failed ?? 0} lỗi`)
+    },
+    onError: (e) => t.error(`Lỗi: ${e instanceof Error ? e.message : 'Gửi thông báo thất bại'}`),
+  })
 
   return (
     <div className="space-y-4">
@@ -78,17 +113,33 @@ export default function DiscountsPage() {
 
       <ul className="space-y-2">
         {list.map((d) => (
-          <li key={d.id} className="clay-card p-4 flex items-center gap-3">
+          <li key={d.id} ref={refFor(d.id)} className="clay-card p-4 flex items-center gap-3">
             <div className="flex-1 min-w-0">
               <p className="font-mono font-bold text-lg">{d.code}</p>
               <p className="text-xs opacity-70">
+                {d.isGlobal ? 'Toàn cửa hàng · ' : ''}
                 {d.type === 'percent' ? `${d.amount}%` : `${d.amount.toLocaleString('vi-VN')}đ`}
                 {d.maxDiscount ? ` (tối đa ${d.maxDiscount.toLocaleString('vi-VN')}đ)` : ''}
                 {d.minOrder ? ` · đơn từ ${d.minOrder.toLocaleString('vi-VN')}đ` : ''}
                 {d.usageLimit != null ? ` · ${d.usedCount}/${d.usageLimit} lượt` : ` · ${d.usedCount} lượt dùng`}
                 {!d.isActive && ' · TẮT'}
               </p>
+              {d.isGlobal && (d.notifyTitle || d.appMessage || d.botMessage) && (
+                <p className="text-xs opacity-60 mt-1 truncate">
+                  {d.notifyTitle || 'Ưu đãi toàn cửa hàng'}{d.appMessage ? ` · ${d.appMessage}` : ''}
+                </p>
+              )}
             </div>
+            <button onClick={() => copyCode(d)} className="clay-btn text-xs">
+              {copiedId === d.id ? 'Đã chép' : 'Copy mã'}
+            </button>
+            {d.isGlobal && (
+              <button
+                onClick={() => notifyMut.mutate(d.id)}
+                disabled={notifyMut.isPending}
+                className="clay-btn clay-btn--lemon text-xs"
+              >Gửi bot/app</button>
+            )}
             <button onClick={() => setEditing(d)} className="clay-btn text-xs">Sửa</button>
             <button onClick={() => { if (confirm(`Xoá mã ${d.code}?`)) deleteMut.mutate(d.id) }} className="clay-btn clay-btn--pomegranate text-xs">Xoá</button>
           </li>
@@ -128,6 +179,12 @@ function DiscountModal({ initial, onClose, onSubmit, isPending }: {
         startsAt: initial.startsAt ?? '',
         endsAt: initial.endsAt ?? '',
         isActive: initial.isActive,
+        isGlobal: initial.isGlobal,
+        notifyTitle: initial.notifyTitle ?? '',
+        appMetaMode: initial.appMetaMode ?? 'auto',
+        appMetaText: initial.appMetaText ?? '',
+        appMessage: initial.appMessage ?? '',
+        botMessage: initial.botMessage ?? '',
       }
     : empty)
 
@@ -138,6 +195,12 @@ function DiscountModal({ initial, onClose, onSubmit, isPending }: {
       amount: form.amount,
       minOrder: form.minOrder || 0,
       isActive: form.isActive,
+      isGlobal: form.isGlobal,
+      notifyTitle: form.notifyTitle.trim() || null,
+      appMetaMode: form.appMetaMode,
+      appMetaText: form.appMetaMode === 'custom' ? (form.appMetaText.trim() || null) : null,
+      appMessage: form.appMessage.trim() || null,
+      botMessage: form.botMessage.trim() || null,
     }
     if (form.maxDiscount !== '') body.maxDiscount = Number(form.maxDiscount)
     else body.maxDiscount = null
@@ -208,6 +271,64 @@ function DiscountModal({ initial, onClose, onSubmit, isPending }: {
           <input type="checkbox" checked={form.isActive} onChange={(e) => setForm({ ...form, isActive: e.target.checked })} />
           <span>Đang hoạt động</span>
         </label>
+        <label className="flex items-center gap-2 text-sm rounded-xl p-3 bg-clay-oat-light">
+          <input type="checkbox" checked={form.isGlobal} onChange={(e) => setForm({ ...form, isGlobal: e.target.checked })} />
+          <span>Áp dụng toàn cửa hàng và tự động chọn khi checkout</span>
+        </label>
+        {form.isGlobal && (
+          <div className="space-y-2 rounded-xl p-3 border border-clay-oat">
+            <label className="block text-sm">
+              <span className="text-xs opacity-70 mb-1 inline-block">Tiêu đề thông báo</span>
+              <input
+                value={form.notifyTitle}
+                onChange={(e) => setForm({ ...form, notifyTitle: e.target.value })}
+                className="clay-input w-full text-sm"
+                placeholder="VD: Ưu đãi toàn cửa hàng"
+              />
+            </label>
+            <label className="block text-sm">
+              <span className="text-xs opacity-70 mb-1 inline-block">Dòng phụ trong Mini App</span>
+              <select
+                value={form.appMetaMode}
+                onChange={(e) => setForm({ ...form, appMetaMode: e.target.value as DiscountForm['appMetaMode'] })}
+                className="clay-input w-full text-sm"
+              >
+                <option value="auto">Tự động: mã + giá trị giảm</option>
+                <option value="custom">Tùy chỉnh</option>
+                <option value="hidden">Ẩn dòng phụ</option>
+              </select>
+            </label>
+            {form.appMetaMode === 'custom' && (
+              <label className="block text-sm">
+                <span className="text-xs opacity-70 mb-1 inline-block">Nội dung dòng phụ</span>
+                <input
+                  value={form.appMetaText}
+                  onChange={(e) => setForm({ ...form, appMetaText: e.target.value })}
+                  className="clay-input w-full text-sm"
+                  placeholder="VD: Ưu đãi tự động cho đơn hợp lệ"
+                />
+              </label>
+            )}
+            <label className="block text-sm">
+              <span className="text-xs opacity-70 mb-1 inline-block">Nội dung hiển thị trên Mini App</span>
+              <textarea
+                value={form.appMessage}
+                onChange={(e) => setForm({ ...form, appMessage: e.target.value })}
+                className="clay-input w-full text-sm min-h-20"
+                placeholder="VD: Ưu đãi toàn cửa hàng đang được tự động áp dụng khi thanh toán."
+              />
+            </label>
+            <label className="block text-sm">
+              <span className="text-xs opacity-70 mb-1 inline-block">Nội dung gửi qua bot</span>
+              <textarea
+                value={form.botMessage}
+                onChange={(e) => setForm({ ...form, botMessage: e.target.value })}
+                className="clay-input w-full text-sm min-h-24"
+                placeholder="Có thể dùng HTML Telegram cơ bản: <b>, <i>, <code>, <a>."
+              />
+            </label>
+          </div>
+        )}
         <div className="flex justify-end gap-2 pt-1">
           <button type="button" onClick={onClose} className="clay-btn text-sm">Huỷ</button>
           <button

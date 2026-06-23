@@ -1,9 +1,15 @@
+from pathlib import Path
 from pydantic import BaseModel
 import os
 from dotenv import load_dotenv
 
-# Load .env if present
-load_dotenv()
+# Single source of truth: load repo-root .env. Fall back to local .env if
+# someone still keeps mbbank-api/.env for isolated runs.
+_ROOT_ENV = Path(__file__).resolve().parents[2] / ".env"
+if _ROOT_ENV.is_file():
+    load_dotenv(_ROOT_ENV)
+else:
+    load_dotenv()
 
 
 class Settings(BaseModel):
@@ -37,7 +43,7 @@ def load_settings() -> Settings:
         mb_username=os.getenv("MB_USERNAME"),
         mb_password=os.getenv("MB_PASSWORD"),
         mb_captcha=os.getenv("MB_CAPTCHA"),
-        api_access_token=os.getenv("API_ACCESS_TOKEN"),
+        api_access_token=os.getenv("API_ACCESS_TOKEN") or os.getenv("MBBANK_API_TOKEN"),
         require_api_token=os.getenv("REQUIRE_API_TOKEN", "true").lower() in {"1", "true", "yes"},
         host=os.getenv("HOST", "0.0.0.0"),
         port=int(os.getenv("PORT", "8000")),

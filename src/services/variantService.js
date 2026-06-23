@@ -100,6 +100,20 @@ const variantService = {
           AND is_sold = 0 AND reserved_for_order_id IS NULL`
     ).get(productId, variantId).c;
   },
+
+  countAvailableStockByProduct(db, productId) {
+    const rows = db.prepare(
+      `SELECT variant_id, COUNT(*) AS c FROM stock
+        WHERE product_id = ?
+          AND variant_id IS NOT NULL
+          AND is_sold = 0
+          AND reserved_for_order_id IS NULL
+        GROUP BY variant_id`
+    ).all(productId);
+    const counts = new Map();
+    for (const row of rows) counts.set(row.variant_id, row.c);
+    return counts;
+  },
 };
 
 module.exports = variantService;

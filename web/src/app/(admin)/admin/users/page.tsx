@@ -4,16 +4,31 @@ import { useState, useEffect } from 'react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { api } from '@/lib/api'
 import { formatPrice } from '@/lib/utils'
+import { buildTelegramContactUrl, telegramContactTitle } from '@/lib/telegramContact'
 import { Search, Users, Wallet, X } from '@/lib/icons'
 import { ResponsiveTable, Column } from '@/components/ResponsiveTable'
+import { useHighlightId, useHighlightedRowRef } from '@/lib/useHighlightedRow'
 
 interface UserRow {
   telegram_id: number
   username: string | null
   full_name: string
   balance: number
-  created_at: string
+  created_at: string | null
   order_count: number
+  is_virtual?: boolean
+}
+
+interface UsersResponse {
+  users: UserRow[]
+  stats: { totalUsers: number; buyers: number; missingProfiles: number }
+}
+
+interface UsersMeta {
+  page: number
+  limit: number
+  total: number
+  totalPages?: number
 }
 
 interface UserDetail {
@@ -38,8 +53,12 @@ interface UserDetail {
 
 export default function UsersPage() {
   const queryClient = useQueryClient()
+  const highlightId = useHighlightId()
+  const refFor = useHighlightedRowRef(highlightId)
   const [search, setSearch] = useState('')
   const [debouncedSearch, setDebouncedSearch] = useState('')
+  const [page, setPage] = useState(1)
+  const [limit] = useState(20)
   const [selectedTgid, setSelectedTgid] = useState<number | null>(null)
   const [adjustOpen, setAdjustOpen] = useState(false)
   const [adjustForm, setAdjustForm] = useState({ delta: 0, reason: '' })
@@ -50,11 +69,13 @@ export default function UsersPage() {
   }, [search])
 
   const { data, isLoading } = useQuery({
-    queryKey: ['admin', 'users', debouncedSearch],
+    queryKey: ['admin', 'users', page, limit, debouncedSearch],
     queryFn: () => {
       const params = new URLSearchParams()
+      params.set('page', String(page))
+      params.set('limit', String(limit))
       if (debouncedSearch) params.set('search', debouncedSearch)
-      return api.get<UserRow[]>(`/admin/users${params.toString() ? '?' + params.toString() : ''}`)
+      return api.get<UsersResponse>(`/admin/users?${params.toString()}`)
     },
   })
 
@@ -74,10 +95,15 @@ export default function UsersPage() {
     },
   })
 
-  const users = data?.data ?? []
+  const users = data?.data.users ?? []
+  const stats = data?.data.stats
+  const meta = data?.meta as UsersMeta | undefined
+  const totalPages = meta?.totalPages ?? (meta ? Math.ceil(meta.total / meta.limit) : 0)
 
   function openDetail(u: UserRow) {
     setSelectedTgid(u.telegram_id)
+    setAdjustOpen(false)
+    setAdjustForm({ delta: 0, reason: '' })
   }
 
   const columns: Column<UserRow>[] = [
@@ -85,7 +111,14 @@ export default function UsersPage() {
       header: 'Tên', primary: true,
       cell: (u) => (
         <button onClick={() => openDetail(u)} className="text-left hover:underline">
-          <div className="font-medium">{u.full_name}</div>
+          <div className="font-medium flex items-center gap-2">
+            <span>{u.full_name}</span>
+            {u.is_virtual && (
+              <span className="clay-pill text-[10px] px-2 py-0.5" style={{ background: 'var(--color-lemon-400)' }}>
+                ảo
+              </span>
+            )}
+          </div>
           <div className="text-xs text-clay-silver">
             {u.username ? `@${u.username}` : `ID ${u.telegram_id}`}
           </div>
@@ -96,7 +129,25 @@ export default function UsersPage() {
     { header: 'Telegram ID', cell: (u) => <span className="font-mono text-xs text-clay-silver">{u.telegram_id}</span> },
     { header: 'Số dư', className: 'text-right font-medium', cell: (u) => formatPrice(u.balance) },
     { header: 'Đơn đã giao', className: 'text-right', cell: (u) => u.order_count },
-    { header: 'Tham gia', cell: (u) => <span className="text-xs text-clay-charcoal">{new Date(u.created_at).toLocaleDateString('vi')}</span> },
+    {
+      header: 'Tham gia',
+      cell: (u) => <span className="text-xs text-clay-charcoal">{u.created_at ? new Date(u.created_at).toLocaleDateString('vi') : '—'}</span>,
+    },
+    {
+      header: 'Thao tác',
+      className: 'text-center',
+      cell: (u) => (
+        <a
+          href={buildTelegramContactUrl({ username: u.username, telegramId: u.telegram_id })}
+          target="_blank"
+          rel="noreferrer"
+          title={telegramContactTitle({ username: u.username, telegramId: u.telegram_id })}
+          className="clay-btn text-xs py-1 px-2"
+        >
+          Nhắn tin
+        </a>
+      ),
+    },
   ]
 
   function closeDetail() {
@@ -123,12 +174,30 @@ export default function UsersPage() {
           <input
             type="search"
             value={search}
-            onChange={(e) => setSearch(e.target.value)}
+            onChange={(e) => {
+              setSearch(e.target.value)
+              setPage(1)
+            }}
             placeholder="Tìm theo tên, @username, ID..."
             className="clay-input text-sm w-72 pl-9"
           />
         </div>
       </div>
+
+      {stats && (
+        <div className="clay-card p-4 space-y-2">
+          <div className="grid gap-3 sm:grid-cols-3 text-sm">
+            <div><span className="text-clay-silver">Tổng users:</span> <b>{stats.totalUsers}</b></div>
+            <div><span className="text-clay-silver">Người mua:</span> <b>{stats.buyers}</b></div>
+            <div><span className="text-clay-silver">Thiếu hồ sơ:</span> <b>{stats.missingProfiles}</b></div>
+          </div>
+          {stats.missingProfiles > 0 && (
+            <p className="text-xs text-amber-700">
+              Có {stats.missingProfiles} người mua thiếu hồ sơ user; đây là dòng người mua ảo từ đơn hàng không có bot profile.
+            </p>
+          )}
+        </div>
+      )}
 
       <ResponsiveTable
         rows={users}
@@ -136,7 +205,32 @@ export default function UsersPage() {
         rowKey={(u) => u.telegram_id}
         loading={isLoading}
         emptyText="Không có người dùng nào"
+        rowRef={refFor}
       />
+
+      {totalPages > 1 && (
+        <div className="clay-card flex items-center justify-between px-4 py-3">
+          <span className="text-sm text-clay-charcoal">
+            Trang {page} / {totalPages}
+          </span>
+          <div className="flex gap-2">
+            <button
+              onClick={() => setPage((p) => Math.max(1, p - 1))}
+              disabled={page <= 1}
+              className="clay-btn text-sm py-1.5 px-3 disabled:opacity-40"
+            >
+              Trước
+            </button>
+            <button
+              onClick={() => setPage((p) => Math.min(totalPages, p + 1))}
+              disabled={page >= totalPages}
+              className="clay-btn text-sm py-1.5 px-3 disabled:opacity-40"
+            >
+              Sau
+            </button>
+          </div>
+        </div>
+      )}
 
       {/* Detail drawer */}
       {selectedTgid && (
@@ -163,15 +257,17 @@ export default function UsersPage() {
                   <div className="mt-3 text-2xl clay-display">
                     💼 {formatPrice(detailData.data.user.balance)}
                   </div>
-                  <button
-                    onClick={() => setAdjustOpen(true)}
-                    className="clay-btn clay-btn--ube text-sm mt-3 flex items-center gap-1.5"
-                  >
-                    <Wallet size={16} />Điều chỉnh số dư
-                  </button>
+                  {!detailData.data.user.is_virtual && (
+                    <button
+                      onClick={() => setAdjustOpen(true)}
+                      className="clay-btn clay-btn--ube text-sm mt-3 flex items-center gap-1.5"
+                    >
+                      <Wallet size={16} />Điều chỉnh số dư
+                    </button>
+                  )}
                 </div>
 
-                {adjustOpen && (
+                {adjustOpen && !detailData.data.user.is_virtual && (
                   <form onSubmit={submitAdjust} className="clay-card-dashed p-4 space-y-3">
                     <h3 className="font-semibold">Điều chỉnh số dư</h3>
                     <p className="text-xs text-clay-charcoal">

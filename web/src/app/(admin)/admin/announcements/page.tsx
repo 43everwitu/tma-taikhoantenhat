@@ -4,6 +4,7 @@ import { useState } from 'react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { api } from '@/lib/api'
 import { formatDate } from '@/lib/utils'
+import { useHighlightId, useHighlightedRowRef } from '@/lib/useHighlightedRow'
 
 interface BroadcastError {
   userId: number
@@ -32,6 +33,8 @@ const targetLabels: Record<string, string> = {
 
 export default function AnnouncementsPage() {
   const queryClient = useQueryClient()
+  const highlightId = useHighlightId()
+  const refFor = useHighlightedRowRef(highlightId)
 
   const [title, setTitle] = useState('')
   const [body, setBody] = useState('')
@@ -210,7 +213,7 @@ export default function AnnouncementsPage() {
             </thead>
             <tbody>
               {announcements.map((ann) => (
-                <tr key={ann.id} className="border-b border-clay-oat-light hover:bg-clay-oat-light/40">
+                <tr key={ann.id} ref={refFor(ann.id)} className="border-b border-clay-oat-light hover:bg-clay-oat-light/40">
                   <td className="py-3 px-4 font-medium">
                     <div className="flex items-center gap-2">
                       {ann.title}

@@ -75,6 +75,7 @@ function shapeProduct(r) {
     imageUrl: r.image_url || '',
     slug: r.slug || '',
     promotion: r.promotion || '',
+    isFeatured: !!r.is_featured,
     contactOnly: !!r.contact_only,
     contactUrl: r.contact_url || '',
   };
@@ -106,15 +107,16 @@ router.post('/', validate(z.object({
   description: z.string().max(500).optional().nullable(),
   longDescription: z.string().max(20000).nullable().optional(),
   usageInstructions: z.string().max(20000).nullable().optional(),
-  emoji: z.string().max(10).optional().default('📦'),
+  emoji: z.string().max(10).nullable().optional(),
   imageUrl: z.string().max(500).nullable().optional(),
   lowStockThreshold: z.number().int().min(0).optional().default(5),
   promotion: z.string().max(200).nullable().optional(),
   contactOnly: z.boolean().optional().default(false),
   contactUrl: z.string().max(500).nullable().optional(),
+  notifyOnCreate: z.boolean().optional().default(false),
 }).refine(d => d.categoryId || d.category, {
   message: 'Either categoryId or category required',
-})), (req, res) => {
+})), async (req, res) => {
   const d = req.validated;
   let categoryId = d.categoryId;
   if (!categoryId && d.category) {
@@ -132,7 +134,7 @@ router.post('/', validate(z.object({
     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
   `).run(categoryId, d.name, d.price,
     d.description ? sanitizeDescription(d.description) : null,
-    d.emoji, slug,
+    d.emoji || null, slug,
     d.imageUrl || null,
     d.longDescription ? sanitizeDescription(d.longDescription) : null,
     d.lowStockThreshold,
@@ -142,8 +144,22 @@ router.post('/', validate(z.object({
   auditService.log(req.admin.adminId, 'product.create', 'product', result.lastInsertRowid, { name: d.name }, req.ip);
 
   const product = fetchProductForResponse(result.lastInsertRowid);
+  let notifyResult = null;
+  if (d.notifyOnCreate) {
+    const notificationService = req.app.locals.notificationService;
+    if (notificationService) {
+      notifyResult = await notificationService.notifyNewProduct(product, req.admin.adminId);
+      auditService.log(req.admin.adminId, 'product.notify.new', 'product', result.lastInsertRowid, {
+        sent: notifyResult.sent || 0,
+        failed: notifyResult.failed || 0,
+        total: notifyResult.total || 0,
+        skipped: notifyResult.skipped || null,
+        trigger: 'create_checkbox',
+      }, req.ip);
+    }
+  }
   eventBus.publish({ type: 'product.create', productId: result.lastInsertRowid });
-  res.json({ success: true, data: shapeProduct(product) });
+  res.json({ success: true, data: { ...shapeProduct(product), notify: notifyResult } });
 });
 
 // PUT /admin/products/:id — Update product
@@ -155,14 +171,15 @@ router.put('/:id', validate(z.object({
   description: z.string().max(500).nullable().optional(),
   longDescription: z.string().max(20000).nullable().optional(),
   usageInstructions: z.string().max(20000).nullable().optional(),
-  emoji: z.string().max(10).optional(),
+  emoji: z.string().max(10).nullable().optional(),
   promotion: z.string().max(200).nullable().optional(),
   contactOnly: z.boolean().optional(),
   contactUrl: z.string().max(500).nullable().optional(),
   imageUrl: z.string().max(500).nullable().optional(),
   lowStockThreshold: z.number().int().min(0).optional(),
   sortOrder: z.number().int().optional(),
-})), (req, res) => {
+  notifyOnUpdate: z.boolean().optional().default(false),
+})), async (req, res) => {
   const id = parseInt(req.params.id);
   const existing = db.prepare('SELECT * FROM products WHERE id = ?').get(id);
   if (!existing) return res.status(404).json({ success: false, error: { code: 'NOT_FOUND' } });
@@ -186,7 +203,7 @@ router.put('/:id', validate(z.object({
     sets.push('category_id = ?'); params.push(catId);
   }
   if (d.description !== undefined) { sets.push('description = ?'); params.push(d.description == null ? null : sanitizeDescription(d.description)); }
-  if (d.emoji !== undefined) { sets.push('emoji = ?'); params.push(d.emoji); }
+  if (d.emoji !== undefined) { sets.push('emoji = ?'); params.push(d.emoji || null); }
   if (d.promotion !== undefined) { sets.push('promotion = ?'); params.push(d.promotion); }
   if (d.contactOnly !== undefined) { sets.push('contact_only = ?'); params.push(d.contactOnly ? 1 : 0); }
   if (d.contactUrl !== undefined) { sets.push('contact_url = ?'); params.push(d.contactUrl); }
@@ -198,7 +215,21 @@ router.put('/:id', validate(z.object({
 
   if (sets.length === 0) {
     const product = fetchProductForResponse(id);
-    return res.json({ success: true, data: shapeProduct(product) });
+    let notifyResult = null;
+    if (d.notifyOnUpdate) {
+      const notificationService = req.app.locals.notificationService;
+      if (notificationService) {
+        notifyResult = await notificationService.notifyProductUpdated(product, req.admin.adminId);
+        auditService.log(req.admin.adminId, 'product.notify.update', 'product', id, {
+          sent: notifyResult.sent || 0,
+          failed: notifyResult.failed || 0,
+          total: notifyResult.total || 0,
+          skipped: notifyResult.skipped || null,
+          trigger: 'update_checkbox_no_change',
+        }, req.ip);
+      }
+    }
+    return res.json({ success: true, data: { ...shapeProduct(product), notify: notifyResult } });
   }
 
   sets.push('updated_at = CURRENT_TIMESTAMP');
@@ -208,18 +239,63 @@ router.put('/:id', validate(z.object({
   auditService.log(req.admin.adminId, 'product.update', 'product', id, d, req.ip);
 
   const updated = fetchProductForResponse(id);
+  let notifyResult = null;
+  if (d.notifyOnUpdate) {
+    const notificationService = req.app.locals.notificationService;
+    if (notificationService) {
+      notifyResult = await notificationService.notifyProductUpdated(updated, req.admin.adminId);
+      auditService.log(req.admin.adminId, 'product.notify.update', 'product', id, {
+        sent: notifyResult.sent || 0,
+        failed: notifyResult.failed || 0,
+        total: notifyResult.total || 0,
+        skipped: notifyResult.skipped || null,
+        trigger: 'update_checkbox',
+      }, req.ip);
+    }
+  }
   eventBus.publish({ type: 'product.update', productId: id, slug: updated.slug });
-  res.json({ success: true, data: shapeProduct(updated) });
+  res.json({ success: true, data: { ...shapeProduct(updated), notify: notifyResult } });
+});
+
+router.post('/:id/notify', validate(z.object({
+  kind: z.enum(['new', 'update']),
+})), async (req, res) => {
+  const id = parseInt(req.params.id);
+  const product = db.prepare('SELECT * FROM products WHERE id = ?').get(id);
+  if (!product) return res.status(404).json({ success: false, error: { code: 'NOT_FOUND' } });
+
+  const notificationService = req.app.locals.notificationService;
+  if (!notificationService) {
+    return res.status(500).json({ success: false, error: { code: 'SERVICE_UNAVAILABLE' } });
+  }
+
+  const result = req.validated.kind === 'new'
+    ? await notificationService.notifyNewProduct(product, req.admin.adminId)
+    : await notificationService.notifyProductUpdated(product, req.admin.adminId);
+
+  auditService.log(req.admin.adminId, `product.notify.${req.validated.kind}`, 'product', id, {
+    sent: result.sent || 0,
+    failed: result.failed || 0,
+    total: result.total || 0,
+    skipped: result.skipped || null,
+    trigger: 'manual',
+  }, req.ip);
+
+  res.json({ success: true, data: result });
 });
 
 // DELETE /admin/products/:id
 router.delete('/:id', (req, res) => {
   const id = parseInt(req.params.id);
-  const existing = db.prepare('SELECT id FROM products WHERE id = ?').get(id);
+  const existing = db.prepare('SELECT id, name, slug, price FROM products WHERE id = ?').get(id);
   if (!existing) return res.status(404).json({ success: false, error: { code: 'NOT_FOUND' } });
   db.prepare('DELETE FROM stock WHERE product_id = ? AND is_sold = 0').run(id);
   db.prepare('DELETE FROM products WHERE id = ?').run(id);
-  auditService.log(req.admin.adminId, 'product.delete', 'product', id, null, req.ip);
+  auditService.log(req.admin.adminId, 'product.delete', 'product', id, {
+    entityLabel: existing.name,
+    slug: existing.slug,
+    price: existing.price,
+  }, req.ip);
   eventBus.publish({ type: 'product.delete', productId: id });
   res.json({ success: true });
 });
@@ -307,6 +383,23 @@ router.patch('/:id/toggle', (req, res) => {
 
   eventBus.publish({ type: 'product.toggle', productId: id, active: !!newStatus });
   res.json({ success: true, data: { is_active: newStatus } });
+});
+
+// PATCH /admin/products/:id/featured — toggle homepage featured flag
+router.patch('/:id/featured', (req, res) => {
+  const id = parseInt(req.params.id);
+  const product = db.prepare('SELECT id, name, is_featured FROM products WHERE id = ?').get(id);
+  if (!product) return res.status(404).json({ success: false, error: { code: 'NOT_FOUND' } });
+
+  const newStatus = product.is_featured ? 0 : 1;
+  db.prepare('UPDATE products SET is_featured = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?').run(newStatus, id);
+  auditService.log(req.admin.adminId, 'product.featured', 'product', id, {
+    entityLabel: product.name,
+    is_featured: newStatus,
+  }, req.ip);
+
+  eventBus.publish({ type: 'product.update', productId: id, featured: !!newStatus });
+  res.json({ success: true, data: { is_featured: newStatus } });
 });
 
 // POST /admin/products/:id/duplicate — clone a product with a fresh slug.

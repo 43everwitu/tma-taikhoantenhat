@@ -2,73 +2,118 @@
 
 import Link from 'next/link'
 import { useEffect, useState } from 'react'
-import { useQuery } from '@tanstack/react-query'
+import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { apiFetch } from '@/lib/miniappApi'
 import { MiniAppShell } from './components/MiniAppShell'
 import { ProductSummary } from './components/ProductCard'
 import { ProductRail } from './components/ProductRail'
 import { SearchBox } from './components/SearchBox'
 import { CategoryStrip } from './components/CategoryStrip'
+import { AnnouncementCarousel } from './components/AnnouncementCarousel'
 import { Icon } from './components/Icon'
+import { DiscountCodeMeta, type DiscountMetaMode } from './components/DiscountCodeMeta'
 import { getRecentlyViewedIds } from '@/lib/recentlyViewed'
 import { t } from '@/i18n/vi'
 
-interface Announcement { id: string; title: string; body: string; pinned: boolean }
+interface Announcement { id: string; title: string; body: string; pinned: boolean; createdAt: string }
 interface Category { id: number; name: string; slug: string; emoji: string }
+interface GlobalDiscount {
+  code: string
+  label: string
+  title?: string
+  appMetaMode?: DiscountMetaMode
+  appMetaText?: string
+  appMessage?: string
+}
+interface HomePayload {
+  announcements: Announcement[]
+  globalDiscount: GlobalDiscount | null
+  categories: Category[]
+  featured: ProductSummary[]
+  newest: ProductSummary[]
+}
 
 export default function MiniAppHome() {
-  const [recentIds, setRecentIds] = useState<string[]>([])
+  const queryClient = useQueryClient()
+  const [recentIds] = useState<string[]>(() => getRecentlyViewedIds())
   const [q, setQ] = useState('')
+  const [copiedGlobalCode, setCopiedGlobalCode] = useState(false)
 
-  useEffect(() => {
-    setRecentIds(getRecentlyViewedIds())
-  }, [])
-
-  const ann = useQuery({
-    queryKey: ['announcements'],
-    queryFn: () => apiFetch<Announcement[]>('/announcements'),
-  })
-  const cats = useQuery({
-    queryKey: ['categories', 'noUncat'],
-    queryFn: () => apiFetch<Category[]>('/categories?exclude=uncategorized'),
-  })
-  const featured = useQuery({
-    queryKey: ['products', 'featured'],
-    queryFn: () => apiFetch<ProductSummary[]>('/products/featured'),
-  })
-  const newest = useQuery({
-    queryKey: ['products', 'newest', 30],
-    queryFn: () => apiFetch<ProductSummary[]>('/products?sort=newest&limit=30'),
-    select: (rows) => rows.slice(0, 30),
+  const home = useQuery({
+    queryKey: ['home'],
+    queryFn: () => apiFetch<HomePayload>('/home'),
+    staleTime: 60_000,
   })
   const recently = useQuery({
     queryKey: ['products', 'recently', recentIds.join(',')],
     queryFn: () => apiFetch<ProductSummary[]>(`/products?ids=${recentIds.join(',')}`),
     enabled: recentIds.length > 0,
   })
+  const ann = home.data?.announcements ?? []
+  const cats = home.data?.categories ?? []
+  const featured = home.data?.featured ?? []
+  const newest = home.data?.newest ?? []
+  const activeGlobalDiscount = home.data?.globalDiscount
+
+  useEffect(() => {
+    if (!home.data) return
+    queryClient.setQueryData(['announcements'], home.data.announcements)
+    queryClient.setQueryData(['discounts', 'global'], home.data.globalDiscount)
+    queryClient.setQueryData(['categories', 'noUncat'], home.data.categories)
+    queryClient.setQueryData(['products', 'featured'], home.data.featured)
+    queryClient.setQueryData(['products', 'newest', 30], home.data.newest)
+  }, [home.data, queryClient])
+
+  async function copyGlobalDiscountCode(code: string) {
+    if (typeof navigator === 'undefined' || !navigator.clipboard) return
+    try {
+      await navigator.clipboard.writeText(code)
+      setCopiedGlobalCode(true)
+      setTimeout(() => setCopiedGlobalCode(false), 1500)
+    } catch {
+      // No-op: clipboard can fail on unsupported clients.
+    }
+  }
 
   return (
     <MiniAppShell>
       <section className="miniapp-hero">
         <p className="text-xs uppercase tracking-wider opacity-70 mb-2">{t.appName}</p>
-        <h1>Tài khoản số chính chủ</h1>
-        <p>Mua trong Telegram. Giao key tự động. Bảo hành dài hạn.</p>
+        <h1>Mua hàng tự động</h1>
+        <p>Mua trong Mini App Telegram. Giao key tự động - Bảo hành toàn thời hạn.</p>
         <Link href="/san-pham" className="miniapp-hero-cta">
           Khám phá ngay
           <Icon name="arrowRight" size={16} />
         </Link>
       </section>
 
+      {activeGlobalDiscount && (
+        <section className="rounded-2xl p-3 mt-3 text-sm" style={{ background: 'var(--brand-gold-soft)', color: 'var(--brand-ink)' }}>
+          <p className="font-semibold leading-snug">
+            {activeGlobalDiscount.title || `${activeGlobalDiscount.label} tự động`}
+          </p>
+          <DiscountCodeMeta
+            code={activeGlobalDiscount.code}
+            label={activeGlobalDiscount.label}
+            mode={activeGlobalDiscount.appMetaMode}
+            text={activeGlobalDiscount.appMetaText}
+            copied={copiedGlobalCode}
+            onCopy={() => copyGlobalDiscountCode(activeGlobalDiscount.code)}
+          />
+          {activeGlobalDiscount.appMessage && <p className="text-xs opacity-75 mt-1 leading-relaxed">{activeGlobalDiscount.appMessage}</p>}
+        </section>
+      )}
+
       <section className="miniapp-section">
         <div className="miniapp-section-title">
           <span>{t.home.categoriesTitle}</span>
         </div>
-        {cats.isLoading && <p className="opacity-60 text-sm">Đang tải…</p>}
-        {cats.data && cats.data.length === 0 && (
+        {home.isLoading && <p className="opacity-60 text-sm">Đang tải…</p>}
+        {!home.isLoading && cats.length === 0 && (
           <p className="opacity-60 text-sm">{t.home.emptyCategories}</p>
         )}
-        {cats.data && cats.data.length > 0 && (
-          <CategoryStrip items={cats.data} />
+        {cats.length > 0 && (
+          <CategoryStrip items={cats} />
         )}
       </section>
 
@@ -76,27 +121,20 @@ export default function MiniAppHome() {
         <SearchBox value={q} onChange={setQ} placeholder="Tìm sản phẩm…" />
       </div>
 
-      {ann.data && ann.data.length > 0 && (
-        <section className="miniapp-section">
+      {ann.length > 0 && (
+        <section className="miniapp-section miniapp-section--compact miniapp-home-notifications">
           <div className="miniapp-section-title">
             <span className="inline-flex items-center gap-1.5">
               <Icon name="megaphone" size={16} />
               {t.home.announcementsTitle}
             </span>
           </div>
-          <ul className="space-y-2">
-            {ann.data.slice(0, 3).map((a) => (
-              <li key={a.id} className="miniapp-ann">
-                <p className="miniapp-ann-title">{a.title}</p>
-                <p className="miniapp-ann-body">{a.body}</p>
-              </li>
-            ))}
-          </ul>
+          <AnnouncementCarousel items={ann} />
         </section>
       )}
 
       {recently.data && recently.data.length > 0 && (
-        <section className="miniapp-section">
+        <section className="miniapp-section miniapp-section--compact miniapp-home-recent">
           <div className="miniapp-section-title">
             <span className="inline-flex items-center gap-1.5">
               <Icon name="clock" size={16} />
@@ -107,7 +145,7 @@ export default function MiniAppHome() {
         </section>
       )}
 
-      {featured.data && featured.data.length > 0 && (
+      {featured.length > 0 && (
         <section className="miniapp-section">
           <div className="miniapp-section-title">
             <span className="inline-flex items-center gap-1.5">
@@ -118,11 +156,11 @@ export default function MiniAppHome() {
               Tất cả <Icon name="arrowRight" size={14} />
             </Link>
           </div>
-          <ProductRail items={featured.data} />
+          <ProductRail items={featured} eagerFirst />
         </section>
       )}
 
-      {newest.data && newest.data.length > 0 && (
+      {newest.length > 0 && (
         <section className="miniapp-section">
           <div className="miniapp-section-title">
             <span className="inline-flex items-center gap-1.5">
@@ -133,7 +171,7 @@ export default function MiniAppHome() {
               Tất cả <Icon name="arrowRight" size={14} />
             </Link>
           </div>
-          <ProductRail items={newest.data} />
+          <ProductRail items={newest} />
         </section>
       )}
     </MiniAppShell>

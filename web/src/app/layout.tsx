@@ -11,13 +11,15 @@ export const metadata: Metadata = {
     default: 'Taikhoantenhat',
     template: '%s · Taikhoantenhat',
   },
-  description: 'Cửa hàng tài khoản số chính chủ — mua trong Telegram, giao key tự động, bảo hành dài hạn.',
   applicationName: 'Taikhoantenhat',
-  openGraph: {
-    title: 'Taikhoantenhat',
-    description: 'Cửa hàng tài khoản số chính chủ — mua trong Telegram, giao key tự động.',
-    type: 'website',
-    locale: 'vi_VN',
+  robots: {
+    index: false,
+    follow: false,
+    googleBot: {
+      index: false,
+      follow: false,
+      noimageindex: true,
+    },
   },
 }
 
@@ -30,6 +32,11 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
     <html lang="vi" className={`${inter.variable} ${jbm.variable}`} suppressHydrationWarning>
       <head>
         <script src="https://telegram.org/js/telegram-web-app.js?57" async />
+        <script
+          dangerouslySetInnerHTML={{
+            __html: `(function(){function d(){var w=window.Telegram&&window.Telegram.WebApp;if(!w)return false;w.ready();w.expand();try{if(typeof w.disableVerticalSwipes==='function')w.disableVerticalSwipes();}catch(e){}try{if(typeof w.postEvent==='function')w.postEvent('web_app_setup_swipe_behavior',{allow_vertical_swipe:false});}catch(e){}try{if(window.TelegramWebviewProxy)window.TelegramWebviewProxy.postEvent('web_app_setup_swipe_behavior',JSON.stringify({allow_vertical_swipe:false}));}catch(e){}return true;}if(!d()){var n=0,t=setInterval(function(){if(d()||++n>200)clearInterval(t);},25);}})();`,
+          }}
+        />
       </head>
       <body suppressHydrationWarning>
         <Providers>{children}</Providers>

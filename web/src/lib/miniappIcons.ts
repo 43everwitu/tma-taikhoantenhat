@@ -1,7 +1,7 @@
 import {
   Home, ShoppingCart, ClipboardList, Search, Package, Megaphone, Sparkles,
   BookOpen, Film, Wrench, Zap, Plus, Minus, Trash2, Inbox, Clock, CheckCircle2,
-  XCircle, AlertCircle, Info, Copy, ArrowRight, ChevronRight, Menu, X, SlidersHorizontal,
+  XCircle, AlertCircle, Info, Copy, Download, ArrowRight, ChevronRight, Menu, X, SlidersHorizontal,
   MessageCircle, Headphones,
   type LucideIcon,
 } from 'lucide-react'
@@ -28,6 +28,7 @@ export const miniappIcons = {
   alert: AlertCircle,
   info: Info,
   copy: Copy,
+  download: Download,
   arrowRight: ArrowRight,
   chevronRight: ChevronRight,
   menu: Menu,

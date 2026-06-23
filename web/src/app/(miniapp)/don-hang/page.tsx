@@ -5,7 +5,7 @@ import { useQuery } from '@tanstack/react-query'
 import { apiFetch } from '@/lib/miniappApi'
 import { MiniAppShell } from '../components/MiniAppShell'
 import { Icon } from '../components/Icon'
-import { formatPrice } from '@/lib/utils'
+import { formatDate, formatPrice } from '@/lib/utils'
 import { t } from '@/i18n/vi'
 
 type OrderStatus = 'pending' | 'paid' | 'delivered' | 'cancelled' | 'expired'
@@ -21,17 +21,6 @@ interface OrderRow {
 const STATUS_LABEL: Record<OrderStatus, string> = {
   pending: t.order.waiting, paid: t.order.paid, delivered: t.order.delivered,
   cancelled: t.order.cancelled, expired: t.order.expired,
-}
-
-function formatDate(iso: string) {
-  try {
-    return new Intl.DateTimeFormat('vi-VN', {
-      day: '2-digit', month: '2-digit', year: 'numeric',
-      hour: '2-digit', minute: '2-digit',
-    }).format(new Date(iso))
-  } catch {
-    return iso
-  }
 }
 
 export default function MyOrdersPage() {

@@ -74,6 +74,8 @@ export function RichEditor({ value, onChange, placeholder, rows = 4 }: Props) {
         blockquote: false,
         horizontalRule: false,
         codeBlock: false,
+        link: false,
+        underline: false,
       }),
       Underline,
       Link.configure({ openOnClick: false, HTMLAttributes: { rel: 'noopener noreferrer', target: '_blank' } }),

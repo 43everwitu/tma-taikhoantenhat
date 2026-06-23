@@ -15,17 +15,15 @@ function createBot() {
     try { ctx.reply('❌ Đã xảy ra lỗi. Vui lòng thử lại sau.'); } catch {}
   });
 
-  // Two real commands: entry point + identity utility.
+  // Single real command: the Mini App entry point.
   require('../commands/start')(bot);
-  require('../commands/myid')(bot);
 
   // Fallback: any other input nudges the user back to the Mini App.
   require('./fallback')(bot);
 
-  // Replace the menu — only /start and /myid show in the slash UI.
+  // Replace the menu — only /start shows in the slash UI.
   const COMMANDS = [
     { command: 'start', description: 'Mở cửa hàng' },
-    { command: 'myid',  description: 'Lấy ID của bạn' },
   ];
   (async () => {
     try {
