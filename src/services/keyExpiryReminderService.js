@@ -11,6 +11,7 @@ let bot = null;
 let timer = null;
 let inFlightSweep = null;
 const confirmedSentStockIds = new Set();
+const MAX_PERSIST_ATTEMPTS = 3;
 
 function init(b) { bot = b; }
 
@@ -117,8 +118,22 @@ async function runSweep() {
       status: 'sent',
       messageBody: body,
     });
-    markSent.run(r.id);
   });
+  const retryPersistence = (operation, description, stockId) => {
+    let lastError;
+    for (let attempt = 1; attempt <= MAX_PERSIST_ATTEMPTS; attempt++) {
+      try {
+        return operation();
+      } catch (err) {
+        lastError = err;
+        console.error(
+          `keyExpiryReminder ${description} failed for stock #${stockId} (attempt ${attempt}/${MAX_PERSIST_ATTEMPTS}):`,
+          err.message,
+        );
+      }
+    }
+    throw lastError;
+  };
 
   let sent = 0;
   let skipped = 0;
@@ -200,7 +215,7 @@ async function runSweep() {
           `keyExpiryReminder Telegram failure log could not be persisted for stock #${r.id}:`,
           logError.message,
         );
-        throw logError;
+        continue;
       }
       failed++;
       console.error(`keyExpiryReminder Telegram send failed for stock #${r.id}:`, err.message);
@@ -209,43 +224,32 @@ async function runSweep() {
 
     confirmedSentStockIds.add(r.id);
     try {
-      persistSuccessfulSend(r, order, lifecycle, expiryDate, body);
+      retryPersistence(
+        () => markSent.run(r.id),
+        'sent-marker persistence',
+        r.id,
+      );
       confirmedSentStockIds.delete(r.id);
     } catch (err) {
       console.error(
-        `keyExpiryReminder Telegram sent but persistence failed for stock #${r.id}:`,
+        `keyExpiryReminder Telegram sent but could not persist sent marker after ${MAX_PERSIST_ATTEMPTS} attempts for stock #${r.id}:`,
         err.message,
       );
-      let recovered = false;
-      try {
-        recovered = markSent.run(r.id).changes > 0;
-      } catch (markerError) {
-        console.error(
-          `keyExpiryReminder sent-marker recovery failed for stock #${r.id}:`,
-          markerError.message,
-        );
-      }
-      try {
-        renewalReminderLogService.insertLog({
-          stockId: r.id,
-          orderId: order?.id ?? null,
-          userId: r.sold_to,
-          productId: r.product_id,
-          productName: r.product_name,
-          expiryDate: lifecycle?.expiryDate ?? expiryDate,
-          daysBeforeExpiry: lifecycle?.remainingDays ?? null,
-          telegramSent: 1,
-          status: 'sent',
-          messageBody: body,
-        });
-        recovered = true;
-      } catch (logError) {
-        console.error(
-          `keyExpiryReminder sent-log recovery failed for stock #${r.id}:`,
-          logError.message,
-        );
-      }
-      if (recovered) confirmedSentStockIds.delete(r.id);
+      sent++;
+      continue;
+    }
+
+    try {
+      retryPersistence(
+        () => persistSuccessfulSend(r, order, lifecycle, expiryDate, body),
+        'Telegram sent but persistence',
+        r.id,
+      );
+    } catch (err) {
+      console.error(
+        `keyExpiryReminder Telegram sent and marker persisted but notification/log persistence failed after ${MAX_PERSIST_ATTEMPTS} attempts for stock #${r.id}:`,
+        err.message,
+      );
     }
     sent++;
   }

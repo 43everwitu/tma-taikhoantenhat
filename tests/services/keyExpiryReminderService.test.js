@@ -26,6 +26,7 @@ function restoreReminderConfig(snapshot) {
     db.prepare("UPDATE message_templates SET is_enabled = ? WHERE key = 'bot.expiry_reminder'")
       .run(snapshot.templateIsEnabled);
   }
+  require('../../src/services/messageTemplateService').invalidate();
 }
 
 function seedDueReminder() {
@@ -36,6 +37,7 @@ function seedDueReminder() {
     db.prepare('INSERT INTO settings (key, value) VALUES (?, ?) ON CONFLICT(key) DO UPDATE SET value = excluded.value')
       .run('key_expiry_reminder_days', '3');
     db.prepare("UPDATE message_templates SET is_enabled = 1 WHERE key = 'bot.expiry_reminder'").run();
+    require('../../src/services/messageTemplateService').invalidate();
     db.prepare('INSERT INTO users (telegram_id, full_name) VALUES (?, ?)').run(userId, `Reminder User ${suffix}`);
     const category = db.prepare('INSERT INTO categories (name, slug) VALUES (?, ?)').run(
       `reminder-cat-${suffix}`,
@@ -94,6 +96,30 @@ function freshService() {
   delete require.cache[require.resolve('../../src/services/keyExpiryReminderService')];
   delete require.cache[require.resolve('../../src/services/orderExpiryService')];
   return require('../../src/services/keyExpiryReminderService');
+}
+
+function failReminderMarkerUpdates(t, stockId, failures) {
+  const suffix = `${stockId}_${Date.now()}_${Math.floor(Math.random() * 100000)}`;
+  const functionName = `fail_reminder_marker_${suffix}`;
+  const triggerName = `fail_reminder_marker_trigger_${suffix}`;
+  let attempts = 0;
+  db.function(functionName, () => {
+    attempts++;
+    if (attempts <= failures) throw new Error(`Forced marker failure ${attempts}`);
+    return 1;
+  });
+  db.exec(`
+    CREATE TEMP TRIGGER ${triggerName}
+    BEFORE UPDATE OF reminder_sent_at ON stock
+    WHEN NEW.id = ${Number(stockId)}
+    BEGIN
+      SELECT ${functionName}();
+    END
+  `);
+  t.after(() => {
+    db.exec(`DROP TRIGGER IF EXISTS ${triggerName}`);
+  });
+  return () => attempts;
 }
 
 test('sweep sends Telegram reminder, creates TMA notification, and logs delivery', async (t) => {
@@ -318,6 +344,8 @@ test('post-send persistence failure recovers sent state without retrying Telegra
   renewalReminderLogService.insertLog = (input) => {
     if (input.status === 'sent' && failSentLogOnce) {
       failSentLogOnce = false;
+      const stock = db.prepare('SELECT reminder_sent_at FROM stock WHERE id = ?').get(seed.stockId);
+      assert.ok(stock.reminder_sent_at, 'expected durable marker before notification/log persistence');
       throw new Error('Forced sent log failure');
     }
     return originalInsertLog(input);
@@ -362,53 +390,188 @@ test('post-send persistence failure recovers sent state without retrying Telegra
   assert.strictEqual(sendAttempts, 1);
   assert.ok(consoleErrors.some((message) => message.includes('Telegram sent but persistence failed')));
 
+  const notifications = db.prepare(`
+    SELECT id
+    FROM notifications
+    WHERE user_id = ? AND type = 'renewal_reminder'
+    ORDER BY id
+  `).all(seed.userId);
+  assert.strictEqual(notifications.length, 1);
   const logs = db.prepare(`
-    SELECT status, telegram_sent
+    SELECT status, telegram_sent, web_notification_id
     FROM renewal_reminder_logs
     WHERE stock_id = ?
     ORDER BY id
   `).all(seed.stockId);
-  assert.deepStrictEqual(logs, [{ status: 'sent', telegram_sent: 1 }]);
+  assert.deepStrictEqual(logs, [{
+    status: 'sent',
+    telegram_sent: 1,
+    web_notification_id: notifications[0].id,
+  }]);
   const stock = db.prepare('SELECT reminder_sent_at FROM stock WHERE id = ?').get(seed.stockId);
   assert.ok(stock.reminder_sent_at);
 });
 
-test('failed Telegram log insertion rejects instead of reporting a recorded failure', async (t) => {
-  const seed = seedDueReminder();
-  t.after(() => cleanup(seed));
+test('failed Telegram log insertion does not abort later reminder rows', async (t) => {
+  const firstSeed = seedDueReminder();
+  const secondSeed = seedDueReminder();
+  t.after(() => {
+    cleanup(secondSeed);
+    cleanup(firstSeed);
+  });
   const renewalReminderLogService = require('../../src/services/renewalReminderLogService');
   const originalInsertLog = renewalReminderLogService.insertLog;
   t.after(() => {
     renewalReminderLogService.insertLog = originalInsertLog;
   });
   renewalReminderLogService.insertLog = (input) => {
-    if (input.status === 'failed') {
+    if (input.status === 'failed' && input.stockId === firstSeed.stockId) {
       throw new Error('Forced failed log insertion error');
     }
     return originalInsertLog(input);
   };
 
+  let sendAttempts = 0;
+  const service = freshService();
+  service.init({
+    telegram: {
+      async sendMessage(chatId) {
+        sendAttempts++;
+        if (chatId === firstSeed.userId) {
+          throw new Error('Telegram unavailable');
+        }
+      },
+    },
+  });
+
+  const consoleErrors = [];
+  const originalConsoleError = console.error;
+  console.error = (...args) => consoleErrors.push(args.join(' '));
+  let result;
+  try {
+    result = await service.sweep();
+  } finally {
+    console.error = originalConsoleError;
+  }
+
+  assert.deepStrictEqual(result, {
+    scanned: 2,
+    sent: 1,
+    skipped: 0,
+    failed: 0,
+    exhausted: 0,
+  });
+  assert.strictEqual(sendAttempts, 2);
+  assert.ok(consoleErrors.some((message) => message.includes('failure log could not be persisted')));
+
+  const firstLogs = db.prepare('SELECT status FROM renewal_reminder_logs WHERE stock_id = ?')
+    .all(firstSeed.stockId);
+  assert.deepStrictEqual(firstLogs, []);
+  const firstStock = db.prepare('SELECT reminder_sent_at FROM stock WHERE id = ?').get(firstSeed.stockId);
+  assert.strictEqual(firstStock.reminder_sent_at, null);
+
+  const secondLogs = db.prepare('SELECT status FROM renewal_reminder_logs WHERE stock_id = ?')
+    .all(secondSeed.stockId);
+  assert.deepStrictEqual(secondLogs, [{ status: 'sent' }]);
+  const secondStock = db.prepare('SELECT reminder_sent_at FROM stock WHERE id = ?').get(secondSeed.stockId);
+  assert.ok(secondStock.reminder_sent_at);
+});
+
+test('sent marker retries three times before audit persistence without resending Telegram', async (t) => {
+  const seed = seedDueReminder();
+  t.after(() => cleanup(seed));
+  const getMarkerAttempts = failReminderMarkerUpdates(t, seed.stockId, 2);
+
+  let sendAttempts = 0;
   const service = freshService();
   service.init({
     telegram: {
       async sendMessage() {
-        throw new Error('Telegram unavailable');
+        sendAttempts++;
       },
     },
   });
 
   const originalConsoleError = console.error;
   console.error = () => {};
+  let result;
   try {
-    await assert.rejects(service.sweep(), /Forced failed log insertion error/);
+    result = await service.sweep();
   } finally {
     console.error = originalConsoleError;
   }
 
+  assert.deepStrictEqual(result, {
+    scanned: 1,
+    sent: 1,
+    skipped: 0,
+    failed: 0,
+    exhausted: 0,
+  });
+  assert.strictEqual(sendAttempts, 1);
+  assert.strictEqual(getMarkerAttempts(), 3);
+  const stock = db.prepare('SELECT reminder_sent_at FROM stock WHERE id = ?').get(seed.stockId);
+  assert.ok(stock.reminder_sent_at);
   const logs = db.prepare('SELECT status FROM renewal_reminder_logs WHERE stock_id = ?').all(seed.stockId);
-  assert.deepStrictEqual(logs, []);
+  assert.deepStrictEqual(logs, [{ status: 'sent' }]);
+});
+
+test('sent marker exhaustion keeps in-memory guard and does not write a failed audit log', async (t) => {
+  const seed = seedDueReminder();
+  t.after(() => cleanup(seed));
+  const getMarkerAttempts = failReminderMarkerUpdates(t, seed.stockId, Number.MAX_SAFE_INTEGER);
+
+  let sendAttempts = 0;
+  const service = freshService();
+  service.init({
+    telegram: {
+      async sendMessage() {
+        sendAttempts++;
+      },
+    },
+  });
+
+  const consoleErrors = [];
+  const originalConsoleError = console.error;
+  console.error = (...args) => consoleErrors.push(args.join(' '));
+  let firstResult;
+  let secondResult;
+  try {
+    firstResult = await service.sweep();
+    secondResult = await service.sweep();
+  } finally {
+    console.error = originalConsoleError;
+  }
+
+  assert.deepStrictEqual(firstResult, {
+    scanned: 1,
+    sent: 1,
+    skipped: 0,
+    failed: 0,
+    exhausted: 0,
+  });
+  assert.deepStrictEqual(secondResult, {
+    scanned: 1,
+    sent: 0,
+    skipped: 0,
+    failed: 0,
+    exhausted: 0,
+  });
+  assert.strictEqual(sendAttempts, 1);
+  assert.strictEqual(getMarkerAttempts(), 3);
+  assert.ok(consoleErrors.some((message) => (
+    message.includes('could not persist sent marker after 3 attempts')
+  )));
+
   const stock = db.prepare('SELECT reminder_sent_at FROM stock WHERE id = ?').get(seed.stockId);
   assert.strictEqual(stock.reminder_sent_at, null);
+  const logs = db.prepare('SELECT status FROM renewal_reminder_logs WHERE stock_id = ?').all(seed.stockId);
+  assert.deepStrictEqual(logs, []);
+  const notifications = db.prepare(`
+    SELECT id FROM notifications
+    WHERE user_id = ? AND type = 'renewal_reminder'
+  `).all(seed.userId);
+  assert.deepStrictEqual(notifications, []);
 });
 
 test('one row preflight failure does not abort later reminder rows', async (t) => {
