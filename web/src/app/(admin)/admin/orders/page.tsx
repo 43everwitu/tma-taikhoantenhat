@@ -4,6 +4,7 @@ import { useState, useEffect } from 'react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { api } from '@/lib/api'
 import { formatPrice, formatDate } from '@/lib/utils'
+import { buildTelegramContactUrl, telegramContactTitle } from '@/lib/telegramContact'
 import { Search, Clock, CheckCircle2, XCircle, Check, Eye, EyeOff, Copy, Send } from '@/lib/icons'
 import { ResponsiveTable, Column } from '@/components/ResponsiveTable'
 import { useHighlightId, useHighlightedRowRef } from '@/lib/useHighlightedRow'
@@ -12,6 +13,7 @@ interface Order {
   id: string
   userId: string
   userName: string
+  username?: string
   productName: string
   quantity: number
   totalPrice: number
@@ -326,9 +328,22 @@ export default function OrdersPage() {
   ]
 
   function rowActions(order: Order) {
+    const contactButton = order.userId ? (
+      <a
+        href={buildTelegramContactUrl({ username: order.username, telegramId: order.userId })}
+        target="_blank"
+        rel="noreferrer"
+        title={telegramContactTitle({ username: order.username, telegramId: order.userId })}
+        className="clay-btn text-xs py-1 px-2"
+      >
+        Nhắn tin
+      </a>
+    ) : null
+
     if (order.status === 'pending' || order.status === 'paid') {
       return (
         <>
+          {contactButton}
           <button
             onClick={() => confirmMutation.mutate(order.id)}
             disabled={confirmMutation.isPending}
@@ -349,6 +364,7 @@ export default function OrdersPage() {
     if (order.status === 'delivered') {
       return (
         <>
+          {contactButton}
           <button
             onClick={() => handleResend(order.id)}
             disabled={resendMutation.isPending}
@@ -363,7 +379,7 @@ export default function OrdersPage() {
         </>
       )
     }
-    return null
+    return contactButton
   }
 
   return (
