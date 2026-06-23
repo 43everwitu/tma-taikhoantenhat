@@ -25,7 +25,7 @@ function shape(row) {
   };
 }
 
-router.get('/', (req, res) => {
+router.get('/', requirePermission('orders.read'), (req, res) => {
   const page = Math.max(1, parseInt(req.query.page, 10) || 1);
   const limit = Math.max(1, Math.min(100, parseInt(req.query.limit, 10) || 50));
   const offset = (page - 1) * limit;
@@ -69,7 +69,7 @@ router.get('/', (req, res) => {
   });
 });
 
-router.post('/sweep', requirePermission('orders.write'), async (req, res) => {
+router.post('/sweep', requirePermission('orders.write'), async (req, res, next) => {
   const bot = req.app.get('bot');
   if (!bot) {
     return res.status(500).json({
@@ -78,9 +78,13 @@ router.post('/sweep', requirePermission('orders.write'), async (req, res) => {
     });
   }
 
-  keyExpiryReminderService.init(bot);
-  const summary = await keyExpiryReminderService.sweep();
-  res.json({ success: true, data: summary });
+  try {
+    keyExpiryReminderService.init(bot);
+    const summary = await keyExpiryReminderService.sweep();
+    res.json({ success: true, data: summary });
+  } catch (err) {
+    next(err);
+  }
 });
 
 module.exports = router;
