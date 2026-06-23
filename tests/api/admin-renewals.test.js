@@ -83,8 +83,16 @@ function makeApp({ bot, admin } = {}) {
 function seedRenewalLog() {
   const suffix = `${Date.now()}_${Math.floor(Math.random() * 100000)}`;
   const userId = 896_000_000 + Math.floor(Math.random() * 100000);
+  const userName = `Renewal Admin ${suffix}`;
+  const username = `renewal_admin_${suffix}`;
+  const variantName = `Renewal variant ${suffix}`;
+  const stockValue = `key-${suffix}`;
   return db.transaction(() => {
-    db.prepare('INSERT INTO users (telegram_id, full_name) VALUES (?, ?)').run(userId, `Renewal Admin ${suffix}`);
+    db.prepare('INSERT INTO users (telegram_id, full_name, username) VALUES (?, ?, ?)').run(
+      userId,
+      userName,
+      username,
+    );
     const category = db.prepare('INSERT INTO categories (name, slug) VALUES (?, ?)').run(
       `renewal-admin-cat-${suffix}`,
       `renewal-admin-cat-${suffix}`,
@@ -93,14 +101,18 @@ function seedRenewalLog() {
       INSERT INTO products (category_id, name, slug, price, is_active)
       VALUES (?, ?, ?, 1000, 1)
     `).run(category.lastInsertRowid, `Renewal admin product ${suffix}`, `renewal-admin-product-${suffix}`);
+    const variant = db.prepare(`
+      INSERT INTO product_variants (product_id, name, price, is_active)
+      VALUES (?, ?, 1000, 1)
+    `).run(product.lastInsertRowid, variantName);
     const order = db.prepare(`
-      INSERT INTO orders (user_id, product_id, quantity, total_price, payment_code, status, source)
-      VALUES (?, ?, 1, 1000, ?, 'delivered', 'telegram')
-    `).run(userId, product.lastInsertRowid, `PNS_RENEWAL_ADMIN_${suffix}`);
+      INSERT INTO orders (user_id, product_id, variant_id, quantity, total_price, payment_code, status, source)
+      VALUES (?, ?, ?, 1, 1000, ?, 'delivered', 'telegram')
+    `).run(userId, product.lastInsertRowid, variant.lastInsertRowid, `PNS_RENEWAL_ADMIN_${suffix}`);
     const stock = db.prepare(`
-      INSERT INTO stock (product_id, data, duration_days, is_sold, sold_to, sold_at)
-      VALUES (?, ?, 30, 1, ?, datetime('now', '-27 days'))
-    `).run(product.lastInsertRowid, `key-${suffix}`, userId);
+      INSERT INTO stock (product_id, variant_id, data, duration_days, is_sold, sold_to, sold_at)
+      VALUES (?, ?, ?, 30, 1, ?, datetime('now', '-27 days'))
+    `).run(product.lastInsertRowid, variant.lastInsertRowid, stockValue, userId);
     const log = db.prepare(`
       INSERT INTO renewal_reminder_logs (
         stock_id, order_id, user_id, product_id, product_name, expiry_date,
@@ -109,11 +121,17 @@ function seedRenewalLog() {
     `).run(stock.lastInsertRowid, order.lastInsertRowid, userId, product.lastInsertRowid, `Renewal admin product ${suffix}`, 'body');
 
     return {
+      suffix,
       userId,
+      userName,
+      username,
       categoryId: category.lastInsertRowid,
       productId: product.lastInsertRowid,
+      variantId: variant.lastInsertRowid,
+      variantName,
       orderId: order.lastInsertRowid,
       stockId: stock.lastInsertRowid,
+      stockValue,
       logId: log.lastInsertRowid,
       productName: `Renewal admin product ${suffix}`,
     };
@@ -129,6 +147,7 @@ function cleanup(seed) {
     db.prepare("DELETE FROM notifications WHERE user_id = ? AND type = 'renewal_reminder'").run(seed.userId);
     db.prepare('DELETE FROM stock WHERE id = ?').run(seed.stockId);
     db.prepare('DELETE FROM orders WHERE id = ?').run(seed.orderId);
+    db.prepare('DELETE FROM product_variants WHERE id = ?').run(seed.variantId);
     db.prepare('DELETE FROM products WHERE id = ?').run(seed.productId);
     db.prepare('DELETE FROM categories WHERE id = ?').run(seed.categoryId);
     db.prepare('DELETE FROM users WHERE telegram_id = ?').run(seed.userId);
@@ -148,6 +167,52 @@ test('GET /admin/renewals returns paginated renewal reminder logs', async (t) =>
   assert.strictEqual(res.json.data.items[0].orderId, String(seed.orderId));
   assert.strictEqual(res.json.data.items[0].status, 'sent');
   assert.strictEqual(res.json.data.items[0].telegramSent, true);
+  assert.strictEqual(res.json.data.items[0].stockValue, seed.stockValue);
+  assert.strictEqual(res.json.data.items[0].variantId, String(seed.variantId));
+  assert.strictEqual(res.json.data.items[0].variantName, seed.variantName);
+  assert.strictEqual(res.json.data.items[0].variantLabel, seed.variantName);
+  assert.strictEqual(res.json.data.items[0].userName, seed.userName);
+  assert.strictEqual(res.json.data.items[0].username, seed.username);
+});
+
+test('GET /admin/renewals keeps stock and variant readable without order', async (t) => {
+  const seed = seedRenewalLog();
+  t.after(() => cleanup(seed));
+  db.prepare('UPDATE renewal_reminder_logs SET order_id = NULL WHERE id = ?').run(seed.logId);
+
+  const res = await requestJson(
+    makeApp(),
+    'GET',
+    `/admin/renewals?q=${encodeURIComponent(seed.variantName)}`,
+  );
+
+  assert.strictEqual(res.status, 200, `unexpected body: ${JSON.stringify(res.json)}`);
+  assert.strictEqual(res.json.success, true);
+  assert.strictEqual(res.json.data.total, 1);
+  assert.strictEqual(res.json.data.items.length, 1);
+  assert.strictEqual(res.json.data.items[0].orderId, null);
+  assert.strictEqual(res.json.data.items[0].stockValue, seed.stockValue);
+  assert.strictEqual(res.json.data.items[0].variantId, String(seed.variantId));
+  assert.strictEqual(res.json.data.items[0].variantName, seed.variantName);
+  assert.strictEqual(res.json.data.items[0].variantLabel, seed.variantName);
+});
+
+test('GET /admin/renewals searches joined stock values consistently', async (t) => {
+  const seed = seedRenewalLog();
+  t.after(() => cleanup(seed));
+
+  const res = await requestJson(
+    makeApp(),
+    'GET',
+    `/admin/renewals?q=${encodeURIComponent(seed.stockValue)}`,
+  );
+
+  assert.strictEqual(res.status, 200, `unexpected body: ${JSON.stringify(res.json)}`);
+  assert.strictEqual(res.json.success, true);
+  assert.strictEqual(res.json.data.total, 1);
+  assert.strictEqual(res.json.data.items.length, 1);
+  assert.strictEqual(res.json.data.items[0].id, String(seed.logId));
+  assert.strictEqual(res.json.data.items[0].stockValue, seed.stockValue);
 });
 
 test('GET /admin/renewals supports sent_legacy status filter', async (t) => {
