@@ -52,6 +52,8 @@ export interface TelegramWebApp {
     notificationOccurred(type: 'error' | 'success' | 'warning'): void
     selectionChanged(): void
   }
+  downloadFile?: (params: { url: string; file_name: string }, callback?: (accepted: boolean) => void) => void
+  isVersionAtLeast?: (version: string) => boolean
   openLink(url: string): void
   isExpanded?: boolean
   version?: string
@@ -60,13 +62,16 @@ export interface TelegramWebApp {
   safeAreaInset?:        { top: number; bottom: number; left: number; right: number }
   onEvent?: (event: 'safeAreaChanged' | 'contentSafeAreaChanged' | 'viewportChanged', cb: () => void) => void
   offEvent?: (event: 'safeAreaChanged' | 'contentSafeAreaChanged' | 'viewportChanged', cb: () => void) => void
+  isVerticalSwipesEnabled?: boolean
   disableVerticalSwipes?: () => void
   enableVerticalSwipes?: () => void
+  postEvent?: (eventType: string, eventData: Record<string, unknown>) => void
 }
 
 declare global {
   interface Window {
     Telegram?: { WebApp?: TelegramWebApp }
+    TelegramWebviewProxy?: { postEvent: (eventType: string, eventData: string) => void }
   }
 }
 
@@ -75,14 +80,69 @@ export function getWebApp(): TelegramWebApp | null {
   return window.Telegram?.WebApp ?? null
 }
 
+export function isTmaVersionAtLeast(wa: TelegramWebApp, minVersion: string): boolean {
+  const current = (wa.version ?? '0').split('.').map((part) => parseInt(part, 10) || 0)
+  const minimum = minVersion.split('.').map((part) => parseInt(part, 10) || 0)
+  const len = Math.max(current.length, minimum.length)
+  for (let i = 0; i < len; i += 1) {
+    const a = current[i] ?? 0
+    const b = minimum[i] ?? 0
+    if (a > b) return true
+    if (a < b) return false
+  }
+  return true
+}
+
+/** Bot API 7.7+ — disable pull-down-to-minimize on page content (header swipe may still close). */
+export function disableMiniAppVerticalSwipes(wa: TelegramWebApp): boolean {
+  if (!isTmaVersionAtLeast(wa, '7.7')) return false
+  try {
+    wa.disableVerticalSwipes?.()
+  } catch {
+    // Older web clients throw if the bridge rejects the call.
+  }
+  try {
+    wa.postEvent?.('web_app_setup_swipe_behavior', { allow_vertical_swipe: false })
+  } catch {}
+  try {
+    window.TelegramWebviewProxy?.postEvent(
+      'web_app_setup_swipe_behavior',
+      JSON.stringify({ allow_vertical_swipe: false })
+    )
+  } catch {}
+  return wa.isVerticalSwipesEnabled === false
+}
+
+function preventTopSwipeCollapse() {
+  // When scroll is pinned at 0, a downward swipe triggers minimize. Nudge 1px so
+  // content scroll absorbs the gesture (common TMA workaround on Android/iOS).
+  if (window.scrollY <= 0) window.scrollTo(0, 1)
+}
+
+function prepareWebApp(wa: TelegramWebApp) {
+  wa.ready()
+  wa.expand()
+  disableMiniAppVerticalSwipes(wa)
+}
+
 export function useWebApp(): TelegramWebApp | null {
-  const [wa, setWa] = useState<TelegramWebApp | null>(null)
+  const [wa, setWa] = useState<TelegramWebApp | null>(() => getWebApp())
   useEffect(() => {
     const w = getWebApp()
-    if (!w) return
-    w.ready()
-    w.expand()
-    setWa(w)
+    if (w) {
+      prepareWebApp(w)
+      return
+    }
+
+    const timer = window.setInterval(() => {
+      const next = getWebApp()
+      if (!next) return
+      prepareWebApp(next)
+      setWa(next)
+      window.clearInterval(timer)
+    }, 50)
+
+    return () => window.clearInterval(timer)
   }, [])
   return wa
 }
@@ -112,9 +172,8 @@ export function applyThemeVars(theme: TelegramThemeParams) {
 // Updating the Telegram app to a recent version is the real fix; this
 // keeps the layout usable in the meantime.
 function getLegacyInsets(wa: TelegramWebApp) {
-  const ver = parseFloat(wa.version ?? '6.0')
   const isApple = wa.platform === 'ios' || wa.platform === 'macos'
-  if (ver >= 8.0 || !isApple) return { top: 0, bottom: 0, left: 0, right: 0 }
+  if (isTmaVersionAtLeast(wa, '8.0') || !isApple) return { top: 0, bottom: 0, left: 0, right: 0 }
   const landscape = typeof window !== 'undefined'
     && typeof window.matchMedia === 'function'
     && window.matchMedia('(orientation: landscape)').matches
@@ -141,20 +200,64 @@ function writeInsets(wa: TelegramWebApp) {
 
 export function useTmaViewport() {
   useEffect(() => {
-    const wa = getWebApp()
-    if (!wa) return
-    wa.ready()
-    wa.expand()
-    wa.disableVerticalSwipes?.()
-    writeInsets(wa)
-    const onChange = () => writeInsets(wa)
-    wa.onEvent?.('safeAreaChanged', onChange)
-    wa.onEvent?.('contentSafeAreaChanged', onChange)
+    let wa: TelegramWebApp | null = null
+    let bootTimer: number | undefined
+    let disposed = false
+
+    function attach(w: TelegramWebApp) {
+      wa = w
+      prepareWebApp(w)
+      writeInsets(w)
+    }
+
+    function onViewport() {
+      if (wa) {
+        prepareWebApp(wa)
+        writeInsets(wa)
+      }
+    }
+    function onChange() {
+      if (wa) writeInsets(wa)
+    }
+
+    function bind(w: TelegramWebApp) {
+      attach(w)
+      w.onEvent?.('viewportChanged', onViewport)
+      if (isTmaVersionAtLeast(w, '8.0')) {
+        w.onEvent?.('safeAreaChanged', onChange)
+        w.onEvent?.('contentSafeAreaChanged', onChange)
+      }
+    }
+
+    function unbind(w: TelegramWebApp) {
+      w.offEvent?.('viewportChanged', onViewport)
+      w.offEvent?.('safeAreaChanged', onChange)
+      w.offEvent?.('contentSafeAreaChanged', onChange)
+    }
+
+    const initial = getWebApp()
+    if (initial) {
+      bind(initial)
+    } else {
+      bootTimer = window.setInterval(() => {
+        if (disposed) return
+        const next = getWebApp()
+        if (!next) return
+        bind(next)
+        window.clearInterval(bootTimer)
+        bootTimer = undefined
+      }, 30)
+    }
+
+    document.addEventListener('touchstart', preventTopSwipeCollapse, { passive: true })
     const orientation = window.matchMedia?.('(orientation: landscape)')
     orientation?.addEventListener?.('change', onChange)
+
     return () => {
-      wa.offEvent?.('safeAreaChanged', onChange)
-      wa.offEvent?.('contentSafeAreaChanged', onChange)
+      disposed = true
+      if (bootTimer) window.clearInterval(bootTimer)
+      if (wa) unbind(wa)
+      document.removeEventListener('touchstart', preventTopSwipeCollapse)
       orientation?.removeEventListener?.('change', onChange)
     }
   }, [])

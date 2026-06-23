@@ -7,6 +7,7 @@ import Link from 'next/link'
 import { ResponsiveTable, Column } from '@/components/ResponsiveTable'
 import { useHighlightId, useHighlightedRowRef } from '@/lib/useHighlightedRow'
 import { QuickAddKeysModal } from './QuickAddKeysModal'
+import { useToast } from '@/components/Toast'
 
 function VariantStockBadge({ productId }: { productId: string }) {
   const { data } = useQuery({
@@ -31,6 +32,8 @@ interface ProductStock {
   stock: number
   soldStock: number
   totalStock: number
+  lowStockThreshold?: number | null
+  effectiveLowStockThreshold?: number | null
 }
 
 const columns: Column<ProductStock>[] = [
@@ -95,6 +98,7 @@ const columns: Column<ProductStock>[] = [
 export default function StockIndexPage() {
   const highlightId = useHighlightId()
   const refFor = useHighlightedRowRef(highlightId)
+  const t = useToast()
   const { data, isLoading } = useQuery({
     queryKey: ['admin', 'products'],
     queryFn: () => api.get<ProductStock[]>('/admin/products'),
@@ -106,6 +110,15 @@ export default function StockIndexPage() {
   const [sort, setSort] = useState<'default' | 'stock_asc' | 'stock_desc'>('default')
   const [quickAddOpen, setQuickAddOpen] = useState(false)
   const [expanded, setExpanded] = useState<string | null>(null)
+
+  const notifyFollowersMutation = useMutation({
+    mutationFn: (productId: string) => api.post<{ sent?: number; failed?: number; skipped?: string | null }>(`/admin/stock/${productId}/notify-followers`, {}),
+    onSuccess: (res) => {
+      if (res.data?.skipped) t.error(`Bỏ qua gửi thông báo (${res.data.skipped})`)
+      else t.success(`Đã gửi followers: ${res.data?.sent ?? 0} thành công, ${res.data?.failed ?? 0} lỗi`)
+    },
+    onError: (e) => t.error(`Lỗi: ${e instanceof Error ? e.message : 'gửi thông báo thất bại'}`),
+  })
 
   const cardActionsFor = (p: ProductStock) => (
     <div className="flex gap-2">
@@ -122,6 +135,14 @@ export default function StockIndexPage() {
       >
         {expanded === p.id ? 'Đóng' : 'Biến thể'}
       </button>
+      <button
+        type="button"
+        onClick={() => notifyFollowersMutation.mutate(p.id)}
+        disabled={notifyFollowersMutation.isPending}
+        className="clay-btn text-xs py-1 px-3 disabled:opacity-50"
+      >
+        {notifyFollowersMutation.isPending ? 'Đang gửi…' : 'Notify followers'}
+      </button>
     </div>
   )
 
@@ -137,7 +158,7 @@ export default function StockIndexPage() {
     }
     if (statusFilter === 'in') rows = rows.filter((p) => p.stock > 0)
     else if (statusFilter === 'out') rows = rows.filter((p) => p.stock === 0)
-    else if (statusFilter === 'low') rows = rows.filter((p) => p.stock > 0 && p.stock <= 5)
+    else if (statusFilter === 'low') rows = rows.filter((p) => p.stock > 0 && p.stock <= (p.effectiveLowStockThreshold ?? p.lowStockThreshold ?? 0))
 
     if (sort === 'stock_asc') rows = [...rows].sort((a, b) => a.stock - b.stock)
     else if (sort === 'stock_desc') rows = [...rows].sort((a, b) => b.stock - a.stock)
@@ -217,6 +238,7 @@ export default function StockIndexPage() {
 
 function VariantBreakdownPanel({ productId, onClose }: { productId: string; onClose: () => void }) {
   const qc = useQueryClient()
+  const t = useToast()
   const { data, isLoading } = useQuery({
     queryKey: ['admin', 'variants', productId, 'panel'],
     queryFn: () => api.get<{ id: string; name: string; stock: number }[]>(`/admin/products/${productId}/variants`),
@@ -224,11 +246,12 @@ function VariantBreakdownPanel({ productId, onClose }: { productId: string; onCl
   const variants = data?.data ?? []
   const [addVar, setAddVar] = useState<string | null>(null)
   const [keyText, setKeyText] = useState('')
+  const [notifyFollowers, setNotifyFollowers] = useState(false)
 
   const addMut = useMutation({
     mutationFn: async () => {
       const items = keyText.split('\n').map((s) => s.trim()).filter(Boolean)
-      const payload: { items: string[]; variantId?: number } = { items }
+      const payload: { items: string[]; variantId?: number; notifyFollowers?: boolean } = { items, notifyFollowers }
       if (addVar) payload.variantId = Number(addVar)
       return api.post(`/admin/stock/${productId}`, payload)
     },
@@ -238,7 +261,18 @@ function VariantBreakdownPanel({ productId, onClose }: { productId: string; onCl
       qc.invalidateQueries({ queryKey: ['admin', 'products'] })
       setAddVar(null)
       setKeyText('')
+      setNotifyFollowers(false)
     },
+  })
+
+  const notifyMut = useMutation({
+    mutationFn: async () => api.post<{ sent?: number; failed?: number; skipped?: string | null }>(`/admin/stock/${productId}/notify-followers`, {}),
+    onSuccess: (res) => {
+      qc.invalidateQueries({ queryKey: ['admin', 'products'] })
+      if (res.data?.skipped) t.error(`Bỏ qua gửi thông báo (${res.data.skipped})`)
+      else t.success(`Đã gửi followers: ${res.data?.sent ?? 0} thành công, ${res.data?.failed ?? 0} lỗi`)
+    },
+    onError: (e) => t.error(`Lỗi: ${e instanceof Error ? e.message : 'gửi thông báo thất bại'}`),
   })
 
   return (
@@ -280,7 +314,23 @@ function VariantBreakdownPanel({ productId, onClose }: { productId: string; onCl
             className="clay-input w-full text-xs font-mono"
             placeholder={"key1\nkey2"}
           />
+          <label className="flex items-center gap-2 text-xs text-clay-charcoal">
+            <input
+              type="checkbox"
+              checked={notifyFollowers}
+              onChange={(e) => setNotifyFollowers(e.target.checked)}
+              className="h-4 w-4"
+            />
+            Gửi thông báo tới followers khi thêm
+          </label>
           <div className="flex justify-end gap-2">
+            <button
+              onClick={() => notifyMut.mutate()}
+              disabled={notifyMut.isPending}
+              className="clay-btn text-xs disabled:opacity-50"
+            >
+              {notifyMut.isPending ? 'Đang gửi…' : 'Gửi thông báo followers'}
+            </button>
             <button
               onClick={() => { setAddVar(null); setKeyText('') }}
               className="clay-btn text-xs"

@@ -22,6 +22,7 @@ router.use('/topups', require('./topups'));
 router.use('/wallet', require('./wallet'));
 router.use('/announcements', require('./announcements'));
 router.use('/messages', require('./messages'));
+router.use('/renewals', require('./renewals'));
 router.use('/settings', require('./settings'));
 router.use('/audit-log', require('./audit'));
 router.use('/payment-poller', require('./poller'));

@@ -28,6 +28,19 @@ const nextConfig: NextConfig = {
     '*.taikhoantenhat.me',
     ...(tunnelHost ? [tunnelHost] : []),
   ],
+  async headers() {
+    return [
+      {
+        source: '/(.*)',
+        headers: [
+          {
+            key: 'X-Robots-Tag',
+            value: 'noindex, nofollow, noarchive, nosnippet',
+          },
+        ],
+      },
+    ]
+  },
   async rewrites() {
     return [
       { source: '/api/:path*', destination: `${API_BACKEND}/api/:path*` },

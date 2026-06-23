@@ -9,7 +9,7 @@ import { useCart } from '@/lib/cart'
 import { pushRecentlyViewed, getRecentlyViewedIds } from '@/lib/recentlyViewed'
 import { MiniAppShell } from '../../components/MiniAppShell'
 import { Icon } from '../../components/Icon'
-import { VariantPicker, type Variant } from '../../components/VariantPicker'
+import { VariantPicker, variantFieldKey, type Variant } from '../../components/VariantPicker'
 import { ProductRail } from '../../components/ProductRail'
 import type { ProductSummary } from '../../components/ProductCard'
 import { formatPrice } from '@/lib/utils'
@@ -18,12 +18,17 @@ import { t } from '@/i18n/vi'
 interface ProductBase {
   id: string; slug: string; name: string; emoji: string; imageUrl?: string
   price: number; stock: number; contactOnly: boolean; contactUrl?: string
+  priceMin?: number; priceMax?: number
+  salePrice?: number; discountLabel?: string
+  salePriceMin?: number; salePriceMax?: number
   promotion?: string | null
   categorySlug?: string
 }
 interface ProductDetail extends ProductBase {
   longDescription: string; description: string
   variants?: Variant[]
+  relatedProducts?: ProductSummary[]
+  recentlyViewedProducts?: ProductSummary[]
 }
 
 export default function ProductDetailPage() {
@@ -33,49 +38,33 @@ export default function ProductDetailPage() {
   const [qty, setQty] = useState(1)
   const [selectedVariantId, setSelectedVariantId] = useState<string | null>(null)
   const [inputValues, setInputValues] = useState<Record<string, string>>({})
+  const [initialRecentIds] = useState<string[]>(() => getRecentlyViewedIds())
 
   const { data: p, isLoading } = useQuery({
     queryKey: ['product', slug],
-    queryFn: () => apiFetch<ProductDetail>(`/products/${slug}`),
+    queryFn: () => {
+      const qs = initialRecentIds.length > 0 ? `?recent=${initialRecentIds.join(',')}` : ''
+      return apiFetch<ProductDetail>(`/products/${slug}${qs}`)
+    },
   })
 
-  const related = useQuery({
-    queryKey: ['products', 'related', p?.categorySlug, p?.id],
-    queryFn: () => apiFetch<ProductSummary[]>(`/products?category=${encodeURIComponent(p!.categorySlug!)}&limit=12`),
-    enabled: !!p?.categorySlug && !!p?.id,
-    select: (rows) => rows.filter((r) => r.id !== p?.id).slice(0, 10),
-  })
-
-  // Snapshot recently-viewed BEFORE pushing the current id so the rail
-  // doesn't include this page. Single effect = no waterfall.
-  const [recentIds, setRecentIds] = useState<string[]>([])
   useEffect(() => {
     if (!p?.id) return
-    const id = String(p.id)
-    const ids = getRecentlyViewedIds().filter((x) => x !== id)
-    setRecentIds(ids)
-    pushRecentlyViewed(id)
+    pushRecentlyViewed(String(p.id))
   }, [p?.id])
-
-  const recently = useQuery({
-    queryKey: ['products', 'recently-detail', recentIds.join(',')],
-    queryFn: () => apiFetch<ProductSummary[]>(`/products?ids=${recentIds.join(',')}`),
-    enabled: recentIds.length > 0,
-  })
-
-  useEffect(() => {
-    if (!p?.variants?.length) { setSelectedVariantId(null); return }
-    const firstInStock = p.variants.find((v) => v.stock > 0)
-    setSelectedVariantId((firstInStock ?? p.variants[0]).id)
-  }, [p?.variants])
 
   if (isLoading) return <MiniAppShell><p className="opacity-60 text-sm">Đang tải…</p></MiniAppShell>
   if (!p) return <MiniAppShell><p>Không tìm thấy sản phẩm.</p></MiniAppShell>
 
   const variants = p?.variants ?? []
-  const selected = variants.find((v) => v.id === selectedVariantId) ?? null
+  const defaultVariantId = variants.length > 0
+    ? (variants.find((v) => v.stock > 0)?.id ?? variants[0].id)
+    : null
+  const selected = variants.find((v) => v.id === selectedVariantId) ?? variants.find((v) => v.id === defaultVariantId) ?? null
   const effectiveImage = (selected?.imageUrl && selected.imageUrl.length > 0) ? selected.imageUrl : p.imageUrl
   const effectivePrice = selected?.price ?? p?.price ?? 0
+  const effectiveSalePrice = selected?.salePrice ?? p?.salePrice ?? null
+  const hasDiscount = typeof effectiveSalePrice === 'number' && effectiveSalePrice < effectivePrice
   const effectiveStock = variants.length > 0 ? (selected?.stock ?? 0) : (p?.stock ?? 0)
   const requiresInput = !!selected?.requiresInput
   const fields = selected?.inputFields && selected.inputFields.length > 0
@@ -83,16 +72,17 @@ export default function ProductDetailPage() {
     : (requiresInput
         ? [{ label: selected!.inputLabel || 'Thông tin', placeholder: '', type: 'text' as const, required: true }]
         : [])
-  const inputValid = !requiresInput || fields.every((f) => !f.required || (inputValues[f.label] ?? '').trim().length >= 1)
+  const inputValid = !requiresInput || fields.every((f, idx) => !f.required || (inputValues[variantFieldKey(f, idx)] ?? '').trim().length >= 1)
 
   const disabled = (!selected?.isBackorder && effectiveStock <= 0) || p.contactOnly || !inputValid
   const addToCart = () => {
     const trimmed: Record<string, string> = {}
     if (requiresInput) {
-      for (const f of fields) {
-        const v = (inputValues[f.label] ?? '').trim()
-        if (v) trimmed[f.label] = v
-      }
+      fields.forEach((f, idx) => {
+        const key = variantFieldKey(f, idx)
+        const v = (inputValues[key] ?? '').trim()
+        if (v) trimmed[key] = v
+      })
     }
     cart.add({
       productId: p.id,
@@ -113,9 +103,20 @@ export default function ProductDetailPage() {
       <div className="md:grid md:grid-cols-2 md:gap-8 md:items-start">
         <div className="rounded-2xl overflow-hidden mb-4 md:mb-0 md:sticky md:top-20" style={{ background: 'var(--brand-gold-soft)' }}>
           <div className="aspect-square" style={{ position: 'relative' }}>
-            {p.promotion && <span className="miniapp-product-badge" style={{ top: 12, left: 12 }}>{p.promotion}</span>}
+            {(selected?.discountLabel || p.discountLabel || p.promotion) && (
+              <span className="miniapp-product-badge" style={{ top: 12, left: 12 }}>
+                {selected?.discountLabel || p.discountLabel || p.promotion}
+              </span>
+            )}
             {effectiveImage ? (
-              <Image src={effectiveImage} alt={p.name} fill sizes="(min-width: 768px) 50vw, 100vw" style={{ objectFit: 'cover' }} />
+              <Image
+                src={effectiveImage}
+                alt={p.name}
+                fill
+                priority
+                sizes="(min-width: 768px) 50vw, 100vw"
+                style={{ objectFit: 'cover' }}
+              />
             ) : (
               <div className="absolute inset-0 grid place-items-center" style={{ color: 'var(--brand-gold-deep)' }}>
                 <Icon name="package" size={88} strokeWidth={1.25} />
@@ -129,7 +130,7 @@ export default function ProductDetailPage() {
             <div className="mb-3">
               <VariantPicker
                 variants={variants}
-                selectedId={selectedVariantId}
+                selectedId={selected?.id ?? null}
                 onSelect={(id) => { setSelectedVariantId(id); setInputValues({}) }}
                 inputValues={inputValues}
                 onInputChange={setInputValues}
@@ -138,7 +139,10 @@ export default function ProductDetailPage() {
           )}
           <div className="flex items-end justify-between mb-2">
             <div>
-              <p className="text-2xl font-bold tracking-tight">{formatPrice(effectivePrice)}</p>
+              <p className="text-2xl font-bold tracking-tight">{formatPrice(hasDiscount ? effectiveSalePrice! : effectivePrice)}</p>
+              {hasDiscount && (
+                <p className="text-sm opacity-50 line-through">{formatPrice(effectivePrice)}</p>
+              )}
               <p className="text-xs mt-1">
                 {selected?.isBackorder
                   ? <span style={{ color: '#16a34a' }}>● Có sẵn (đặt trước)</span>
@@ -187,7 +191,7 @@ export default function ProductDetailPage() {
         </div>
       </div>
 
-      {related.data && related.data.length > 0 && (
+      {p.relatedProducts && p.relatedProducts.length > 0 && (
         <section className="miniapp-section mt-6">
           <div className="miniapp-section-title">
             <span className="inline-flex items-center gap-1.5">
@@ -195,11 +199,11 @@ export default function ProductDetailPage() {
               Sản phẩm liên quan
             </span>
           </div>
-          <ProductRail items={related.data} />
+          <ProductRail items={p.relatedProducts} />
         </section>
       )}
 
-      {recently.data && recently.data.length > 0 && (
+      {p.recentlyViewedProducts && p.recentlyViewedProducts.length > 0 && (
         <section className="miniapp-section mt-4">
           <div className="miniapp-section-title">
             <span className="inline-flex items-center gap-1.5">
@@ -207,7 +211,7 @@ export default function ProductDetailPage() {
               Sản phẩm đã xem
             </span>
           </div>
-          <ProductRail items={recently.data} />
+          <ProductRail items={p.recentlyViewedProducts} />
         </section>
       )}
 

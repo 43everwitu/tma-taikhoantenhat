@@ -30,7 +30,7 @@ const paymentService = {
   generateQRUrl(amount, content, bank = null) {
     const b = bank || config.BANK;
     return (
-      `https://img.vietqr.io/image/${b.BIN}-${b.ACCOUNT}-compact2.png` +
+      `https://img.vietqr.io/image/${b.BIN}-${b.ACCOUNT}-qr_only.png` +
       `?amount=${amount}` +
       `&addInfo=${encodeURIComponent(content)}` +
       `&accountName=${encodeURIComponent(b.ACCOUNT_NAME)}`

@@ -1,37 +1,137 @@
 const { Router } = require('express');
 const db = require('../../../database');
+const { requirePermission } = require('../../middleware/auth');
 
 const router = Router();
 
+router.use(requirePermission('users.read'));
+
+const MAX_PAGE = 1_000_000;
+
+function parseBoundedPositiveInt(value, { fallback, min, max }) {
+  const parsed = Number.parseInt(value, 10);
+  if (!Number.isSafeInteger(parsed)) return fallback;
+  return Math.max(min, Math.min(max, parsed));
+}
+
 // GET /admin/users?search=&page=1&limit=20
 router.get('/', (req, res) => {
-  const { search, page = 1, limit = 20 } = req.query;
-  const offset = (parseInt(page) - 1) * parseInt(limit);
+  const page = parseBoundedPositiveInt(req.query.page, { fallback: 1, min: 1, max: MAX_PAGE });
+  const limit = parseBoundedPositiveInt(req.query.limit, { fallback: 20, min: 1, max: 100 });
+  const offset = (page - 1) * limit;
+  const search = String(req.query.search || '').trim();
+  const like = `%${search}%`;
 
-  let where = '1=1';
-  const params = [];
+  const combinedUsersSql = `
+    WITH combined_users AS (
+      SELECT
+        u.telegram_id,
+        u.username,
+        u.full_name,
+        u.balance,
+        u.created_at,
+        (
+          SELECT COUNT(*)
+          FROM orders delivered_orders
+          WHERE delivered_orders.user_id = u.telegram_id
+            AND delivered_orders.status = 'delivered'
+        ) AS order_count,
+        0 AS is_virtual
+      FROM users u
 
-  if (search) {
-    where += ' AND (full_name LIKE ? OR username LIKE ? OR CAST(telegram_id AS TEXT) LIKE ?)';
-    const s = `%${search}%`;
-    params.push(s, s, s);
-  }
+      UNION ALL
+
+      SELECT
+        o.user_id AS telegram_id,
+        NULL AS username,
+        'ID ' || o.user_id AS full_name,
+        0 AS balance,
+        MAX(o.created_at) AS created_at,
+        COUNT(*) AS order_count,
+        1 AS is_virtual
+      FROM orders o
+      LEFT JOIN users u ON u.telegram_id = o.user_id
+      WHERE u.telegram_id IS NULL
+      GROUP BY o.user_id
+    )
+  `;
+  const searchSql = search
+    ? `WHERE (
+        full_name LIKE ?
+        OR username LIKE ?
+        OR CAST(telegram_id AS TEXT) LIKE ?
+      )`
+    : '';
+  const searchParams = search ? [like, like, like] : [];
 
   const rows = db.prepare(`
-    SELECT u.*, (SELECT COUNT(*) FROM orders o WHERE o.user_id = u.telegram_id AND o.status = 'delivered') as order_count
-    FROM users u WHERE ${where}
-    ORDER BY u.created_at DESC LIMIT ? OFFSET ?
-  `).all(...params, parseInt(limit), offset);
+    ${combinedUsersSql}
+    SELECT *
+    FROM combined_users
+    ${searchSql}
+    ORDER BY created_at DESC, telegram_id DESC
+    LIMIT ? OFFSET ?
+  `).all(...searchParams, limit, offset).map(row => ({
+    ...row,
+    is_virtual: !!row.is_virtual,
+  }));
 
-  const total = db.prepare(`SELECT COUNT(*) as c FROM users WHERE ${where}`).all(...params)[0].c;
-  res.json({ success: true, data: rows, meta: { page: parseInt(page), limit: parseInt(limit), total } });
+  const total = db.prepare(`
+    ${combinedUsersSql}
+    SELECT COUNT(*) AS c
+    FROM combined_users
+    ${searchSql}
+  `).get(...searchParams).c;
+
+  const stats = {
+    totalUsers: db.prepare('SELECT COUNT(*) AS c FROM users').get().c,
+    buyers: db.prepare('SELECT COUNT(DISTINCT user_id) AS c FROM orders').get().c,
+    missingProfiles: db.prepare(`
+      SELECT COUNT(DISTINCT o.user_id) AS c
+      FROM orders o
+      LEFT JOIN users u ON u.telegram_id = o.user_id
+      WHERE u.telegram_id IS NULL
+    `).get().c,
+  };
+
+  res.json({
+    success: true,
+    data: { users: rows, stats },
+    meta: {
+      page,
+      limit,
+      total,
+      totalPages: Math.ceil(total / limit),
+    },
+  });
 });
 
 // GET /admin/users/:telegramId
 router.get('/:telegramId', (req, res) => {
-  const telegramId = parseInt(req.params.telegramId);
-  const user = db.prepare('SELECT * FROM users WHERE telegram_id = ?').get(telegramId);
-  if (!user) return res.status(404).json({ success: false, error: { code: 'NOT_FOUND' } });
+  const rawTelegramId = String(req.params.telegramId);
+  const telegramId = Number(rawTelegramId);
+  if (!/^\d+$/.test(rawTelegramId) || !Number.isSafeInteger(telegramId)) {
+    return res.status(400).json({
+      success: false,
+      error: { code: 'INVALID_TELEGRAM_ID', message: 'Telegram ID phải là số nguyên hợp lệ.' },
+    });
+  }
+
+  const realUser = db.prepare('SELECT *, 0 AS is_virtual FROM users WHERE telegram_id = ?').get(telegramId);
+  const hasOrders = db.prepare('SELECT 1 FROM orders WHERE user_id = ? LIMIT 1').get(telegramId);
+  if (!realUser && !hasOrders) {
+    return res.status(404).json({ success: false, error: { code: 'NOT_FOUND' } });
+  }
+  const user = realUser
+    ? { ...realUser, is_virtual: false }
+    : {
+        telegram_id: telegramId,
+        username: null,
+        full_name: `ID ${telegramId}`,
+        balance: 0,
+        created_at: null,
+        is_virtual: true,
+      };
 
   const orders = db.prepare(`
     SELECT o.*, p.name as product_name FROM orders o

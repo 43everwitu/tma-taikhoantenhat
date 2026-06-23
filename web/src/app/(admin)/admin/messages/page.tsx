@@ -1,12 +1,62 @@
 'use client'
 
-import { useMemo, useState } from 'react'
+import { useMemo, useRef, useState } from 'react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { templates, type MessageTemplate } from '@/lib/api'
 import { Save, RotateCcw, Eye } from '@/lib/icons'
 
+const VARIABLE_HINTS: Record<string, string> = {
+  orderCode: 'Mã đơn',
+  productName: 'Tên sản phẩm',
+  quantity: 'Số lượng',
+  keysBlock: 'Nội dung key (plain text, URL tự link)',
+  usageBlock: 'Block hướng dẫn sản phẩm (HTML)',
+  waitMsg: 'Tin chờ giao thủ công (bot.backorder_wait)',
+  inputBlock: 'Thông tin KH nhập lúc đặt (admin only)',
+  paymentCode: 'Mã thanh toán VietQR',
+  total: 'Tổng tiền',
+  totalSpoiler: 'Tổng tiền (hiển thị)',
+  userMention: 'Telegram ID / mention khách',
+  productLine: 'Tên sản phẩm + biến thể',
+  customerLine: 'Thông tin KH (spoiler, kênh group)',
+  name: 'Tên khách',
+  username: 'Username Telegram',
+  supportContact: 'Liên hệ hỗ trợ',
+}
+
+/** Realistic preview defaults per template key; falls back to `<varName>`. */
+const PREVIEW_SAMPLES: Record<string, Record<string, string>> = {
+  delivery_keys: {
+    orderCode: '100226',
+    productName: 'Tài khoản ChatGPT Plus',
+    quantity: '1',
+    keysBlock: 'Tài khoản của bạn đã được gia hạn gói ChatGPT Plus Cá nhân 01 tháng Email: user@gmail.com | Nếu bạn cần hỗ trợ thêm vui lòng liên hệ: m.me/taikhoantenhat2 hoặc zalo.me/0896551786',
+    usageBlock: '\n\n📘 Hướng dẫn:\nLiên hệ hỗ trợ nếu cần.',
+  },
+  'admin.backorder_paid': {
+    orderCode: '100226',
+    productName: 'Grammarly Premium',
+    quantity: '1',
+    total: '149.000',
+    userMention: '123456789',
+    inputBlock: '\n\n📋 Thông tin KH:\n<b>Email Grammarly cần nâng cấp:</b> user@gmail.com',
+  },
+  'bot.backorder_wait': {
+    orderCode: '100226',
+    waitMsg: 'Đơn này được giao thủ công, shop sẽ xử lý trong ít phút.',
+  },
+}
+
+function defaultVarValues(t: MessageTemplate): Record<string, string> {
+  const samples = PREVIEW_SAMPLES[t.key] ?? {}
+  return Object.fromEntries(
+    t.variables.map((v) => [v, samples[v] ?? `<${v}>`])
+  )
+}
+
 export default function AdminMessagesPage() {
   const qc = useQueryClient()
+  const draftRef = useRef<HTMLTextAreaElement>(null)
   const { data, isLoading } = useQuery({
     queryKey: ['admin', 'messages'],
     queryFn: () => templates.list(),
@@ -26,7 +76,25 @@ export default function AdminMessagesPage() {
     setDraft(t.body)
     setPreview(null)
     setShowSaved(false)
-    setVarValues(Object.fromEntries(t.variables.map((v) => [v, `<${v}>`])))
+    setVarValues(defaultVarValues(t))
+  }
+
+  function insertVariable(name: string) {
+    const token = `{{${name}}}`
+    const el = draftRef.current
+    if (!el) {
+      setDraft((d) => d + token)
+      return
+    }
+    const start = el.selectionStart ?? draft.length
+    const end = el.selectionEnd ?? draft.length
+    const next = draft.slice(0, start) + token + draft.slice(end)
+    setDraft(next)
+    requestAnimationFrame(() => {
+      el.focus()
+      const pos = start + token.length
+      el.setSelectionRange(pos, pos)
+    })
   }
 
   function flashSaved() {
@@ -181,14 +249,31 @@ export default function AdminMessagesPage() {
               <p className="text-xs text-red-600 mb-2">Lưu thất bại: {(updateMut.error as Error).message}</p>
             )}
 
-            <p className="text-sm mb-2">
-              Biến có sẵn:{' '}
-              {active.variables.length === 0
-                ? <span className="text-clay-charcoal text-xs">(không có)</span>
-                : active.variables.map((v) => <code key={v} className="clay-pill mr-1 text-xs">{`{{${v}}}`}</code>)}
-            </p>
+            <div className="text-sm mb-2">
+              <p className="mb-1.5">Biến có sẵn <span className="text-xs text-clay-charcoal">(bấm để chèn vào nội dung)</span>:</p>
+              {active.variables.length === 0 ? (
+                <span className="text-clay-charcoal text-xs">(không có)</span>
+              ) : (
+                <ul className="space-y-1">
+                  {active.variables.map((v) => (
+                    <li key={v} className="flex flex-wrap items-center gap-2">
+                      <button
+                        type="button"
+                        onClick={() => insertVariable(v)}
+                        className="clay-pill text-xs font-mono hover:bg-clay-oat-light transition cursor-pointer"
+                        title={VARIABLE_HINTS[v] ?? v}
+                      >{`{{${v}}}`}</button>
+                      {VARIABLE_HINTS[v] && (
+                        <span className="text-xs text-clay-charcoal">{VARIABLE_HINTS[v]}</span>
+                      )}
+                    </li>
+                  ))}
+                </ul>
+              )}
+            </div>
 
             <textarea
+              ref={draftRef}
               value={draft}
               onChange={(e) => setDraft(e.target.value)}
               rows={12}
@@ -202,7 +287,10 @@ export default function AdminMessagesPage() {
                 <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 mb-3">
                   {active.variables.map((v) => (
                     <label key={v} className="text-sm">
-                      <span className="block text-xs text-clay-charcoal mb-1">{v}</span>
+                      <span className="block text-xs text-clay-charcoal mb-1">
+                        {v}
+                        {VARIABLE_HINTS[v] ? ` — ${VARIABLE_HINTS[v]}` : ''}
+                      </span>
                       <input
                         value={varValues[v] ?? ''}
                         onChange={(e) => setVarValues({ ...varValues, [v]: e.target.value })}

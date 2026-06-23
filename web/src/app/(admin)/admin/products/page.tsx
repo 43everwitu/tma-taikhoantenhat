@@ -5,7 +5,7 @@ import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { api } from '@/lib/api'
 import { formatPrice } from '@/lib/utils'
 import Link from 'next/link'
-import { Search, Plus, Pencil, Trash2, Boxes, Sparkles, GripVertical, Copy } from '@/lib/icons'
+import { Search, Plus, Pencil, Boxes, Sparkles, GripVertical, MoreHorizontal } from '@/lib/icons'
 import { ResponsiveTable, Column } from '@/components/ResponsiveTable'
 import { useHighlightId, useHighlightedRowRef } from '@/lib/useHighlightedRow'
 import { RichEditor } from '@/components/RichEditor'
@@ -28,6 +28,7 @@ interface Product {
   emoji?: string
   imageUrl?: string
   promotion?: string
+  isFeatured?: boolean
   contactOnly?: boolean
   contactUrl?: string
 }
@@ -36,6 +37,113 @@ interface Category {
   id: number
   name: string
   slug: string
+}
+
+interface RowActionsMenuProps {
+  product: Product
+  onNotify: (kind: 'new' | 'update') => void
+  notifyPending: boolean
+  onToggleFeatured: () => void
+  featuredPending: boolean
+  onDuplicate: () => void
+  duplicatePending: boolean
+  onDelete: () => void
+  deletePending: boolean
+}
+
+function RowActionsMenu({
+  product,
+  onNotify,
+  notifyPending,
+  onToggleFeatured,
+  featuredPending,
+  onDuplicate,
+  duplicatePending,
+  onDelete,
+  deletePending,
+}: RowActionsMenuProps) {
+  const [open, setOpen] = useState(false)
+
+  useEffect(() => {
+    if (!open) return
+    const close = () => setOpen(false)
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') close()
+    }
+    window.addEventListener('click', close)
+    window.addEventListener('keydown', onKey)
+    return () => {
+      window.removeEventListener('click', close)
+      window.removeEventListener('keydown', onKey)
+    }
+  }, [open])
+
+  const common = 'w-full text-left px-3 py-2 text-xs hover:bg-clay-oat-light'
+
+  return (
+    <div className="relative">
+      <button
+        type="button"
+        onClick={(e) => {
+          e.stopPropagation()
+          setOpen((v) => !v)
+        }}
+        className="clay-btn text-xs py-1 px-2"
+        aria-haspopup="menu"
+        aria-expanded={open}
+      >
+        <MoreHorizontal size={14} />
+      </button>
+      {open && (
+        <div
+          className="absolute right-0 mt-1 min-w-[180px] rounded-xl border border-clay-oat bg-white shadow-lg z-20 overflow-hidden"
+          onClick={(e) => e.stopPropagation()}
+          role="menu"
+        >
+          <button
+            type="button"
+            className={common}
+            onClick={() => { onToggleFeatured(); setOpen(false) }}
+            disabled={featuredPending}
+          >
+            {product.isFeatured ? 'Bỏ nổi bật' : 'Đặt nổi bật'}
+          </button>
+          <button
+            type="button"
+            className={common}
+            onClick={() => { onNotify('new'); setOpen(false) }}
+            disabled={notifyPending}
+          >
+            Thông báo SP mới
+          </button>
+          <button
+            type="button"
+            className={common}
+            onClick={() => { onNotify('update'); setOpen(false) }}
+            disabled={notifyPending}
+          >
+            Thông báo cập nhật
+          </button>
+          <button
+            type="button"
+            className={common}
+            onClick={() => { onDuplicate(); setOpen(false) }}
+            disabled={duplicatePending}
+          >
+            Nhân đôi
+          </button>
+          <button
+            type="button"
+            className={`${common} text-pomegranate-700`}
+            onClick={() => { onDelete(); setOpen(false) }}
+            disabled={deletePending}
+          >
+            Xoá
+          </button>
+        </div>
+      )}
+    </div>
+  )
 }
 
 interface ProductForm {
@@ -51,6 +159,8 @@ interface ProductForm {
   promotion: string
   contactOnly: boolean
   contactUrl: string
+  notifyOnCreate: boolean
+  notifyOnUpdate: boolean
 }
 
 const emptyForm: ProductForm = {
@@ -66,6 +176,8 @@ const emptyForm: ProductForm = {
   promotion: '',
   contactOnly: false,
   contactUrl: '',
+  notifyOnCreate: false,
+  notifyOnUpdate: false,
 }
 
 export default function ProductsPage() {
@@ -105,24 +217,33 @@ export default function ProductsPage() {
   })
 
   const t = useToast()
+  const formatNotifyToast = (label: string, r?: { sent?: number; failed?: number; skipped?: string | null }) => {
+    if (!r) return
+    if (r.skipped) t.error(`${label}: bỏ qua (${r.skipped})`)
+    else t.success(`${label}: ${r.sent ?? 0} thành công, ${r.failed ?? 0} lỗi`)
+  }
 
   const createMutation = useMutation({
-    mutationFn: (body: ProductForm) => api.post('/admin/products', body),
-    onSuccess: () => {
+    mutationFn: (body: ProductForm) => api.post<{ notify?: { sent?: number; failed?: number; skipped?: string | null } }>('/admin/products', body),
+    onSuccess: (res) => {
       queryClient.invalidateQueries({ queryKey: ['admin', 'products'] })
       closeModal()
       t.success('Đã thêm sản phẩm')
+      const notify = (res?.data as { notify?: { sent?: number; failed?: number; skipped?: string | null } } | undefined)?.notify
+      formatNotifyToast('Thông báo SP mới', notify)
     },
     onError: (e) => t.error(`Lỗi: ${e instanceof Error ? e.message : 'thêm thất bại'}`),
   })
 
   const updateMutation = useMutation({
     mutationFn: ({ id, body }: { id: string; body: ProductForm }) =>
-      api.put(`/admin/products/${id}`, body),
-    onSuccess: () => {
+      api.put<{ notify?: { sent?: number; failed?: number; skipped?: string | null } }>(`/admin/products/${id}`, body),
+    onSuccess: (res) => {
       queryClient.invalidateQueries({ queryKey: ['admin', 'products'] })
       closeModal()
       t.success('Đã cập nhật sản phẩm')
+      const notify = (res?.data as { notify?: { sent?: number; failed?: number; skipped?: string | null } } | undefined)?.notify
+      formatNotifyToast('Thông báo cập nhật', notify)
     },
     onError: (e) => t.error(`Lỗi: ${e instanceof Error ? e.message : 'cập nhật thất bại'}`),
   })
@@ -152,6 +273,25 @@ export default function ProductsPage() {
       t.success('Đã nhân đôi sản phẩm')
     },
     onError: (e) => t.error(`Lỗi: ${e instanceof Error ? e.message : 'nhân đôi thất bại'}`),
+  })
+
+  const notifyMutation = useMutation({
+    mutationFn: ({ id, kind }: { id: string; kind: 'new' | 'update' }) =>
+      api.post<{ sent?: number; failed?: number; skipped?: string | null }>(`/admin/products/${id}/notify`, { kind }),
+    onSuccess: (res, vars) => {
+      formatNotifyToast(vars.kind === 'new' ? 'Thông báo SP mới' : 'Thông báo cập nhật', res.data)
+    },
+    onError: (e) => t.error(`Lỗi: ${e instanceof Error ? e.message : 'gửi thông báo thất bại'}`),
+  })
+
+  const toggleFeaturedMutation = useMutation({
+    mutationFn: (id: string) => api.patch(`/admin/products/${id}/featured`),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['admin', 'products'] })
+      queryClient.invalidateQueries({ queryKey: ['products', 'featured'] })
+      t.success('Đã cập nhật nổi bật')
+    },
+    onError: (e) => t.error(`Lỗi: ${e instanceof Error ? e.message : 'cập nhật nổi bật thất bại'}`),
   })
 
   const reorderMutation = useMutation({
@@ -254,11 +394,17 @@ export default function ProductsPage() {
           <button onClick={() => openEdit(product)} className="clay-btn text-xs py-1 px-3 flex items-center gap-1">
             <Pencil size={14} />Sửa
           </button>
-          <button
-            onClick={() => handleDelete(product.id, product.name)}
-            disabled={deleteMutation.isPending}
-            className="clay-btn clay-btn--pomegranate text-xs py-1 px-3 disabled:opacity-50 flex items-center gap-1"
-          ><Trash2 size={14} />Xoá</button>
+          <RowActionsMenu
+            product={product}
+            onNotify={(kind) => notifyMutation.mutate({ id: product.id, kind })}
+            notifyPending={notifyMutation.isPending}
+            onToggleFeatured={() => toggleFeaturedMutation.mutate(product.id)}
+            featuredPending={toggleFeaturedMutation.isPending}
+            onDuplicate={() => duplicateMutation.mutate(product.id)}
+            duplicatePending={duplicateMutation.isPending}
+            onDelete={() => handleDelete(product.id, product.name)}
+            deletePending={deleteMutation.isPending}
+          />
         </div>
       ),
     },
@@ -273,17 +419,17 @@ export default function ProductsPage() {
         <button onClick={() => openEdit(product)} className="clay-btn text-xs py-1 px-3 flex items-center gap-1">
           <Pencil size={14} />Sửa
         </button>
-        <button
-          onClick={() => duplicateMutation.mutate(product.id)}
-          disabled={duplicateMutation.isPending}
-          className="clay-btn text-xs py-1 px-3 flex items-center gap-1 disabled:opacity-50"
-          title="Nhân đôi sản phẩm"
-        ><Copy size={14} />Nhân đôi</button>
-        <button
-          onClick={() => handleDelete(product.id, product.name)}
-          disabled={deleteMutation.isPending}
-          className="clay-btn clay-btn--pomegranate text-xs py-1 px-3 disabled:opacity-50 flex items-center gap-1"
-        ><Trash2 size={14} />Xoá</button>
+        <RowActionsMenu
+          product={product}
+          onNotify={(kind) => notifyMutation.mutate({ id: product.id, kind })}
+          notifyPending={notifyMutation.isPending}
+          onToggleFeatured={() => toggleFeaturedMutation.mutate(product.id)}
+          featuredPending={toggleFeaturedMutation.isPending}
+          onDuplicate={() => duplicateMutation.mutate(product.id)}
+          duplicatePending={duplicateMutation.isPending}
+          onDelete={() => handleDelete(product.id, product.name)}
+          deletePending={deleteMutation.isPending}
+        />
       </>
     )
   }
@@ -340,6 +486,8 @@ export default function ProductsPage() {
       promotion: product.promotion || '',
       contactOnly: !!product.contactOnly,
       contactUrl: product.contactUrl || '',
+      notifyOnCreate: false,
+      notifyOnUpdate: false,
     })
     setEditingId(product.id)
     setShowModal(true)
@@ -548,18 +696,24 @@ export default function ProductsPage() {
                             <Pencil size={14} />Sửa
                           </button>
                           <button
-                            onClick={() => duplicateMutation.mutate(product.id)}
-                            disabled={duplicateMutation.isPending}
+                            onClick={() => toggleFeaturedMutation.mutate(product.id)}
+                            disabled={toggleFeaturedMutation.isPending}
                             className="clay-btn text-xs py-1 px-3 flex items-center gap-1 disabled:opacity-50"
-                            title="Nhân đôi sản phẩm"
-                          ><Copy size={14} />Nhân đôi</button>
-                          <button
-                            onClick={() => handleDelete(product.id, product.name)}
-                            disabled={deleteMutation.isPending}
-                            className="clay-btn clay-btn--pomegranate text-xs py-1 px-3 disabled:opacity-50 flex items-center gap-1"
+                            style={product.isFeatured ? { background: 'var(--brand-gold-soft)', color: 'var(--brand-ink)' } : undefined}
                           >
-                            <Trash2 size={14} />Xoá
+                            <Sparkles size={14} />{product.isFeatured ? 'Nổi bật' : 'Đặt nổi bật'}
                           </button>
+                          <RowActionsMenu
+                            product={product}
+                            onNotify={(kind) => notifyMutation.mutate({ id: product.id, kind })}
+                            notifyPending={notifyMutation.isPending}
+                            onToggleFeatured={() => toggleFeaturedMutation.mutate(product.id)}
+                            featuredPending={toggleFeaturedMutation.isPending}
+                            onDuplicate={() => duplicateMutation.mutate(product.id)}
+                            duplicatePending={duplicateMutation.isPending}
+                            onDelete={() => handleDelete(product.id, product.name)}
+                            deletePending={deleteMutation.isPending}
+                          />
                         </div>
                       </td>
                     </tr>
@@ -754,6 +908,28 @@ export default function ProductsPage() {
                     maxLength={500}
                   />
                 </>
+              )}
+
+              {!editingId ? (
+                <label className="flex items-center gap-2 mt-3 cursor-pointer select-none">
+                  <input
+                    type="checkbox"
+                    checked={form.notifyOnCreate}
+                    onChange={e => setForm({ ...form, notifyOnCreate: e.target.checked })}
+                    className="h-4 w-4"
+                  />
+                  <span className="text-sm font-medium text-gray-700">Gửi thông báo sản phẩm mới sau khi tạo</span>
+                </label>
+              ) : (
+                <label className="flex items-center gap-2 mt-3 cursor-pointer select-none">
+                  <input
+                    type="checkbox"
+                    checked={form.notifyOnUpdate}
+                    onChange={e => setForm({ ...form, notifyOnUpdate: e.target.checked })}
+                    className="h-4 w-4"
+                  />
+                  <span className="text-sm font-medium text-gray-700">Gửi thông báo cập nhật sản phẩm khi lưu</span>
+                </label>
               )}
 
               <div className="mt-4 pt-4 border-t border-gray-200">

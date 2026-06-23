@@ -3,7 +3,15 @@ import { AuthBoundary } from './components/AuthBoundary'
 
 export const metadata: Metadata = {
   title: 'Taikhoantenhat',
-  description: 'Cửa hàng Telegram Mini App',
+  robots: {
+    index: false,
+    follow: false,
+    googleBot: {
+      index: false,
+      follow: false,
+      noimageindex: true,
+    },
+  },
 }
 
 export const viewport = {

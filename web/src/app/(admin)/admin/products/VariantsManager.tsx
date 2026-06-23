@@ -4,6 +4,7 @@ import { useEffect, useState } from 'react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { api } from '@/lib/api'
 import { MediaLibrary } from '@/components/admin/MediaLibrary'
+import { RichEditorBasic } from '@/components/RichEditorBasic'
 import { useToast } from '@/components/Toast'
 import { DndContext, closestCenter, KeyboardSensor, PointerSensor, useSensor, useSensors, type DragEndEvent } from '@dnd-kit/core'
 import { arrayMove, SortableContext, sortableKeyboardCoordinates, useSortable, verticalListSortingStrategy } from '@dnd-kit/sortable'
@@ -336,7 +337,9 @@ function VariantEditModal({ productId, variant, onClose, onSaved }: {
         inputPlaceholder: form.inputPlaceholder || null,
         inputType: form.inputType,
         inputFields: form.requiresInput && inputFields.length > 0
-          ? inputFields.filter((f) => f.label.trim().length > 0)
+          // Label is optional now — keep any field that has a label OR a
+          // placeholder; only drop truly-empty accidental rows.
+          ? inputFields.filter((f) => f.label.trim().length > 0 || (f.placeholder ?? '').trim().length > 0)
           : null,
         imageUrl: form.imageUrl || null,
         isBackorder: form.isBackorder,
@@ -372,7 +375,11 @@ function VariantEditModal({ productId, variant, onClose, onSaved }: {
 
         <label className="block text-sm">
           <span className="text-xs opacity-70 mb-1 inline-block">Mô tả ngắn</span>
-          <textarea value={form.description} onChange={(e) => setForm({ ...form, description: e.target.value })} rows={2} className="clay-input w-full text-sm" />
+          <RichEditorBasic
+            value={form.description}
+            onChange={(html) => setForm({ ...form, description: html })}
+            placeholder="Mô tả ngắn cho biến thể..."
+          />
         </label>
 
         <div className="grid grid-cols-2 gap-2">
@@ -441,13 +448,13 @@ function VariantEditModal({ productId, variant, onClose, onSaved }: {
               <div key={idx} className="space-y-1 p-2 rounded border border-gray-200 bg-gray-50">
                 <div className="grid grid-cols-2 gap-2">
                   <label className="block text-sm">
-                    <span className="text-xs opacity-70 mb-1 inline-block">Label</span>
+                    <span className="text-xs opacity-70 mb-1 inline-block">Label (tuỳ chọn)</span>
                     <input
                       value={f.label}
                       onChange={(e) => {
                         const next = [...inputFields]; next[idx] = { ...f, label: e.target.value }; setInputFields(next)
                       }}
-                      placeholder="vd: Email tài khoản"
+                      placeholder="Để trống nếu không cần nhãn"
                       className="clay-input w-full text-sm"
                     />
                   </label>

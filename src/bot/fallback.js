@@ -12,7 +12,7 @@ async function handleFallback(ctx) {
 }
 
 module.exports = (bot) => {
-  // Match any text/command that wasn't already handled by /start or /myid.
+  // Match any text/command that wasn't already handled by /start.
   bot.on('text', handleFallback);
   // Stale callback queries from old inline buttons — answer + nudge.
   bot.on('callback_query', async (ctx) => {

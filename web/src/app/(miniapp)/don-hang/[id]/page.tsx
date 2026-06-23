@@ -4,6 +4,8 @@ import { useEffect, useState } from 'react'
 import { useParams } from 'next/navigation'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { apiFetch } from '@/lib/miniappApi'
+import { extractUrls, linkifyText, renderLabeledText, shortenUrl } from '@/lib/renderLabeledText'
+import { RichText } from '@/components/RichText'
 import { MiniAppShell } from '../../components/MiniAppShell'
 import { QrPanel } from '../../components/QrPanel'
 import { Icon } from '../../components/Icon'
@@ -15,7 +17,10 @@ interface OrderStatus {
   id: string
   status: 'pending' | 'paid' | 'delivered' | 'cancelled' | 'expired'
   totalPrice: number; paymentCode: string; qrUrl: string; bankName: string; expiresAt: string
+  accountNumber?: string; accountName?: string
   productName: string; quantity: number
+  isBackorder?: boolean
+  backorderWaitMode?: 'business_hours' | 'after_hours'
   accounts?: string[]; usageInstructions?: string | null
 }
 
@@ -49,7 +54,10 @@ export default function OrderDetailPage() {
   if (!order) {
     return (
       <MiniAppShell title={t.order.title}>
-        <p className="opacity-60 text-sm">Đang tải…</p>
+        <div className="flex flex-col items-center justify-center py-16 gap-3">
+          <span className="miniapp-qr-spinner" aria-hidden />
+          <p className="opacity-60 text-sm">Đang tải đơn hàng…</p>
+        </div>
       </MiniAppShell>
     )
   }
@@ -72,10 +80,13 @@ export default function OrderDetailPage() {
 
       {order.status === 'pending' && (
         <QrPanel
+          orderId={order.id}
           qrUrl={order.qrUrl}
           paymentCode={order.paymentCode}
           amount={order.totalPrice}
           bankName={order.bankName}
+          accountNumber={order.accountNumber}
+          accountName={order.accountName}
         />
       )}
 
@@ -84,14 +95,38 @@ export default function OrderDetailPage() {
           <div className="mb-2 inline-flex p-2.5 rounded-full" style={{ background: 'var(--brand-gold-soft)', color: 'var(--brand-gold-deep)' }}>
             <Icon name="clock" size={22} strokeWidth={1.5} />
           </div>
-          <p className="text-sm font-medium">Đang xử lý đơn hàng…</p>
-          <p className="text-xs opacity-80 mt-1">Key sẽ giao trong giây lát.</p>
+          {order.isBackorder ? (
+            order.backorderWaitMode === 'after_hours' ? (
+              <>
+                <p className="text-sm font-medium">Đơn hàng sẽ được xử lý lúc 9:00 sáng.</p>
+                <p className="text-xs opacity-80 mt-1">Shop sẽ thông báo ngay khi đơn hoàn thành.</p>
+              </>
+            ) : (
+              <>
+                <p className="text-sm font-medium">Thanh toán đã được ghi nhận.</p>
+                <p className="text-xs opacity-80 mt-1">
+                  Shop sẽ xử lý đơn hàng và thông báo khi hoàn thành. Thời gian dự kiến: 30-60 phút, hoặc theo mô tả sản phẩm.
+                </p>
+                <p className="text-xs opacity-80 mt-2">
+                  Cần hỗ trợ? Liên hệ{' '}
+                  <a href="https://t.me/taikhoantenhat" target="_blank" rel="noopener noreferrer" className="font-semibold underline underline-offset-2">
+                    @taikhoantenhat
+                  </a>
+                </p>
+              </>
+            )
+          ) : (
+            <>
+              <p className="text-sm font-medium">Đang xử lý đơn hàng…</p>
+              <p className="text-xs opacity-80 mt-1">Key sẽ giao trong giây lát.</p>
+            </>
+          )}
         </div>
       )}
 
       {order.status === 'delivered' && order.accounts && order.accounts.length > 0 && (
         <section className="mt-1">
-          <div className="miniapp-section-title">
+          <div className="miniapp-section-title text-base">
             <span>🔑 {t.order.keysTitle}</span>
           </div>
           <ul className="space-y-2">
@@ -100,56 +135,15 @@ export default function OrderDetailPage() {
             ))}
           </ul>
           {order.usageInstructions && (
-            <div className="mt-3 rounded-xl p-3 text-sm whitespace-pre-line" style={{ background: 'var(--tg-bg-2)' }}>
-              <p className="font-medium mb-1">📘 Hướng dẫn sử dụng</p>
-              <p className="opacity-85">{linkifyText(order.usageInstructions)}</p>
+            <div className="mt-4 rounded-2xl p-4 miniapp-order-usage">
+              <p className="font-semibold text-base mb-2">📘 Hướng dẫn sử dụng</p>
+              <RichText html={order.usageInstructions} className="text-base leading-relaxed" />
             </div>
           )}
         </section>
       )}
     </MiniAppShell>
   )
-}
-
-const URL_REGEX = /(https?:\/\/[^\s<>"']+)/g
-
-function linkifyText(text: string): React.ReactNode[] {
-  const parts: React.ReactNode[] = []
-  let lastIndex = 0
-  let m: RegExpExecArray | null
-  let idx = 0
-  URL_REGEX.lastIndex = 0
-  while ((m = URL_REGEX.exec(text)) !== null) {
-    if (m.index > lastIndex) parts.push(text.slice(lastIndex, m.index))
-    const href = m[0]
-    parts.push(
-      <a key={`u-${idx++}`} href={href} target="_blank" rel="noopener noreferrer">{href}</a>
-    )
-    lastIndex = m.index + href.length
-  }
-  if (lastIndex < text.length) parts.push(text.slice(lastIndex))
-  return parts
-}
-
-function extractUrls(text: string): string[] {
-  const out: string[] = []
-  let m: RegExpExecArray | null
-  URL_REGEX.lastIndex = 0
-  while ((m = URL_REGEX.exec(text)) !== null) {
-    if (!out.includes(m[0])) out.push(m[0])
-  }
-  return out
-}
-
-function shortenUrl(u: string): string {
-  try {
-    const url = new URL(u)
-    const host = url.hostname.replace(/^www\./, '')
-    const path = url.pathname.length > 24 ? url.pathname.slice(0, 22) + '…' : url.pathname
-    return host + (path === '/' ? '' : path)
-  } catch {
-    return u
-  }
 }
 
 function KeyRow({ value }: { value: string }) {
@@ -175,7 +169,7 @@ function KeyRow({ value }: { value: string }) {
       >
         <Icon name={copied ? 'check' : 'copy'} size={14} />
       </button>
-      <div>{linkifyText(value)}</div>
+      <div className="miniapp-key-body">{renderLabeledText(value)}</div>
       {urls.length > 0 && (
         <div className="miniapp-key-links">
           {urls.map((u, i) => (
