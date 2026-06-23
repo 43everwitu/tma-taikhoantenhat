@@ -191,12 +191,14 @@ async function runSweep() {
       }
     } catch (err) {
       console.error(`keyExpiryReminder preflight failed for stock #${r.id}:`, err.message);
+      failed++;
       continue;
     }
 
     try {
       await bot.telegram.sendMessage(r.sold_to, body, { parse_mode: 'HTML' });
     } catch (err) {
+      failed++;
       try {
         renewalReminderLogService.insertLog({
           stockId: r.id,
@@ -217,12 +219,27 @@ async function runSweep() {
         );
         continue;
       }
-      failed++;
       console.error(`keyExpiryReminder Telegram send failed for stock #${r.id}:`, err.message);
       continue;
     }
 
     confirmedSentStockIds.add(r.id);
+    let auditPersisted = false;
+    try {
+      retryPersistence(
+        () => persistSuccessfulSend(r, order, lifecycle, expiryDate, body),
+        'Telegram sent but persistence',
+        r.id,
+      );
+      auditPersisted = true;
+      confirmedSentStockIds.delete(r.id);
+    } catch (err) {
+      console.error(
+        `keyExpiryReminder Telegram sent but notification/log persistence failed after ${MAX_PERSIST_ATTEMPTS} attempts for stock #${r.id}; falling back to sent marker:`,
+        err.message,
+      );
+    }
+
     try {
       retryPersistence(
         () => markSent.run(r.id),
@@ -231,23 +248,11 @@ async function runSweep() {
       );
       confirmedSentStockIds.delete(r.id);
     } catch (err) {
+      const durability = auditPersisted
+        ? 'sent log remains durable'
+        : 'no durable database dedupe; in-memory guard retained';
       console.error(
-        `keyExpiryReminder Telegram sent but could not persist sent marker after ${MAX_PERSIST_ATTEMPTS} attempts for stock #${r.id}:`,
-        err.message,
-      );
-      sent++;
-      continue;
-    }
-
-    try {
-      retryPersistence(
-        () => persistSuccessfulSend(r, order, lifecycle, expiryDate, body),
-        'Telegram sent but persistence',
-        r.id,
-      );
-    } catch (err) {
-      console.error(
-        `keyExpiryReminder Telegram sent and marker persisted but notification/log persistence failed after ${MAX_PERSIST_ATTEMPTS} attempts for stock #${r.id}:`,
+        `keyExpiryReminder Telegram sent but could not persist sent marker after ${MAX_PERSIST_ATTEMPTS} attempts for stock #${r.id}; ${durability}:`,
         err.message,
       );
     }
