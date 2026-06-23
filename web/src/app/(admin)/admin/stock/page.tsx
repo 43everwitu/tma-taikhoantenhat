@@ -32,6 +32,8 @@ interface ProductStock {
   stock: number
   soldStock: number
   totalStock: number
+  lowStockThreshold?: number | null
+  effectiveLowStockThreshold?: number | null
 }
 
 const columns: Column<ProductStock>[] = [
@@ -156,7 +158,7 @@ export default function StockIndexPage() {
     }
     if (statusFilter === 'in') rows = rows.filter((p) => p.stock > 0)
     else if (statusFilter === 'out') rows = rows.filter((p) => p.stock === 0)
-    else if (statusFilter === 'low') rows = rows.filter((p) => p.stock > 0 && p.stock <= 5)
+    else if (statusFilter === 'low') rows = rows.filter((p) => p.stock > 0 && p.stock <= (p.effectiveLowStockThreshold ?? p.lowStockThreshold ?? 0))
 
     if (sort === 'stock_asc') rows = [...rows].sort((a, b) => a.stock - b.stock)
     else if (sort === 'stock_desc') rows = [...rows].sort((a, b) => b.stock - a.stock)
