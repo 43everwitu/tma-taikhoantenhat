@@ -6,12 +6,18 @@ const router = Router();
 
 router.use(requirePermission('users.read'));
 
+const MAX_PAGE = 1_000_000;
+
+function parseBoundedPositiveInt(value, { fallback, min, max }) {
+  const parsed = Number.parseInt(value, 10);
+  if (!Number.isSafeInteger(parsed)) return fallback;
+  return Math.max(min, Math.min(max, parsed));
+}
+
 // GET /admin/users?search=&page=1&limit=20
 router.get('/', (req, res) => {
-  const parsedPage = Number.parseInt(req.query.page, 10);
-  const parsedLimit = Number.parseInt(req.query.limit, 10);
-  const page = Math.max(1, Number.isNaN(parsedPage) ? 1 : parsedPage);
-  const limit = Math.max(1, Math.min(100, Number.isNaN(parsedLimit) ? 20 : parsedLimit));
+  const page = parseBoundedPositiveInt(req.query.page, { fallback: 1, min: 1, max: MAX_PAGE });
+  const limit = parseBoundedPositiveInt(req.query.limit, { fallback: 20, min: 1, max: 100 });
   const offset = (page - 1) * limit;
   const search = String(req.query.search || '').trim();
   const like = `%${search}%`;

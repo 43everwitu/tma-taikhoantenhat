@@ -246,6 +246,14 @@ test('GET /admin/users clamp page và limit vào khoảng hợp lệ', async () 
   assert.strictEqual(high.json.meta.limit, 100);
 });
 
+test('GET /admin/users không crash khi page quá lớn cho SQLite OFFSET', async () => {
+  const res = await requestJson(makeApp(), 'GET', '/admin/users?page=999999999999999999999999&limit=100');
+
+  assert.strictEqual(res.status, 200, JSON.stringify(res.json));
+  assert.strictEqual(res.json.meta.page, 1);
+  assert.strictEqual(res.json.meta.limit, 100);
+});
+
 test('GET /admin/users/:telegramId trả real user và dữ liệu liên quan', async (t) => {
   const fixture = seedRealUserWithOrders();
   t.after(() => cleanupRealFixture(fixture));
