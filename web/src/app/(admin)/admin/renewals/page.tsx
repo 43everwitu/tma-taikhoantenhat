@@ -2,6 +2,7 @@
 
 import { useEffect, useState } from 'react'
 import Link from 'next/link'
+import { useSearchParams } from 'next/navigation'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { api } from '@/lib/api'
 import { formatDate } from '@/lib/utils'
@@ -13,10 +14,16 @@ type RenewalStatus = 'sent' | 'sent_legacy' | 'skipped' | 'failed' | 'exhausted'
 interface RenewalLog {
   id: string
   stockId: string | null
+  stockValue?: string | null
   orderId: string | null
   userId: string
+  userName?: string | null
+  username?: string | null
   productId: string
   productName: string
+  variantId?: string | null
+  variantName?: string | null
+  variantLabel?: string
   expiryDate: string | null
   daysBeforeExpiry: number | null
   telegramSent: boolean
@@ -60,10 +67,13 @@ const STATUS_BG: Record<RenewalStatus, string> = {
 
 export default function RenewalsPage() {
   const queryClient = useQueryClient()
+  const searchParams = useSearchParams()
+  const highlightId = searchParams.get('highlight')
   const [statusFilter, setStatusFilter] = useState<'' | RenewalStatus>('')
   const [search, setSearch] = useState('')
   const [debouncedSearch, setDebouncedSearch] = useState('')
   const [sweepResult, setSweepResult] = useState<RenewalSweepSummary | null>(null)
+  const [revealedStockIds, setRevealedStockIds] = useState<Set<string>>(new Set())
 
   useEffect(() => {
     const t = setTimeout(() => setDebouncedSearch(search), 300)
@@ -91,28 +101,78 @@ export default function RenewalsPage() {
   const rows = data?.data.items ?? []
   const total = data?.data.total ?? 0
 
+  function toggleStockValue(id: string) {
+    setRevealedStockIds(prev => {
+      const next = new Set(prev)
+      if (next.has(id)) next.delete(id)
+      else next.add(id)
+      return next
+    })
+  }
+
+  function copyText(value: string) {
+    navigator.clipboard.writeText(value)
+  }
+
   const columns: Column<RenewalLog>[] = [
-    { header: '#', cell: (r) => <span className="font-mono text-xs">{r.id}</span> },
+    {
+      header: '#',
+      cell: (r) => (
+        <span className={`font-mono text-xs ${highlightId === r.id ? 'text-amber-700 font-bold' : ''}`}>
+          #{r.id}{highlightId === r.id ? ' · đang chọn' : ''}
+        </span>
+      ),
+    },
     {
       header: 'Đơn', primary: true,
       cell: (r) => r.orderId ? (
-        <Link href={`/admin/orders?highlight=${r.orderId}`} className="font-mono text-sm underline underline-offset-2">
+        <Link href={`/admin/orders?highlight=${r.orderId}&detail=1`} className="font-mono text-sm underline underline-offset-2">
           #{r.orderId}
         </Link>
       ) : <span className="text-clay-silver">—</span>,
     },
     {
       header: 'Khách',
-      cell: (r) => <span className="font-mono text-xs">{r.userId}</span>,
+      cell: (r) => (
+        <div className="text-xs">
+          <div className="font-medium">{r.userName || 'Không có tên'}</div>
+          <div className="text-clay-charcoal">{r.username ? `@${r.username}` : 'Không có username'}</div>
+          <div className="font-mono text-clay-silver">ID {r.userId}</div>
+        </div>
+      ),
     },
     {
       header: 'Sản phẩm',
-      cell: (r) => (
-        <div>
-          <div className="font-medium">{r.productName}</div>
-          <div className="text-xs text-clay-silver">Product #{r.productId}{r.stockId ? ` · Stock #${r.stockId}` : ''}</div>
-        </div>
-      ),
+      cell: (r) => {
+        const stockKey = r.stockId || r.id
+        const revealed = revealedStockIds.has(stockKey)
+        return (
+          <div className="space-y-1">
+            <div className="font-medium">{r.productName}</div>
+            <div className="text-xs text-clay-charcoal">
+              Biến thể: {r.variantLabel || r.variantName || 'mặc định/legacy'}
+            </div>
+            <div className="text-xs text-clay-silver">
+              Product #{r.productId}{r.stockId ? ` · Stock #${r.stockId}` : ' · Stock —'}
+            </div>
+            <div className="flex flex-wrap items-center gap-2 text-xs">
+              <code className="font-mono bg-clay-oat-light px-2 py-0.5 rounded">
+                {r.stockValue ? (revealed ? r.stockValue : '••••••••••••') : '—'}
+              </code>
+              {r.stockValue && (
+                <>
+                  <button type="button" onClick={() => toggleStockValue(stockKey)} className="clay-btn text-xs py-0.5 px-2">
+                    {revealed ? 'Ẩn value' : 'Hiện value'}
+                  </button>
+                  <button type="button" onClick={() => copyText(r.stockValue || '')} className="clay-btn text-xs py-0.5 px-2">
+                    Copy
+                  </button>
+                </>
+              )}
+            </div>
+          </div>
+        )
+      },
     },
     {
       header: 'Hết hạn',
