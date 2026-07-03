@@ -32,6 +32,7 @@ async function handleStart(ctx) {
                     openShopButton('Mở cửa hàng', {
                         botUsername: ctx.botInfo?.username,
                         payload: ctx.startPayload,
+                        preferStartLink: true,
                     }),
                 ],
                 [manageNotificationsButton()],

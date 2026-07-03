@@ -53,13 +53,23 @@ test('/start with no payload renders welcome + root Mini App button', async () =
   assert.match(sent[0].text, /Xin chào Khoa/);
   assert.match(sent[0].text, /Thông báo bot: đang bật/);
   const button = flattenButtons(sent[0]).find((item) => item.text === 'Mở cửa hàng');
-  assert.strictEqual(button.web_app.url, 'https://taikhoantenhat.example.com/');
+  assert.strictEqual(button.url, 'https://t.me/shop_bot?startapp');
 });
 
 test('/start order_42 renders a button to the order page', async () => {
   templateStub.renderIfEnabled = () => 'Xin chào Khoa';
   const sent = [];
   await handleStart(makeCtx({ payload: 'order_42', sentRef: sent }));
+  const button = flattenButtons(sent[0]).find((item) => item.text === 'Mở cửa hàng');
+  assert.strictEqual(button.url, 'https://t.me/shop_bot?startapp=order_42');
+});
+
+test('/start order_42 falls back to Mini App order URL when bot username is missing', async () => {
+  templateStub.renderIfEnabled = () => 'Xin chào Khoa';
+  const sent = [];
+  const ctx = makeCtx({ payload: 'order_42', sentRef: sent });
+  ctx.botInfo = {};
+  await handleStart(ctx);
   const button = flattenButtons(sent[0]).find((item) => item.text === 'Mở cửa hàng');
   assert.match(button.web_app.url, /\/don-hang\/42$/);
 });
@@ -69,7 +79,7 @@ test('/start with malformed payload falls back to default', async () => {
   const sent = [];
   await handleStart(makeCtx({ payload: '../../etc/passwd', sentRef: sent }));
   const button = flattenButtons(sent[0]).find((item) => item.text === 'Mở cửa hàng');
-  assert.strictEqual(button.web_app.url, 'https://taikhoantenhat.example.com/');
+  assert.strictEqual(button.url, 'https://t.me/shop_bot?startapp');
 });
 
 test('/start replies with fallback text when welcome template is disabled', async () => {

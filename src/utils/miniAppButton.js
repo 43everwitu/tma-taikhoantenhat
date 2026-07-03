@@ -28,6 +28,10 @@ function buildStartLink(botUsername, payload = '') {
 }
 
 function openShopButton(text = 'Mở cửa hàng', options = {}) {
+  if (options.preferStartLink && options.botUsername) {
+    return { text, url: buildStartLink(options.botUsername, options.payload || '') };
+  }
+
   const url = buildMiniAppUrl(options.payload || '');
   if (url) return { text, web_app: { url } };
 
