@@ -9,6 +9,7 @@ Hướng dẫn này áp dụng cho repo `/home/peanut/tma-taikhoantenhat`. Luôn
 - Nếu gặp thay đổi có sẵn trong working tree, coi đó là của người dùng. Không revert nếu không được yêu cầu.
 - Runtime DB là `data/shop.db`; `data/db.sqlite` là artifact cũ, không dùng làm nguồn sự thật.
 - Không commit `data/shop.db`, backup DB, `data/uploads/`, log, temporary test, hoặc file ảnh local.
+- Không chạy hoặc viết test/lệnh gửi Telegram broadcast tới toàn bộ user thật. Khi cần kiểm thử Telegram notification, phải mock `telegramApiClient`/bot hoặc chỉ gửi tới admin/test chat được chỉ định; không dùng runtime `users` làm danh sách nhận thật.
 
 ## Cấu Trúc Project
 
