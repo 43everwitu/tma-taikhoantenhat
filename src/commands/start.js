@@ -1,19 +1,11 @@
 const userService = require('../services/userService');
 const messageTemplateService = require('../services/messageTemplateService');
-
-const ORDER_PAYLOAD = /^order_(\d{1,12})$/;
-
-// Build a t.me deeplink that opens the bot's chat menu Mini App.
-// Inline `web_app:` buttons require BotFather domain registration; t.me/<bot>?startapp
-// works without setting any domain — Telegram launches the configured chat menu
-// button URL with `tgWebAppStartParam=<payload>` as a query so the frontend can
-// route deep links (e.g. order_<id> → /don-hang/<id>).
-function buildStartLink(botUsername, payload) {
-    if (!botUsername) return process.env.MINIAPP_URL;
-    const m = ORDER_PAYLOAD.exec(payload || '');
-    const param = m ? `order_${m[1]}` : '';
-    return `https://t.me/${botUsername}?startapp${param ? `=${param}` : ''}`;
-}
+const { escapeHtml } = require('../utils/messages');
+const { openShopButton } = require('../utils/miniAppButton');
+const {
+    manageNotificationsButton,
+    notificationStatusLine,
+} = require('./notificationPreferences');
 
 async function handleStart(ctx) {
     const user = userService.findOrCreate(ctx.from);
@@ -24,21 +16,26 @@ async function handleStart(ctx) {
     const supportRow = db.prepare(`SELECT value FROM settings WHERE key = 'support_contact'`).get();
     const supportContact = supportRow?.value || process.env.SUPPORT_CONTACT || '@admin';
 
-    const text = messageTemplateService.renderIfEnabled('welcome', {
+    const welcomeText = messageTemplateService.renderIfEnabled('welcome', {
         name,
         username,
         supportContact,
     });
-    if (!text) return;
-
-    const url = buildStartLink(ctx.botInfo?.username, ctx.startPayload);
+    const fallbackText = `Xin chào ${escapeHtml(name)}.\nMở cửa hàng bằng nút bên dưới.`;
+    const text = `${welcomeText || fallbackText}\n\n${notificationStatusLine(user)}`;
 
     await ctx.reply(text, {
         parse_mode: 'HTML',
         reply_markup: {
-            inline_keyboard: [[
-                { text: 'Mở cửa hàng', url },
-            ]],
+            inline_keyboard: [
+                [
+                    openShopButton('Mở cửa hàng', {
+                        botUsername: ctx.botInfo?.username,
+                        payload: ctx.startPayload,
+                    }),
+                ],
+                [manageNotificationsButton()],
+            ],
         },
     });
 }
