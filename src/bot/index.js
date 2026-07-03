@@ -17,13 +17,15 @@ function createBot() {
 
   // Single real command: the Mini App entry point.
   require('../commands/start')(bot);
+  require('../commands/notificationPreferences')(bot);
 
   // Fallback: any other input nudges the user back to the Mini App.
   require('./fallback')(bot);
 
-  // Replace the menu — only /start shows in the slash UI.
+  // Replace the menu — the Mini App entry point and notification toggle show in the slash UI.
   const COMMANDS = [
     { command: 'start', description: 'Mở cửa hàng' },
+    { command: 'thongbao', description: 'Bật/tắt thông báo' },
   ];
   (async () => {
     try {
