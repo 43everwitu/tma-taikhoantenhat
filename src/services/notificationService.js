@@ -2,8 +2,24 @@ const db = require('../database');
 const config = require('../config');
 const adminNotifyService = require('./adminNotifyService');
 const messageTemplateService = require('./messageTemplateService');
+const telegramApiClient = require('./telegramApiClient');
+const userNotificationPreferenceService = require('./userNotificationPreferenceService');
 
 const sleep = (ms) => new Promise(r => setTimeout(r, ms));
+
+const MARKETING_NOTIFICATION_TYPES = new Set([
+  'announcement',
+  'stock_alert',
+  'product_new',
+  'product_updated',
+  'discount',
+]);
+
+function shouldRespectTelegramMarketingPreference(type, options = {}) {
+  if (options.respectTelegramMarketingPreference === true) return true;
+  if (options.respectTelegramMarketingPreference === false) return false;
+  return MARKETING_NOTIFICATION_TYPES.has(type);
+}
 
 class NotificationService {
   constructor(bot) {
@@ -25,16 +41,24 @@ class NotificationService {
   async notify(userId, type, title, body, data = {}, channel = 'all', webBody = undefined, extra = {}) {
     let sentTelegram = 0;
     let sentWeb = 0;
+    let skippedByPreference = 0;
     const effectiveWeb = webBody === undefined ? body : webBody;
+    const { respectTelegramMarketingPreference, ...sendExtra } = extra || {};
+    const shouldSendTelegram = (channel === 'all' || channel === 'telegram') && body;
+    const telegramAllowed = !shouldSendTelegram
+      || !shouldRespectTelegramMarketingPreference(type, { respectTelegramMarketingPreference })
+      || userNotificationPreferenceService.isTelegramMarketingEnabled(userId);
 
     // Telegram
-    if ((channel === 'all' || channel === 'telegram') && body) {
+    if (shouldSendTelegram && telegramAllowed) {
       try {
-        await this.bot.telegram.sendMessage(userId, body, { parse_mode: 'HTML', ...extra });
+        await telegramApiClient.sendMessage(userId, body, { parse_mode: 'HTML', ...sendExtra });
         sentTelegram = 1;
       } catch (err) {
         console.error(`❌ Notify telegram ${userId}:`, err.message);
       }
+    } else if (shouldSendTelegram && !telegramAllowed) {
+      skippedByPreference = 1;
     }
 
     // Web (insert into notifications table)
@@ -46,7 +70,7 @@ class NotificationService {
       sentWeb = 1;
     }
 
-    return { sentTelegram, sentWeb };
+    return { sentTelegram, sentWeb, skippedByPreference };
   }
 
   // ============================================================
@@ -181,7 +205,7 @@ class NotificationService {
     const botBody = messageTemplateService.renderIfEnabled('bot.product_new', vars);
     const webBody = messageTemplateService.renderIfEnabled('web.product_new', vars);
     if (!botBody && !webBody) return { sent: 0, failed: 0, total: 0, skipped: 'template_disabled' };
-    return this.broadcast('Sản phẩm mới', botBody, 'all', adminId, webBody);
+    return this.broadcast('Sản phẩm mới', botBody, 'all', adminId, webBody, { notificationType: 'product_new' });
   }
 
   async notifyProductUpdated(product, adminId = null) {
@@ -193,7 +217,7 @@ class NotificationService {
     const botBody = messageTemplateService.renderIfEnabled('bot.product_updated', vars);
     const webBody = messageTemplateService.renderIfEnabled('web.product_updated', vars);
     if (!botBody && !webBody) return { sent: 0, failed: 0, total: 0, skipped: 'template_disabled' };
-    return this.broadcast('Cập nhật sản phẩm', botBody, 'all', adminId, webBody);
+    return this.broadcast('Cập nhật sản phẩm', botBody, 'all', adminId, webBody, { notificationType: 'product_updated' });
   }
 
   /**
@@ -286,8 +310,9 @@ class NotificationService {
    *   notification. `undefined`/`null` ⇒ reuse `body`. When provided it lets the
    *   bot chat and the Mini App notification read different wording.
    */
-  async broadcast(title, body, target = 'all', adminId = null, webBody = undefined) {
+  async broadcast(title, body, target = 'all', adminId = null, webBody = undefined, options = {}) {
     const effectiveWeb = (webBody === undefined || webBody === null) ? body : webBody;
+    const notificationType = options.notificationType || 'announcement';
 
     // Save announcement
     const result = db.prepare(`
@@ -296,38 +321,42 @@ class NotificationService {
     `).run(title, body || effectiveWeb || '', adminId || 0, target);
 
     const announcementId = result.lastInsertRowid;
-    const users = db.prepare('SELECT telegram_id, username FROM users').all();
+    const users = db.prepare('SELECT telegram_id, username, notification_prefs FROM users').all();
 
     let sent = 0;
     let failed = 0;
+    let skippedByPreference = 0;
     const errors = [];
 
     for (const user of users) {
       // Telegram
       if ((target === 'all' || target === 'telegram') && body) {
-        try {
-          await this.bot.telegram.sendMessage(user.telegram_id, body, { parse_mode: 'HTML' });
-          sent++;
-        } catch (err) {
-          failed++;
-          const msg = (err && (err.description || err.message)) || String(err);
-          errors.push({
-            userId: user.telegram_id,
-            username: user.username || null,
-            error: String(msg).slice(0, 300),
-            at: new Date().toISOString(),
-          });
+        if (!userNotificationPreferenceService.isTelegramMarketingEnabled(user)) {
+          skippedByPreference++;
+        } else {
+          try {
+            await telegramApiClient.sendMessage(user.telegram_id, body, { parse_mode: 'HTML' });
+            sent++;
+          } catch (err) {
+            failed++;
+            const msg = (err && (err.description || err.message)) || String(err);
+            errors.push({
+              userId: user.telegram_id,
+              username: user.username || null,
+              error: String(msg).slice(0, 300),
+              at: new Date().toISOString(),
+            });
+          }
+          if ((sent + failed) % 25 === 0) await sleep(1000);
         }
-        // Rate limit
-        if ((sent + failed) % 25 === 0) await sleep(1000);
       }
 
       // Web notification
       if ((target === 'all' || target === 'web') && effectiveWeb) {
         db.prepare(`
           INSERT INTO notifications (user_id, type, title, body, channel)
-          VALUES (?, 'announcement', ?, ?, ?)
-        `).run(user.telegram_id, title, effectiveWeb, target);
+          VALUES (?, ?, ?, ?, ?)
+        `).run(user.telegram_id, notificationType, title, effectiveWeb, target);
       }
     }
 
@@ -335,7 +364,7 @@ class NotificationService {
     db.prepare('UPDATE announcements SET sent_count = ?, failed_count = ?, error_details = ? WHERE id = ?')
       .run(sent, failed, errors.length > 0 ? JSON.stringify(errors) : null, announcementId);
 
-    return { announcementId, sent, failed, total: users.length, errors };
+    return { announcementId, sent, failed, skippedByPreference, total: users.length, errors };
   }
 
   // ============================================================
@@ -373,6 +402,7 @@ module.exports = { NotificationService };
  */
 async function sendDelivery(bot, order, accounts, opts = {}) {
   const messageTemplateService = require('./messageTemplateService');
+  const telegramApiClient = require('./telegramApiClient');
   const { escapeHtml, richifyText, formatKeysForTelegram, shouldSendAsFile } = require('../utils/messages');
   const dbModule = require('../database');
 
@@ -438,7 +468,7 @@ async function sendDelivery(bot, order, accounts, opts = {}) {
 
     if (sentTelegram && finalCaption === minimalCaption && usageInstructions !== '(không có)' && usageInstructions !== '(xem ở tin nhắn dưới)') {
       try {
-        await bot.telegram.sendMessage(
+        await telegramApiClient.sendMessage(
           order.user_id,
           `📘 <b>Hướng dẫn sử dụng — ${escapeHtml(order.product_name)}</b>\n\n${usageInstructions}`,
           { parse_mode: 'HTML' }
@@ -459,7 +489,7 @@ async function sendDelivery(bot, order, accounts, opts = {}) {
       usageBlock,
     });
     try {
-      await bot.telegram.sendMessage(order.user_id, body, sendOpts);
+      await telegramApiClient.sendMessage(order.user_id, body, sendOpts);
       sentTelegram = 1;
     } catch (err) {
       console.error(`❌ Send delivery ${order.user_id}:`, err.message);

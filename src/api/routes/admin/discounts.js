@@ -105,7 +105,9 @@ router.post('/:id/notify', async (req, res) => {
 
   const title = code.notify_title || 'Ưu đãi toàn cửa hàng';
   const body = code.bot_message || code.app_message || `Ưu đãi ${code.code} đang được tự động áp dụng toàn cửa hàng.`;
-  const result = await notificationService.broadcast(title, body, 'all', req.admin.adminId);
+  const result = await notificationService.broadcast(title, body, 'all', req.admin.adminId, undefined, {
+    notificationType: 'discount',
+  });
   auditService.log(req.admin.adminId, 'discount.notify', 'discount', id, { sent: result.sent, failed: result.failed }, req.ip);
   res.json({ success: true, data: result });
 });
