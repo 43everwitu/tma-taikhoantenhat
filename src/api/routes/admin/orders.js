@@ -2,8 +2,10 @@ const { Router } = require('express');
 const { z } = require('zod');
 const db = require('../../../database');
 const orderService = require('../../../services/orderService');
+const orderNoteService = require('../../../services/orderNoteService');
 const auditService = require('../../../services/auditService');
 const { validate } = require('../../middleware/validate');
+const { requirePermission } = require('../../middleware/auth');
 const { deliverOrder } = require('../../../services/orderFulfillmentService');
 
 const router = Router();
@@ -47,6 +49,8 @@ function shapeOrder(r) {
     keyExpiresAt,
     keyExpired,
     hasCustomerInput: !!r.input_value,
+    noteCount: Number(r.note_count || 0),
+    latestNoteAt: r.latest_note_at || null,
   };
 }
 
@@ -291,10 +295,21 @@ router.get('/', (req, res) => {
   }
 
   const rows = db.prepare(`
-    SELECT o.*, p.name as product_name, u.full_name as user_name, u.username
+    SELECT
+      o.*,
+      p.name as product_name,
+      u.full_name as user_name,
+      u.username,
+      COALESCE(note_stats.note_count, 0) AS note_count,
+      note_stats.latest_note_at
     FROM orders o
     JOIN products p ON o.product_id = p.id
     LEFT JOIN users u ON o.user_id = u.telegram_id
+    LEFT JOIN (
+      SELECT order_id, COUNT(*) AS note_count, MAX(updated_at) AS latest_note_at
+      FROM order_notes
+      GROUP BY order_id
+    ) note_stats ON note_stats.order_id = o.id
     WHERE ${where}
     ORDER BY o.created_at DESC
     LIMIT ? OFFSET ?
@@ -312,6 +327,58 @@ router.get('/', (req, res) => {
     success: true,
     data: { orders: rows.map(shapeOrder), total, page, limit },
   });
+});
+
+const orderNoteSchema = z.object({
+  content: z.string().transform(value => value.trim()).pipe(z.string().min(1).max(2000)),
+});
+
+// POST /admin/orders/:id/notes
+router.post('/:id/notes', requirePermission('orders.write'), validate(orderNoteSchema), (req, res) => {
+  const orderId = parseInt(req.params.id);
+  const order = orderService.getById(orderId);
+  if (!order) return res.status(404).json({ success: false, error: { code: 'NOT_FOUND', message: 'Đơn hàng không tồn tại' } });
+
+  const note = orderNoteService.create(orderId, req.admin.adminId, req.validated.content);
+  auditService.log(req.admin.adminId, 'order.note_create', 'order', orderId, {
+    noteId: note.id,
+    preview: orderNoteService.previewContent(note.content),
+  }, req.ip);
+  res.json({ success: true, data: note });
+});
+
+// PATCH /admin/orders/:id/notes/:noteId
+router.patch('/:id/notes/:noteId', requirePermission('orders.write'), validate(orderNoteSchema), (req, res) => {
+  const orderId = parseInt(req.params.id);
+  const noteId = parseInt(req.params.noteId);
+  const order = orderService.getById(orderId);
+  if (!order) return res.status(404).json({ success: false, error: { code: 'NOT_FOUND', message: 'Đơn hàng không tồn tại' } });
+
+  const note = orderNoteService.update(orderId, noteId, req.admin.adminId, req.validated.content);
+  if (!note) return res.status(404).json({ success: false, error: { code: 'NOT_FOUND', message: 'Ghi chú không tồn tại' } });
+
+  auditService.log(req.admin.adminId, 'order.note_update', 'order', orderId, {
+    noteId: note.id,
+    preview: orderNoteService.previewContent(note.content),
+  }, req.ip);
+  res.json({ success: true, data: note });
+});
+
+// DELETE /admin/orders/:id/notes/:noteId
+router.delete('/:id/notes/:noteId', requirePermission('orders.write'), (req, res) => {
+  const orderId = parseInt(req.params.id);
+  const noteId = parseInt(req.params.noteId);
+  const order = orderService.getById(orderId);
+  if (!order) return res.status(404).json({ success: false, error: { code: 'NOT_FOUND', message: 'Đơn hàng không tồn tại' } });
+
+  const note = orderNoteService.delete(orderId, noteId);
+  if (!note) return res.status(404).json({ success: false, error: { code: 'NOT_FOUND', message: 'Ghi chú không tồn tại' } });
+
+  auditService.log(req.admin.adminId, 'order.note_delete', 'order', orderId, {
+    noteId: note.id,
+    preview: orderNoteService.previewContent(note.content),
+  }, req.ip);
+  res.json({ success: true, data: { orderId: String(orderId), noteId: String(noteId) } });
 });
 
 // GET /admin/orders/:id
@@ -370,6 +437,7 @@ router.get('/:id', (req, res) => {
   shaped.stockItems = getOrderStockItems(order, shaped.accounts);
   shaped.matchedTransaction = getMatchedTransaction(order.id);
   shaped.renewalLogs = getRenewalLogs(order.id, shaped.stockItems);
+  shaped.notes = orderNoteService.listForOrder(order.id);
 
   res.json({ success: true, data: shaped });
 });
