@@ -2,8 +2,13 @@ const assert = require('node:assert');
 const test = require('node:test');
 const express = require('express');
 const { PassThrough, Readable, Writable } = require('node:stream');
+const Database = require('better-sqlite3');
 const db = require('../../src/database');
 const orderNoteService = require('../../src/services/orderNoteService');
+const orderNotesMigration = require('../../src/database/migrations/057_order_notes');
+
+const WRITE_ADMIN_ID = 991001;
+const READ_ADMIN_ID = 991002;
 
 async function requestJson(app, method, path, body) {
   return await new Promise((resolve, reject) => {
@@ -54,7 +59,7 @@ async function requestJson(app, method, path, body) {
   });
 }
 
-function makeApp(admin = { adminId: 1, role: 'super_admin', username: 'admin', perms: ['*'] }) {
+function makeApp(admin = { adminId: WRITE_ADMIN_ID, role: 'super_admin', username: 'note_admin', permissions: JSON.stringify(['*']) }) {
   const app = express();
   app.use(express.json());
   app.use((req, _res, next) => {
@@ -71,20 +76,22 @@ function makeApp(admin = { adminId: 1, role: 'super_admin', username: 'admin', p
   return app;
 }
 
-function ensureAdmin() {
+function ensureAdmin(id, username, displayName, permissions = ['*']) {
   db.prepare(`
-    INSERT INTO admins (id, username, password_hash, display_name, role, is_active)
-    VALUES (1, 'admin', 'x', 'Admin Chính', 'super_admin', 1)
+    INSERT INTO admins (id, username, password_hash, display_name, role, permissions, is_active)
+    VALUES (?, ?, 'x', ?, 'super_admin', ?, 1)
     ON CONFLICT(id) DO UPDATE SET
       username = excluded.username,
       display_name = excluded.display_name,
+      permissions = excluded.permissions,
       role = excluded.role,
       is_active = 1
-  `).run();
+  `).run(id, username, displayName, JSON.stringify(permissions));
 }
 
 function createFixture() {
-  ensureAdmin();
+  ensureAdmin(WRITE_ADMIN_ID, 'note_admin', 'Admin Ghi Chú', ['*']);
+  ensureAdmin(READ_ADMIN_ID, 'note_readonly', 'Admin Chỉ Đọc', ['orders.read']);
   const suffix = `${Date.now()}_${Math.floor(Math.random() * 100000)}`;
   const userId = 871_000_000 + Math.floor(Math.random() * 100000);
   return db.transaction(() => {
@@ -106,6 +113,7 @@ function createFixture() {
       categoryId: category.lastInsertRowid,
       productId: product.lastInsertRowid,
       orderId: order.lastInsertRowid,
+      paymentCode: `PNS_NOTE_${suffix}`,
     };
   })();
 }
@@ -118,6 +126,7 @@ function cleanupFixture(fixture) {
     db.prepare('DELETE FROM products WHERE id = ?').run(fixture.productId);
     db.prepare('DELETE FROM categories WHERE id = ?').run(fixture.categoryId);
     db.prepare('DELETE FROM users WHERE telegram_id = ?').run(fixture.userId);
+    db.prepare('DELETE FROM admins WHERE id IN (?, ?)').run(WRITE_ADMIN_ID, READ_ADMIN_ID);
   })();
 }
 
@@ -132,10 +141,10 @@ test('admin order notes can be created, listed, updated, and deleted', async (t)
   assert.strictEqual(create.status, 200, JSON.stringify(create.json));
   assert.strictEqual(create.json.success, true);
   assert.strictEqual(create.json.data.content, 'Khách cần xử lý thủ công sau thanh toán.');
-  assert.strictEqual(create.json.data.createdByAdminName, 'Admin Chính');
+  assert.strictEqual(create.json.data.createdByAdminName, 'Admin Ghi Chú');
   const noteId = create.json.data.id;
 
-  const list = await requestJson(app, 'GET', '/admin/orders?page=1&limit=20', null);
+  const list = await requestJson(app, 'GET', `/admin/orders?page=1&limit=20&q=${fixture.paymentCode}`, null);
   const listedOrder = list.json.data.orders.find((order) => order.id === String(fixture.orderId));
   assert.ok(listedOrder);
   assert.strictEqual(listedOrder.noteCount, 1);
@@ -151,7 +160,7 @@ test('admin order notes can be created, listed, updated, and deleted', async (t)
   });
   assert.strictEqual(update.status, 200, JSON.stringify(update.json));
   assert.strictEqual(update.json.data.content, 'Đã liên hệ khách, chờ phản hồi.');
-  assert.strictEqual(update.json.data.updatedByAdminName, 'Admin Chính');
+  assert.strictEqual(update.json.data.updatedByAdminName, 'Admin Ghi Chú');
 
   const afterUpdate = await requestJson(app, 'GET', `/admin/orders/${fixture.orderId}`, null);
   assert.strictEqual(afterUpdate.json.data.notes[0].content, 'Đã liên hệ khách, chờ phản hồi.');
@@ -162,6 +171,24 @@ test('admin order notes can be created, listed, updated, and deleted', async (t)
 
   const afterDelete = await requestJson(app, 'GET', `/admin/orders/${fixture.orderId}`, null);
   assert.deepStrictEqual(afterDelete.json.data.notes, []);
+
+  const auditActions = db.prepare(`
+    SELECT action, details
+    FROM audit_log
+    WHERE entity_type = 'order' AND entity_id = ?
+    ORDER BY id ASC
+  `).all(fixture.orderId).map(row => ({
+    action: row.action,
+    details: JSON.parse(row.details),
+  }));
+  assert.deepStrictEqual(
+    auditActions.map(row => row.action),
+    ['order.note_create', 'order.note_update', 'order.note_delete'],
+  );
+  assert.deepStrictEqual(
+    auditActions.map(row => row.details.noteId),
+    [noteId, noteId, noteId],
+  );
 });
 
 test('admin order note validation and ownership checks are enforced', async (t) => {
@@ -187,6 +214,73 @@ test('admin order note validation and ownership checks are enforced', async (t) 
 
   const wrongOrderDelete = await requestJson(app, 'DELETE', `/admin/orders/${two.orderId}/notes/${created.json.data.id}`, null);
   assert.strictEqual(wrongOrderDelete.status, 404);
+});
+
+test('admin order note writes require orders.write permission', async (t) => {
+  const fixture = createFixture();
+  t.after(() => cleanupFixture(fixture));
+  const writeApp = makeApp();
+  const readOnlyApp = makeApp({
+    adminId: READ_ADMIN_ID,
+    role: 'super_admin',
+    username: 'note_readonly',
+    permissions: JSON.stringify(['orders.read']),
+  });
+
+  const createDenied = await requestJson(readOnlyApp, 'POST', `/admin/orders/${fixture.orderId}/notes`, {
+    content: 'Không đủ quyền tạo',
+  });
+  assert.strictEqual(createDenied.status, 403);
+
+  const created = await requestJson(writeApp, 'POST', `/admin/orders/${fixture.orderId}/notes`, {
+    content: 'Note để kiểm tra quyền',
+  });
+  const noteId = created.json.data.id;
+
+  const updateDenied = await requestJson(readOnlyApp, 'PATCH', `/admin/orders/${fixture.orderId}/notes/${noteId}`, {
+    content: 'Không đủ quyền sửa',
+  });
+  assert.strictEqual(updateDenied.status, 403);
+
+  const deleteDenied = await requestJson(readOnlyApp, 'DELETE', `/admin/orders/${fixture.orderId}/notes/${noteId}`, null);
+  assert.strictEqual(deleteDenied.status, 403);
+});
+
+test('admin order note reads require orders.read permission', async (t) => {
+  const fixture = createFixture();
+  t.after(() => cleanupFixture(fixture));
+  const app = makeApp({
+    adminId: READ_ADMIN_ID,
+    role: 'super_admin',
+    username: 'note_blocked',
+    permissions: JSON.stringify([]),
+  });
+
+  const list = await requestJson(app, 'GET', `/admin/orders?q=${fixture.paymentCode}`, null);
+  assert.strictEqual(list.status, 403);
+
+  const detail = await requestJson(app, 'GET', `/admin/orders/${fixture.orderId}`, null);
+  assert.strictEqual(detail.status, 403);
+
+  const exportRes = await requestJson(app, 'GET', '/admin/orders/export', null);
+  assert.strictEqual(exportRes.status, 403);
+});
+
+test('order notes migration cascades when an order is hard-deleted', () => {
+  const memoryDb = new Database(':memory:');
+  memoryDb.exec(`
+    PRAGMA foreign_keys = ON;
+    CREATE TABLE orders (id INTEGER PRIMARY KEY);
+    CREATE TABLE admins (id INTEGER PRIMARY KEY);
+  `);
+
+  orderNotesMigration.up(memoryDb);
+
+  const orderFk = memoryDb.prepare('PRAGMA foreign_key_list(order_notes)').all()
+    .find(row => row.table === 'orders' && row.from === 'order_id');
+  assert.strictEqual(orderFk.on_delete, 'CASCADE');
+
+  memoryDb.close();
 });
 
 test('order note audit preview is capped at 120 characters including suffix', () => {

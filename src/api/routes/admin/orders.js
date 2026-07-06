@@ -248,7 +248,7 @@ function getRenewalLogs(orderId, stockItems) {
 }
 
 // GET /admin/orders?status=pending&page=1&limit=20&from=&to=&userId=
-router.get('/', (req, res) => {
+router.get('/', requirePermission('orders.read'), (req, res) => {
   const status = req.query.status;
   const page = parseInt(req.query.page) || 1;
   const limit = parseInt(req.query.limit) || 20;
@@ -300,16 +300,19 @@ router.get('/', (req, res) => {
       p.name as product_name,
       u.full_name as user_name,
       u.username,
-      COALESCE(note_stats.note_count, 0) AS note_count,
-      note_stats.latest_note_at
+      (
+        SELECT COUNT(*)
+        FROM order_notes n
+        WHERE n.order_id = o.id
+      ) AS note_count,
+      (
+        SELECT MAX(updated_at)
+        FROM order_notes n
+        WHERE n.order_id = o.id
+      ) AS latest_note_at
     FROM orders o
     JOIN products p ON o.product_id = p.id
     LEFT JOIN users u ON o.user_id = u.telegram_id
-    LEFT JOIN (
-      SELECT order_id, COUNT(*) AS note_count, MAX(updated_at) AS latest_note_at
-      FROM order_notes
-      GROUP BY order_id
-    ) note_stats ON note_stats.order_id = o.id
     WHERE ${where}
     ORDER BY o.created_at DESC
     LIMIT ? OFFSET ?
@@ -381,8 +384,38 @@ router.delete('/:id/notes/:noteId', requirePermission('orders.write'), (req, res
   res.json({ success: true, data: { orderId: String(orderId), noteId: String(noteId) } });
 });
 
+// GET /admin/orders/export?status=&from=&to=
+router.get('/export', requirePermission('orders.read'), (req, res) => {
+  const { status, from, to } = req.query;
+  let where = '1=1';
+  const params = [];
+
+  if (status) { where += ' AND o.status = ?'; params.push(status); }
+  if (from) { where += ' AND o.created_at >= ?'; params.push(from); }
+  if (to) { where += " AND o.created_at <= ? || ' 23:59:59'"; params.push(to); }
+
+  const rows = db.prepare(`
+    SELECT o.id, o.user_id, u.full_name, p.name as product, o.quantity, o.total_price, o.status, o.payment_code, o.source, o.created_at, o.delivered_at
+    FROM orders o
+    JOIN products p ON o.product_id = p.id
+    JOIN users u ON o.user_id = u.telegram_id
+    WHERE ${where}
+    ORDER BY o.created_at DESC
+  `).all(...params);
+
+  // CSV
+  const header = 'ID,User ID,User,Product,Qty,Price,Status,Payment Code,Source,Created,Delivered\n';
+  const csv = rows.map(r =>
+    `${r.id},${r.user_id},"${r.full_name}","${r.product}",${r.quantity},${r.total_price},${r.status},${r.payment_code || ''},${r.source || ''},${r.created_at || ''},${r.delivered_at || ''}`
+  ).join('\n');
+
+  res.setHeader('Content-Type', 'text/csv');
+  res.setHeader('Content-Disposition', 'attachment; filename=orders.csv');
+  res.send(header + csv);
+});
+
 // GET /admin/orders/:id
-router.get('/:id', (req, res) => {
+router.get('/:id', requirePermission('orders.read'), (req, res) => {
   const order = orderService.getById(parseInt(req.params.id));
   if (!order) return res.status(404).json({ success: false, error: { code: 'NOT_FOUND', message: 'Đơn hàng không tồn tại' } });
 
@@ -571,36 +604,6 @@ router.post('/:id/cancel', (req, res) => {
     user_id: order.user_id,
   }, req.ip);
   res.json({ success: true });
-});
-
-// GET /admin/orders/export?status=&from=&to=
-router.get('/export', (req, res) => {
-  const { status, from, to } = req.query;
-  let where = '1=1';
-  const params = [];
-
-  if (status) { where += ' AND o.status = ?'; params.push(status); }
-  if (from) { where += ' AND o.created_at >= ?'; params.push(from); }
-  if (to) { where += " AND o.created_at <= ? || ' 23:59:59'"; params.push(to); }
-
-  const rows = db.prepare(`
-    SELECT o.id, o.user_id, u.full_name, p.name as product, o.quantity, o.total_price, o.status, o.payment_code, o.source, o.created_at, o.delivered_at
-    FROM orders o
-    JOIN products p ON o.product_id = p.id
-    JOIN users u ON o.user_id = u.telegram_id
-    WHERE ${where}
-    ORDER BY o.created_at DESC
-  `).all(...params);
-
-  // CSV
-  const header = 'ID,User ID,User,Product,Qty,Price,Status,Payment Code,Source,Created,Delivered\n';
-  const csv = rows.map(r =>
-    `${r.id},${r.user_id},"${r.full_name}","${r.product}",${r.quantity},${r.total_price},${r.status},${r.payment_code || ''},${r.source || ''},${r.created_at || ''},${r.delivered_at || ''}`
-  ).join('\n');
-
-  res.setHeader('Content-Type', 'text/csv');
-  res.setHeader('Content-Disposition', 'attachment; filename=orders.csv');
-  res.send(header + csv);
 });
 
 module.exports = router;

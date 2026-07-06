@@ -8,13 +8,16 @@ function up(db) {
       content TEXT NOT NULL,
       created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
       updated_at DATETIME DEFAULT CURRENT_TIMESTAMP,
-      FOREIGN KEY (order_id) REFERENCES orders(id),
+      FOREIGN KEY (order_id) REFERENCES orders(id) ON DELETE CASCADE,
       FOREIGN KEY (created_by_admin_id) REFERENCES admins(id),
       FOREIGN KEY (updated_by_admin_id) REFERENCES admins(id)
     );
 
     CREATE INDEX IF NOT EXISTS idx_order_notes_order_created
       ON order_notes (order_id, created_at DESC, id DESC);
+
+    CREATE INDEX IF NOT EXISTS idx_order_notes_order_updated
+      ON order_notes (order_id, updated_at DESC, id DESC);
   `);
 }
 
