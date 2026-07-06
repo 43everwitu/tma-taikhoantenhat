@@ -3,6 +3,7 @@ const test = require('node:test');
 const express = require('express');
 const { PassThrough, Readable, Writable } = require('node:stream');
 const db = require('../../src/database');
+const orderNoteService = require('../../src/services/orderNoteService');
 
 async function requestJson(app, method, path, body) {
   return await new Promise((resolve, reject) => {
@@ -186,4 +187,11 @@ test('admin order note validation and ownership checks are enforced', async (t) 
 
   const wrongOrderDelete = await requestJson(app, 'DELETE', `/admin/orders/${two.orderId}/notes/${created.json.data.id}`, null);
   assert.strictEqual(wrongOrderDelete.status, 404);
+});
+
+test('order note audit preview is capped at 120 characters including suffix', () => {
+  const preview = orderNoteService.previewContent('x'.repeat(121));
+
+  assert.strictEqual(preview.length, 120);
+  assert.strictEqual(preview, `${'x'.repeat(117)}...`);
 });

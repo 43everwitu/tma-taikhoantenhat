@@ -34,7 +34,7 @@ function shapeNote(row) {
 
 function previewContent(content) {
   const preview = String(content ?? '').replace(/\s+/g, ' ').trim();
-  return preview.length > 120 ? `${preview.slice(0, 120)}...` : preview;
+  return preview.length > 120 ? `${preview.slice(0, 117)}...` : preview;
 }
 
 const selectNoteSql = `
