@@ -6,7 +6,7 @@ import { useSearchParams } from 'next/navigation'
 import { api } from '@/lib/api'
 import { formatPrice, formatDate } from '@/lib/utils'
 import { buildTelegramContactUrl, telegramContactTitle } from '@/lib/telegramContact'
-import { Search, Clock, CheckCircle2, XCircle, Check, Eye, EyeOff, Copy, Send, X } from '@/lib/icons'
+import { Search, Clock, CheckCircle2, XCircle, Check, Eye, EyeOff, Copy, Send, X, StickyNote } from '@/lib/icons'
 import { ResponsiveTable, Column } from '@/components/ResponsiveTable'
 import { useHighlightId, useHighlightedRowRef } from '@/lib/useHighlightedRow'
 
@@ -33,6 +33,21 @@ interface Order {
   keyExpiresAt?: string | null
   keyExpired?: boolean
   hasCustomerInput?: boolean
+  noteCount: number
+  latestNoteAt?: string | null
+}
+
+interface OrderNote {
+  id: string
+  content: string
+  createdByAdminId: string | null
+  createdByAdminName: string | null
+  createdByAdminUsername: string | null
+  updatedByAdminId: string | null
+  updatedByAdminName: string | null
+  updatedByAdminUsername: string | null
+  createdAt: string
+  updatedAt: string
 }
 
 interface OrderDetail extends Order {
@@ -77,6 +92,7 @@ interface OrderDetail extends Order {
     messagePreview: string
     createdAt: string
   }>
+  notes: OrderNote[]
 }
 
 function formatInputFieldLabel(label: string) {
@@ -259,6 +275,69 @@ const statusOptions = [
   { value: 'refunded', label: 'Đã hoàn tiền' },
 ]
 
+function noteAdminName(note: OrderNote, mode: 'created' | 'updated' = 'created') {
+  const name = mode === 'updated' ? note.updatedByAdminName : note.createdByAdminName
+  const username = mode === 'updated' ? note.updatedByAdminUsername : note.createdByAdminUsername
+  const id = mode === 'updated' ? note.updatedByAdminId : note.createdByAdminId
+  if (name) return name
+  if (username) return `@${username}`
+  if (id) return `Admin #${id}`
+  return 'Admin'
+}
+
+function noteWasEdited(note: OrderNote) {
+  return note.updatedAt && note.updatedAt !== note.createdAt
+}
+
+function OrderNotesPreview({
+  orderId,
+  onAddNote,
+  onOpenDetail,
+}: {
+  orderId: string
+  onAddNote: () => void
+  onOpenDetail: () => void
+}) {
+  const { data, isLoading, isError } = useQuery({
+    queryKey: ['admin', 'order', orderId, 'detail'],
+    queryFn: () => api.get<OrderDetail>(`/admin/orders/${orderId}`),
+  })
+  const notes = [...(data?.data?.notes ?? [])]
+    .sort((a, b) => Date.parse(b.createdAt) - Date.parse(a.createdAt))
+    .slice(0, 3)
+
+  return (
+    <div className="space-y-3">
+      {isLoading && <p className="text-xs text-clay-silver">Đang tải ghi chú...</p>}
+      {isError && <p className="text-xs text-red-700">Không thể tải ghi chú.</p>}
+      {!isLoading && !isError && notes.length === 0 && (
+        <p className="text-xs text-clay-silver">Chưa có ghi chú nội bộ.</p>
+      )}
+      {notes.length > 0 && (
+        <div className="space-y-2">
+          {notes.map((note) => (
+            <div key={note.id} className="rounded-xl border border-clay-oat bg-clay-cream px-3 py-2">
+              <p className="text-xs text-clay-ink whitespace-pre-wrap break-words line-clamp-3">{note.content}</p>
+              <p className="mt-1.5 text-[11px] text-clay-silver">
+                {noteAdminName(note)} · {formatDate(note.createdAt)}
+                {noteWasEdited(note) ? ' · đã sửa' : ''}
+              </p>
+            </div>
+          ))}
+        </div>
+      )}
+      <div className="flex justify-end gap-2 border-t border-clay-oat pt-3">
+        <button type="button" onClick={onAddNote} className="clay-btn clay-btn--lemon text-xs py-1 px-2">
+          Thêm ghi chú
+        </button>
+        <button type="button" onClick={onOpenDetail} className="clay-btn text-xs py-1 px-2">
+          Mở chi tiết
+        </button>
+      </div>
+    </div>
+  )
+}
+
 export default function OrdersPage() {
   const queryClient = useQueryClient()
   const searchParams = useSearchParams()
@@ -270,14 +349,21 @@ export default function OrdersPage() {
   const [debouncedSearch, setDebouncedSearch] = useState('')
   const [detailOrderId, setDetailOrderId] = useState<string | null>(null)
   const [showSensitive, setShowSensitive] = useState(false)
+  const [notePopoverOrderId, setNotePopoverOrderId] = useState<string | null>(null)
+  const [noteDraft, setNoteDraft] = useState('')
+  const [editingNoteId, setEditingNoteId] = useState<string | null>(null)
+  const [editingNoteText, setEditingNoteText] = useState('')
+  const [focusNoteComposer, setFocusNoteComposer] = useState(false)
   const detailTriggerRef = useRef<HTMLElement | null>(null)
   const detailAsideRef = useRef<HTMLElement | null>(null)
   const detailCloseButtonRef = useRef<HTMLButtonElement | null>(null)
+  const noteComposerRef = useRef<HTMLTextAreaElement | null>(null)
   const limit = 20
 
   useEffect(() => {
     if (searchParams.get('detail') !== '1' || !highlightId) return
     const timer = setTimeout(() => {
+      resetNoteState()
       setDetailOrderId(highlightId)
       setShowSensitive(false)
     }, 0)
@@ -303,8 +389,7 @@ export default function OrdersPage() {
     function handleDrawerKeyDown(event: KeyboardEvent) {
       if (event.key === 'Escape') {
         event.preventDefault()
-        setDetailOrderId(null)
-        setShowSensitive(false)
+        closeDetail()
         return
       }
       if (event.key !== 'Tab') return
@@ -408,6 +493,39 @@ export default function OrdersPage() {
     onError: (e) => alert(`❌ ${e instanceof Error ? e.message : 'Cập nhật thất bại'}`),
   })
 
+  const createNoteMutation = useMutation({
+    mutationFn: ({ orderId, content }: { orderId: string; content: string }) =>
+      api.post(`/admin/orders/${orderId}/notes`, { content }),
+    onSuccess: (_res, vars) => {
+      setNoteDraft('')
+      queryClient.invalidateQueries({ queryKey: ['admin', 'orders'] })
+      queryClient.invalidateQueries({ queryKey: ['admin', 'order', vars.orderId, 'detail'] })
+    },
+    onError: (e) => alert(`❌ ${e instanceof Error ? e.message : 'Thêm ghi chú thất bại'}`),
+  })
+
+  const updateNoteMutation = useMutation({
+    mutationFn: ({ orderId, noteId, content }: { orderId: string; noteId: string; content: string }) =>
+      api.patch(`/admin/orders/${orderId}/notes/${noteId}`, { content }),
+    onSuccess: (_res, vars) => {
+      setEditingNoteId(null)
+      setEditingNoteText('')
+      queryClient.invalidateQueries({ queryKey: ['admin', 'orders'] })
+      queryClient.invalidateQueries({ queryKey: ['admin', 'order', vars.orderId, 'detail'] })
+    },
+    onError: (e) => alert(`❌ ${e instanceof Error ? e.message : 'Cập nhật ghi chú thất bại'}`),
+  })
+
+  const deleteNoteMutation = useMutation({
+    mutationFn: ({ orderId, noteId }: { orderId: string; noteId: string }) =>
+      api.delete(`/admin/orders/${orderId}/notes/${noteId}`),
+    onSuccess: (_res, vars) => {
+      queryClient.invalidateQueries({ queryKey: ['admin', 'orders'] })
+      queryClient.invalidateQueries({ queryKey: ['admin', 'order', vars.orderId, 'detail'] })
+    },
+    onError: (e) => alert(`❌ ${e instanceof Error ? e.message : 'Xóa ghi chú thất bại'}`),
+  })
+
   function handleResend(id: string) {
     if (!confirm(`Gửi lại key đơn #${id} cho khách qua Telegram?`)) return
     resendMutation.mutate(id)
@@ -435,17 +553,67 @@ export default function OrdersPage() {
     enabled: !!detailOrderId,
   })
 
+  useEffect(() => {
+    if (!detailOrderId || !focusNoteComposer) return
+    const focusTimer = setTimeout(() => {
+      noteComposerRef.current?.focus()
+      if (noteComposerRef.current) setFocusNoteComposer(false)
+    }, 0)
+    return () => clearTimeout(focusTimer)
+  }, [detailOrderId, focusNoteComposer, detailResponse?.data])
+
+  function resetNoteState() {
+    setNoteDraft('')
+    setEditingNoteId(null)
+    setEditingNoteText('')
+    setNotePopoverOrderId(null)
+    setFocusNoteComposer(false)
+  }
+
   function openDetail(id: string) {
     if (document.activeElement instanceof HTMLElement) {
       detailTriggerRef.current = document.activeElement
     }
+    resetNoteState()
     setDetailOrderId(id)
     setShowSensitive(false)
   }
 
+  function openDetailForNotes(id: string) {
+    if (document.activeElement instanceof HTMLElement) {
+      detailTriggerRef.current = document.activeElement
+    }
+    setNotePopoverOrderId(null)
+    setNoteDraft('')
+    setEditingNoteId(null)
+    setEditingNoteText('')
+    setDetailOrderId(id)
+    setShowSensitive(false)
+    setFocusNoteComposer(true)
+  }
+
   function closeDetail() {
+    resetNoteState()
     setDetailOrderId(null)
     setShowSensitive(false)
+  }
+
+  function submitNote(orderId: string) {
+    const content = noteDraft.trim()
+    if (!content) {
+      alert('Vui lòng nhập nội dung ghi chú.')
+      return
+    }
+    createNoteMutation.mutate({ orderId, content })
+  }
+
+  function submitNoteEdit(orderId: string, noteId: string) {
+    const content = editingNoteText.trim()
+    if (!content) {
+      alert('Vui lòng nhập nội dung ghi chú.')
+      return
+    }
+    updateNoteMutation.mutate({ orderId, noteId, content })
   }
 
   async function openEditKeys(order: Order) {
@@ -511,12 +679,54 @@ export default function OrdersPage() {
         Nhắn tin
       </a>
     ) : null
+    const noteButton = order.noteCount > 0 ? (
+      <div className="relative inline-flex">
+        <button
+          type="button"
+          onClick={() => setNotePopoverOrderId(current => current === order.id ? null : order.id)}
+          className="clay-btn text-xs py-1 px-2 inline-flex items-center gap-1"
+          title={`${order.noteCount} ghi chú nội bộ`}
+          aria-label={`${order.noteCount} ghi chú nội bộ của đơn #${order.id}`}
+          aria-expanded={notePopoverOrderId === order.id}
+        >
+          <StickyNote size={12} />
+          {order.noteCount}
+        </button>
+        {notePopoverOrderId === order.id && (
+          <div
+            className="absolute right-0 top-full z-40 mt-2 w-80 max-w-[calc(100vw-2rem)] rounded-2xl border border-clay-oat bg-white p-3 text-left shadow-xl"
+            onMouseDown={(e) => e.stopPropagation()}
+          >
+            <div className="mb-3 flex items-center justify-between gap-3">
+              <div className="min-w-0">
+                <p className="text-xs uppercase tracking-wide text-clay-silver">Ghi chú nội bộ</p>
+                <p className="text-sm font-semibold text-clay-ink">Đơn #{order.id}</p>
+              </div>
+              <button
+                type="button"
+                onClick={() => setNotePopoverOrderId(null)}
+                className="clay-btn p-1.5 shrink-0"
+                aria-label="Đóng ghi chú"
+              >
+                <X size={14} />
+              </button>
+            </div>
+            <OrderNotesPreview
+              orderId={order.id}
+              onAddNote={() => openDetailForNotes(order.id)}
+              onOpenDetail={() => openDetail(order.id)}
+            />
+          </div>
+        )}
+      </div>
+    ) : null
 
     if (order.status === 'pending' || order.status === 'paid') {
       return (
         <>
           {detailButton}
           {contactButton}
+          {noteButton}
           <button
             onClick={() => confirmMutation.mutate(order.id)}
             disabled={confirmMutation.isPending}
@@ -539,6 +749,7 @@ export default function OrdersPage() {
         <>
           {detailButton}
           {contactButton}
+          {noteButton}
           <button
             onClick={() => handleResend(order.id)}
             disabled={resendMutation.isPending}
@@ -557,6 +768,7 @@ export default function OrdersPage() {
       <>
         {detailButton}
         {contactButton}
+        {noteButton}
       </>
     )
   }
@@ -677,6 +889,7 @@ export default function OrdersPage() {
                 const stockValues = detail.stockItems.length > 0
                   ? detail.stockItems.map(item => ({ id: item.id, value: item.value, item }))
                   : (detail.accounts ?? []).map((value, index) => ({ id: `account-${index}`, value, item: null }))
+                const notes = [...(detail.notes ?? [])].sort((a, b) => Date.parse(b.createdAt) - Date.parse(a.createdAt))
                 return (
                   <div className="space-y-4">
                     <section className="clay-card p-4">
@@ -715,6 +928,115 @@ export default function OrdersPage() {
                         >
                           Nhắn tin Telegram
                         </a>
+                      </div>
+                    </section>
+
+                    <section className="clay-card p-4">
+                      <div className="mb-3 flex items-center justify-between gap-3">
+                        <div>
+                          <h3 className="font-semibold">Ghi chú nội bộ</h3>
+                          <p className="text-xs text-clay-silver">Chỉ hiển thị trong admin, không gửi cho khách.</p>
+                        </div>
+                        <span className="clay-pill text-xs">{notes.length}</span>
+                      </div>
+
+                      <div className="space-y-3">
+                        <div className="rounded-xl border border-clay-oat bg-clay-cream p-3">
+                          <textarea
+                            ref={noteComposerRef}
+                            value={noteDraft}
+                            onChange={(e) => setNoteDraft(e.target.value)}
+                            maxLength={2000}
+                            rows={3}
+                            placeholder="Thêm ghi chú nội bộ cho admin..."
+                            className="clay-input w-full resize-y text-sm"
+                          />
+                          <div className="mt-2 flex items-center justify-between gap-3">
+                            <span className="text-xs text-clay-silver">{noteDraft.length}/2000</span>
+                            <button
+                              type="button"
+                              onClick={() => submitNote(detail.id)}
+                              disabled={createNoteMutation.isPending}
+                              className="clay-btn clay-btn--lemon text-sm disabled:opacity-50"
+                            >
+                              {createNoteMutation.isPending ? 'Đang thêm...' : 'Thêm ghi chú'}
+                            </button>
+                          </div>
+                        </div>
+
+                        {notes.length > 0 ? (
+                          <div className="space-y-3">
+                            {notes.map((note) => (
+                              <div key={note.id} className="rounded-xl border border-clay-oat bg-white p-3">
+                                {editingNoteId === note.id ? (
+                                  <div className="space-y-2">
+                                    <textarea
+                                      value={editingNoteText}
+                                      onChange={(e) => setEditingNoteText(e.target.value)}
+                                      maxLength={2000}
+                                      rows={4}
+                                      className="clay-input w-full resize-y text-sm"
+                                    />
+                                    <div className="flex items-center justify-between gap-3">
+                                      <span className="text-xs text-clay-silver">{editingNoteText.length}/2000</span>
+                                      <div className="flex justify-end gap-2">
+                                        <button
+                                          type="button"
+                                          onClick={() => { setEditingNoteId(null); setEditingNoteText('') }}
+                                          className="clay-btn text-xs"
+                                        >
+                                          Hủy
+                                        </button>
+                                        <button
+                                          type="button"
+                                          onClick={() => submitNoteEdit(detail.id, note.id)}
+                                          disabled={updateNoteMutation.isPending}
+                                          className="clay-btn clay-btn--lemon text-xs disabled:opacity-50"
+                                        >
+                                          {updateNoteMutation.isPending ? 'Đang lưu...' : 'Lưu'}
+                                        </button>
+                                      </div>
+                                    </div>
+                                  </div>
+                                ) : (
+                                  <>
+                                    <p className="whitespace-pre-wrap break-words text-sm text-clay-ink">{note.content}</p>
+                                    <div className="mt-2 flex flex-wrap items-center justify-between gap-2">
+                                      <p className="text-xs text-clay-silver">
+                                        {noteAdminName(note)} · {formatDate(note.createdAt)}
+                                        {noteWasEdited(note)
+                                          ? ` · đã sửa ${formatDate(note.updatedAt)} bởi ${noteAdminName(note, 'updated')}`
+                                          : ''}
+                                      </p>
+                                      <div className="flex gap-2">
+                                        <button
+                                          type="button"
+                                          onClick={() => { setEditingNoteId(note.id); setEditingNoteText(note.content) }}
+                                          className="clay-btn text-xs py-1 px-2"
+                                        >
+                                          Sửa
+                                        </button>
+                                        <button
+                                          type="button"
+                                          onClick={() => {
+                                            if (!confirm('Xóa ghi chú nội bộ này?')) return
+                                            deleteNoteMutation.mutate({ orderId: detail.id, noteId: note.id })
+                                          }}
+                                          disabled={deleteNoteMutation.isPending}
+                                          className="clay-btn clay-btn--pomegranate text-xs py-1 px-2 disabled:opacity-50"
+                                        >
+                                          Xóa
+                                        </button>
+                                      </div>
+                                    </div>
+                                  </>
+                                )}
+                              </div>
+                            ))}
+                          </div>
+                        ) : (
+                          <p className="text-sm text-clay-silver">Chưa có ghi chú nội bộ.</p>
+                        )}
                       </div>
                     </section>
 

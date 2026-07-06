@@ -68,4 +68,5 @@ export {
   ShieldOff,
   ClipboardList,
   MoreHorizontal,
+  StickyNote,
 } from 'lucide-react'
