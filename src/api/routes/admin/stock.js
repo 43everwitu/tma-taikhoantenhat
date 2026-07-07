@@ -8,6 +8,324 @@ const { validate } = require('../../middleware/validate');
 
 const router = Router();
 
+function parsePositiveInt(value, fallback) {
+  const n = parseInt(value, 10);
+  return Number.isFinite(n) && n > 0 ? n : fallback;
+}
+
+function makePlaceholders(count) {
+  return Array.from({ length: count }, () => '?').join(',');
+}
+
+function publishStockChanges(rows, action) {
+  const counts = new Map();
+  for (const row of rows) {
+    counts.set(row.product_id, (counts.get(row.product_id) || 0) + 1);
+  }
+  for (const [productId, count] of counts) {
+    eventBus.publish({ type: 'stock.change', productId, action, count });
+  }
+}
+
+// GET /admin/stock?page=1&limit=50&q=&productId=&variantId=&sold=false
+router.get('/', (req, res) => {
+  const page = parsePositiveInt(req.query.page, 1);
+  const limit = Math.min(parsePositiveInt(req.query.limit, 50), 200);
+  const offset = (page - 1) * limit;
+  const q = String(req.query.q || '').trim();
+  const sold = req.query.sold;
+
+  const where = ['1=1'];
+  const params = [];
+
+  if (q) {
+    where.push('(s.data LIKE ? OR CAST(s.id AS TEXT) LIKE ? OR p.name LIKE ?)');
+    const wild = `%${q}%`;
+    params.push(wild, wild, wild);
+  }
+
+  const productId = parseInt(req.query.productId, 10);
+  if (Number.isFinite(productId) && productId > 0) {
+    where.push('s.product_id = ?');
+    params.push(productId);
+  }
+
+  const variantIdParam = req.query.variantId;
+  if (variantIdParam !== undefined && String(variantIdParam) !== '') {
+    const n = parseInt(variantIdParam, 10);
+    if (n === 0) {
+      where.push('s.variant_id IS NULL');
+    } else if (n > 0) {
+      where.push('s.variant_id = ?');
+      params.push(n);
+    }
+  }
+
+  if (sold === 'true') {
+    where.push('s.is_sold = 1');
+  } else if (sold === 'false') {
+    where.push('s.is_sold = 0');
+  }
+
+  const whereSql = where.join(' AND ');
+  const rows = db.prepare(`
+    SELECT
+      s.id,
+      s.data,
+      s.is_sold,
+      s.sold_to,
+      s.sold_at,
+      s.added_at,
+      s.product_id,
+      s.variant_id,
+      s.duration_days,
+      p.name AS product_name,
+      v.name AS variant_name,
+      u.telegram_id AS sold_customer_telegram_id,
+      u.username AS sold_customer_username,
+      u.full_name AS sold_customer_full_name,
+      so.id AS sold_order_id,
+      so.payment_code AS sold_order_payment_code,
+      so.status AS sold_order_status,
+      so.delivered_at AS sold_order_delivered_at
+    FROM stock s
+    JOIN products p ON p.id = s.product_id
+    LEFT JOIN product_variants v ON v.id = s.variant_id
+    LEFT JOIN users u ON u.telegram_id = s.sold_to
+    LEFT JOIN orders so ON so.id = (
+      SELECT o.id
+      FROM orders o
+      WHERE o.user_id = s.sold_to
+        AND o.product_id = s.product_id
+        AND o.status = 'delivered'
+        AND (
+          (o.variant_id IS NULL AND s.variant_id IS NULL)
+          OR o.variant_id = s.variant_id
+        )
+        AND json_valid(o.delivered_keys_json) = 1
+        AND EXISTS (
+          SELECT 1
+          FROM json_each(o.delivered_keys_json) delivered_key
+          WHERE CAST(delivered_key.value AS TEXT) = s.data
+        )
+      ORDER BY o.delivered_at DESC, o.id DESC
+      LIMIT 1
+    )
+    WHERE ${whereSql}
+    ORDER BY s.id DESC
+    LIMIT ? OFFSET ?
+  `).all(...params, limit, offset);
+  const total = db.prepare(`
+    SELECT COUNT(*) AS c
+    FROM stock s
+    JOIN products p ON p.id = s.product_id
+    LEFT JOIN product_variants v ON v.id = s.variant_id
+    WHERE ${whereSql}
+  `).get(...params).c;
+
+  res.json({
+    success: true,
+    data: {
+      items: rows.map(r => ({
+        id: String(r.id),
+        productId: String(r.product_id),
+        productName: r.product_name,
+        variantId: r.variant_id === null ? null : String(r.variant_id),
+        variantName: r.variant_name || null,
+        content: r.data,
+        sold: !!r.is_sold,
+        soldTo: r.sold_to || null,
+        createdAt: r.added_at || null,
+        soldAt: r.sold_at || null,
+        durationDays: r.duration_days ?? null,
+        soldOrder: r.sold_order_id ? {
+          id: String(r.sold_order_id),
+          paymentCode: r.sold_order_payment_code,
+          status: r.sold_order_status,
+          deliveredAt: r.sold_order_delivered_at || null,
+        } : null,
+        soldCustomer: r.sold_customer_telegram_id ? {
+          telegramId: r.sold_customer_telegram_id,
+          username: r.sold_customer_username || null,
+          fullName: r.sold_customer_full_name || null,
+        } : null,
+      })),
+      total,
+      page,
+      limit,
+    },
+  });
+});
+
+router.post('/_bulk/delete', validate(z.object({
+  ids: z.array(z.number().int().positive()).min(1).max(1000),
+})), (req, res) => {
+  const ids = [...new Set(req.validated.ids)];
+  const placeholders = makePlaceholders(ids.length);
+  const rows = db.prepare(`SELECT id, product_id, data FROM stock WHERE id IN (${placeholders}) AND is_sold = 0`)
+    .all(...ids);
+  if (rows.length === 0) {
+    return res.json({ success: true, data: { deleted: 0 } });
+  }
+
+  const result = db.prepare(`DELETE FROM stock WHERE id IN (${placeholders}) AND is_sold = 0`).run(...ids);
+  auditService.log(req.admin.adminId, 'stock.bulk_delete', 'stock', null, {
+    requested: ids.length,
+    deleted: result.changes,
+    ids: rows.map(r => r.id),
+  }, req.ip);
+  publishStockChanges(rows, 'bulk_delete');
+  res.json({ success: true, data: { deleted: result.changes } });
+});
+
+router.patch('/_bulk', validate(z.object({
+  ids: z.array(z.number().int().positive()).min(1).max(1000),
+  variantId: z.number().int().positive().nullable().optional(),
+  durationDays: z.number().int().min(1).max(36500).nullable().optional(),
+})), (req, res) => {
+  const ids = [...new Set(req.validated.ids)];
+  const wantsVariant = Object.prototype.hasOwnProperty.call(req.validated, 'variantId');
+  const wantsDuration = Object.prototype.hasOwnProperty.call(req.validated, 'durationDays');
+  if (!wantsVariant && !wantsDuration) {
+    return res.status(400).json({ success: false, error: { code: 'INVALID_INPUT', message: 'Không có trường cần cập nhật' } });
+  }
+
+  const placeholders = makePlaceholders(ids.length);
+  const rows = db.prepare(`SELECT id, product_id FROM stock WHERE id IN (${placeholders}) AND is_sold = 0`)
+    .all(...ids);
+  if (rows.length === 0) {
+    return res.json({ success: true, data: { updated: 0 } });
+  }
+
+  if (wantsVariant && req.validated.variantId !== null) {
+    const variant = db.prepare('SELECT id, product_id FROM product_variants WHERE id = ?').get(req.validated.variantId);
+    if (!variant) return res.status(404).json({ success: false, error: { code: 'VARIANT_NOT_FOUND' } });
+    if (rows.some(r => r.product_id !== variant.product_id)) {
+      return res.status(409).json({
+        success: false,
+        error: { code: 'INVALID_STATE', message: 'Chỉ đổi biến thể cho key cùng một sản phẩm' },
+      });
+    }
+  }
+
+  const assignments = [];
+  const params = [];
+  if (wantsVariant) {
+    assignments.push('variant_id = ?');
+    params.push(req.validated.variantId ?? null);
+  }
+  if (wantsDuration) {
+    assignments.push('duration_days = ?');
+    params.push(req.validated.durationDays ?? null);
+  }
+
+  const result = db.prepare(`UPDATE stock SET ${assignments.join(', ')} WHERE id IN (${placeholders}) AND is_sold = 0`)
+    .run(...params, ...ids);
+  auditService.log(req.admin.adminId, 'stock.bulk_edit', 'stock', null, {
+    requested: ids.length,
+    updated: result.changes,
+    variant_id: wantsVariant ? req.validated.variantId ?? null : undefined,
+    duration_days: wantsDuration ? req.validated.durationDays ?? null : undefined,
+    ids: rows.map(r => r.id),
+  }, req.ip);
+  publishStockChanges(rows, 'bulk_edit');
+  res.json({ success: true, data: { updated: result.changes } });
+});
+
+router.patch('/items/:itemId', validate(z.object({
+  content: z.string().trim().min(1).max(2000),
+  productId: z.number().int().positive(),
+  variantId: z.number().int().positive().nullable().optional(),
+  durationDays: z.number().int().min(1).max(36500).nullable().optional(),
+})), (req, res) => {
+  const itemId = parseInt(req.params.itemId, 10);
+  const item = db.prepare(`
+    SELECT id, product_id, variant_id, data, duration_days, is_sold, sold_to, sold_at
+    FROM stock
+    WHERE id = ?
+  `).get(itemId);
+  if (!item) return res.status(404).json({ success: false, error: { code: 'NOT_FOUND' } });
+
+  const product = db.prepare('SELECT id FROM products WHERE id = ?').get(req.validated.productId);
+  if (!product) return res.status(404).json({ success: false, error: { code: 'PRODUCT_NOT_FOUND' } });
+
+  const wantsVariant = Object.prototype.hasOwnProperty.call(req.validated, 'variantId');
+  const nextVariantId = wantsVariant ? req.validated.variantId : item.variant_id;
+  if (nextVariantId !== null && nextVariantId !== undefined) {
+    const variant = db.prepare('SELECT id, product_id FROM product_variants WHERE id = ?').get(nextVariantId);
+    if (!variant) return res.status(404).json({ success: false, error: { code: 'VARIANT_NOT_FOUND' } });
+    if (variant.product_id !== req.validated.productId) {
+      return res.status(409).json({
+        success: false,
+        error: { code: 'INVALID_STATE', message: 'Biến thể không thuộc sản phẩm đã chọn' },
+      });
+    }
+  }
+
+  const wantsDuration = Object.prototype.hasOwnProperty.call(req.validated, 'durationDays');
+  const nextDurationDays = wantsDuration ? req.validated.durationDays : item.duration_days;
+  db.prepare(`
+    UPDATE stock
+    SET data = ?, product_id = ?, variant_id = ?, duration_days = ?
+    WHERE id = ?
+  `).run(
+    req.validated.content,
+    req.validated.productId,
+    nextVariantId ?? null,
+    nextDurationDays ?? null,
+    itemId,
+  );
+
+  auditService.log(req.admin.adminId, 'stock.item_edit', 'stock', itemId, {
+    before: {
+      product_id: item.product_id,
+      variant_id: item.variant_id ?? null,
+      duration_days: item.duration_days ?? null,
+      data_preview: item.data ? (item.data.length > 60 ? item.data.slice(0, 60) + '…' : item.data) : null,
+    },
+    after: {
+      product_id: req.validated.productId,
+      variant_id: nextVariantId ?? null,
+      duration_days: nextDurationDays ?? null,
+      data_preview: req.validated.content.length > 60 ? req.validated.content.slice(0, 60) + '…' : req.validated.content,
+    },
+    was_sold: !!item.is_sold,
+    sold_to: item.sold_to || null,
+    sold_at: item.sold_at || null,
+  }, req.ip);
+
+  const changedRows = [{ product_id: item.product_id }];
+  if (item.product_id !== req.validated.productId) changedRows.push({ product_id: req.validated.productId });
+  publishStockChanges(changedRows, 'item_edit');
+  res.json({ success: true });
+});
+
+router.delete('/items/:itemId', (req, res) => {
+  const itemId = parseInt(req.params.itemId, 10);
+  const item = db.prepare(`
+    SELECT id, product_id, variant_id, data, duration_days, is_sold, sold_to, sold_at
+    FROM stock
+    WHERE id = ?
+  `).get(itemId);
+  if (!item) return res.status(404).json({ success: false, error: { code: 'NOT_FOUND' } });
+
+  db.prepare('DELETE FROM stock WHERE id = ?').run(itemId);
+  const dataPreview = item.data
+    ? (item.data.length > 60 ? item.data.slice(0, 60) + '…' : item.data)
+    : null;
+  auditService.log(req.admin.adminId, 'stock.item_delete', 'stock', itemId, {
+    entityLabel: dataPreview,
+    product_id: item.product_id,
+    variant_id: item.variant_id ?? null,
+    duration_days: item.duration_days ?? null,
+    was_sold: !!item.is_sold,
+    sold_to: item.sold_to || null,
+    sold_at: item.sold_at || null,
+  }, req.ip);
+  eventBus.publish({ type: 'stock.change', productId: item.product_id, action: 'item_delete' });
+  res.json({ success: true });
+});
+
 // GET /admin/stock/:productId?page=1&limit=20&sold=false
 router.get('/:productId', (req, res) => {
   const productId = parseInt(req.params.productId);
@@ -20,12 +338,12 @@ router.get('/:productId', (req, res) => {
   if (!product) return res.status(404).json({ success: false, error: { code: 'NOT_FOUND' } });
 
   const q = (req.query.q || '').trim();
-  let where = 'product_id = ?';
+  let where = 's.product_id = ?';
   const params = [productId];
-  if (sold === 'true') { where += ' AND is_sold = 1'; }
-  else if (sold === 'false') { where += ' AND is_sold = 0'; }
+  if (sold === 'true') { where += ' AND s.is_sold = 1'; }
+  else if (sold === 'false') { where += ' AND s.is_sold = 0'; }
   if (q) {
-    where += ' AND (data LIKE ? OR CAST(id AS TEXT) LIKE ?)';
+    where += ' AND (s.data LIKE ? OR CAST(s.id AS TEXT) LIKE ?)';
     const wild = `%${q}%`;
     params.push(wild, wild);
   }
@@ -35,22 +353,33 @@ router.get('/:productId', (req, res) => {
   if (variantIdParam !== undefined) {
     const n = parseInt(variantIdParam);
     if (n === 0) {
-      where += ' AND variant_id IS NULL';
+      where += ' AND s.variant_id IS NULL';
     } else if (n > 0) {
-      where += ' AND variant_id = ?';
+      where += ' AND s.variant_id = ?';
       params.push(n);
     }
   }
 
-  const rows = db.prepare(`SELECT * FROM stock WHERE ${where} ORDER BY id DESC LIMIT ? OFFSET ?`)
+  const rows = db.prepare(`
+    SELECT s.*, v.name AS variant_name
+    FROM stock s
+    LEFT JOIN product_variants v ON v.id = s.variant_id
+    WHERE ${where}
+    ORDER BY s.id DESC
+    LIMIT ? OFFSET ?
+  `)
     .all(...params, limit, offset);
-  const total = db.prepare(`SELECT COUNT(*) as c FROM stock WHERE ${where}`).all(...params)[0].c;
+  const total = db.prepare(`SELECT COUNT(*) as c FROM stock s WHERE ${where}`).all(...params)[0].c;
 
   const items = rows.map(r => ({
     id: String(r.id),
+    productId: String(r.product_id),
     content: r.data,
     sold: !!r.is_sold,
     soldTo: r.sold_to || null,
+    variantId: r.variant_id === null ? null : String(r.variant_id),
+    variantName: r.variant_name || null,
+    durationDays: r.duration_days ?? null,
     createdAt: r.added_at || r.created_at || null,
     soldAt: r.sold_at || null,
   }));
@@ -79,7 +408,7 @@ router.post('/:productId', validate(z.object({
   let notifyResult = null;
   const poller = req.app.locals.notificationService;
   if (poller && req.validated.notifyFollowers) {
-    notifyResult = await poller.notifyStockReplenished(productId);
+    notifyResult = await poller.notifyStockReplenished(productId, req.validated.variantId ?? null);
     auditService.log(req.admin.adminId, 'stock.notify.followers', 'product', productId, {
       sent: notifyResult.sent || 0,
       failed: notifyResult.failed || 0,

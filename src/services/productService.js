@@ -89,7 +89,10 @@ const productService = {
             const row = db.prepare('SELECT default_duration_days FROM product_variants WHERE id = ?').get(variantId);
             effectiveDuration = row?.default_duration_days ?? null;
         }
-        const insert = db.prepare('INSERT INTO stock (product_id, variant_id, data, duration_days) VALUES (?, ?, ?, ?)');
+        const insert = db.prepare(`
+            INSERT INTO stock (product_id, variant_id, data, duration_days, added_at)
+            VALUES (?, ?, ?, ?, CURRENT_TIMESTAMP)
+        `);
         const insertMany = db.transaction((lines) => {
             for (const line of lines) {
                 if (line.trim()) {
