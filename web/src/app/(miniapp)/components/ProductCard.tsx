@@ -1,11 +1,14 @@
 'use client'
 
 import Link from 'next/link'
-import Image from 'next/image'
 import dynamic from 'next/dynamic'
+import type { MouseEvent } from 'react'
 import { useState } from 'react'
 import { Icon } from './Icon'
-import { formatPriceShort } from '@/lib/utils'
+import { MiniAppProductImage } from './MiniAppProductImage'
+import { getProductDisplayPrice } from '@/lib/productPriceDisplay'
+import { resolveContactUrl } from '@/lib/contactUrl'
+import { t } from '@/i18n/vi'
 
 const VariantQuickBuy = dynamic(
   () => import('./VariantQuickBuy').then((mod) => mod.VariantQuickBuy),
@@ -26,68 +29,72 @@ export interface ProductSummary {
   salePriceMax?: number
   discountLabel?: string
   stock: number
+  hasBackorder?: boolean
   promotion?: string | null
+  contactOnly?: boolean
+  contactUrl?: string | null
+  matchLabel?: string
 }
 
-export function ProductCard({ p, eager = false }: { p: ProductSummary; eager?: boolean }) {
+export function ProductCard({
+  p,
+  eager = false,
+  showMatchLabel = false,
+}: {
+  p: ProductSummary
+  eager?: boolean
+  showMatchLabel?: boolean
+}) {
   const [quickOpen, setQuickOpen] = useState(false)
-  const inStock = p.stock > 0
-  const priceMin = p.priceMin ?? p.price
-  const priceMax = p.priceMax ?? p.price
-  const salePriceMin = p.salePriceMin ?? p.salePrice ?? priceMin
-  const salePriceMax = p.salePriceMax ?? p.salePrice ?? priceMax
-  const hasRange = priceMin !== priceMax
-  const hasDiscount = hasRange
-    ? salePriceMin < priceMin || salePriceMax < priceMax
-    : typeof p.salePrice === 'number' && p.salePrice < p.price
+  const inStock = p.stock > 0 || !!p.hasBackorder
+  const isContactOnly = !!p.contactOnly
+  const displayPrice = getProductDisplayPrice(p)
+  const stockLabel = isContactOnly
+    ? t.product.contactOnly
+    : inStock
+      ? (p.hasBackorder && p.stock <= 0 ? '∞' : `Còn ${p.stock}`)
+      : t.product.outOfStock
+
+  function openContact(e: MouseEvent<HTMLButtonElement>) {
+    e.preventDefault()
+    e.stopPropagation()
+    window.open(resolveContactUrl(p.contactUrl), '_blank', 'noopener,noreferrer')
+  }
 
   return (
     <>
       <Link href={`/san-pham/${p.slug}`} className="miniapp-product-card">
         <div className="miniapp-product-img" style={{ position: 'relative' }}>
           {(p.discountLabel || p.promotion) && <span className="miniapp-product-badge">{p.discountLabel || p.promotion}</span>}
-          {p.imageUrl ? (
-            <Image
-              src={p.imageUrl}
-              alt={p.name}
-              fill
-              sizes="(min-width: 1024px) 20vw, (min-width: 768px) 25vw, (min-width: 480px) 33vw, 50vw"
-              style={{ objectFit: 'cover' }}
-              priority={eager}
-              loading={eager ? undefined : 'lazy'}
-            />
-          ) : (
-            <div className="absolute inset-0 grid place-items-center" style={{ color: 'var(--brand-gold-deep)' }}>
-              <Icon name="package" size={44} strokeWidth={1.25} />
-            </div>
-          )}
+          <MiniAppProductImage src={p.imageUrl} alt={p.name} priority={eager} />
         </div>
         <div className="miniapp-product-info">
           <p className="miniapp-product-name">{p.name}</p>
-          <p className={`miniapp-product-price${hasRange ? ' is-range' : ''}`}>
-            {hasRange ? (
-              <>
-                <span className="miniapp-price-num">{formatPriceShort(hasDiscount ? salePriceMin : priceMin)}</span>
-                <span className="miniapp-price-sep">–</span>
-                <span className="miniapp-price-num">{formatPriceShort(hasDiscount ? salePriceMax : priceMax)}</span>
-              </>
-            ) : (
-              <span className="miniapp-price-num">{formatPriceShort(hasDiscount ? p.salePrice! : p.price)}</span>
-            )}
+          {showMatchLabel && (
+            <p className="text-[11px] opacity-55 line-clamp-1">{p.matchLabel || '\u00a0'}</p>
+          )}
+          <p className={`miniapp-product-price${displayPrice.hasRange ? ' is-range' : ''}`}>
+            <span className="miniapp-price-num">{displayPrice.current}</span>
           </p>
-          <p className={`miniapp-product-price-old${hasDiscount ? '' : ' is-empty'}`} aria-hidden={!hasDiscount}>
-            {hasDiscount
-              ? (hasRange
-                ? `${formatPriceShort(priceMin)} – ${formatPriceShort(priceMax)}`
-                : formatPriceShort(p.price))
-              : '\u00a0'}
+          <p className={`miniapp-product-price-old${displayPrice.hasDiscount ? '' : ' is-empty'}`} aria-hidden={!displayPrice.hasDiscount}>
+            {displayPrice.original || '\u00a0'}
           </p>
-          <p className={`miniapp-product-stock ${inStock ? 'in' : 'out'}`}>
+          <p className={`miniapp-product-stock ${isContactOnly || inStock ? 'in' : 'out'}`}>
             <span className="miniapp-product-stock-dot" />
-            {inStock ? `Còn ${p.stock}` : 'Hết hàng'}
+            {stockLabel}
           </p>
           <div className="miniapp-product-actions">
-            {inStock && (
+            {isContactOnly ? (
+              <button
+                type="button"
+                aria-label={t.product.contactOnly}
+                onClick={openContact}
+                className="miniapp-product-quickbuy"
+              >
+                <Icon name="support" size={14} />
+                <span>Liên hệ</span>
+              </button>
+            ) : inStock && (
               <button
                 type="button"
                 aria-label="Mua nhanh"

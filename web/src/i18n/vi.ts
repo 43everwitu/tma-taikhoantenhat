@@ -14,6 +14,12 @@ export const t = {
   },
   catalog: {
     searchPlaceholder: 'Tìm sản phẩm…',
+    searchResults: 'Kết quả',
+    searchSuggestions: 'Có thể bạn đang tìm',
+    searchViewAll: 'Xem tất cả kết quả',
+    searchLoading: 'Đang tìm sản phẩm…',
+    searchNoResults: 'Không tìm thấy sản phẩm phù hợp.',
+    searchRelated: 'Sản phẩm liên quan',
     sortLabel: 'Sắp xếp',
     sortDefault: 'Mặc định',
     sortPriceAsc: 'Giá thấp → cao',
@@ -27,6 +33,8 @@ export const t = {
     inStock: 'Còn {n} sản phẩm',
     outOfStock: 'Hết hàng',
     contactOnly: 'Liên hệ để mua',
+    preorder: 'Đặt trước',
+    inputRequired: 'Vui lòng điền đầy đủ thông tin bắt buộc',
   },
   cart: {
     title: 'Giỏ hàng',
