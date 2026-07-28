@@ -46,6 +46,7 @@ export {
   Filter,
   ChevronLeft,
   ChevronRight,
+  ChevronDown,
   Eye,
   EyeOff,
   Save,

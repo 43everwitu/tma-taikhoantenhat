@@ -14,9 +14,24 @@ const PRODUCT_JOINS_SQL = `
   SELECT p.*,
     (SELECT COUNT(*) FROM stock s WHERE s.product_id = p.id AND s.is_sold = 0) as stock_count,
     (SELECT COUNT(*) FROM stock s WHERE s.product_id = p.id AND s.is_sold = 1) as sold_count,
+    variant_summary.variant_options as variant_options,
     c.name as category_name
   FROM products p
   LEFT JOIN categories c ON p.category_id = c.id
+  LEFT JOIN (
+    SELECT
+      active_variants.product_id,
+      JSON_GROUP_ARRAY(
+        JSON_OBJECT('id', active_variants.id, 'name', active_variants.name)
+      ) AS variant_options
+    FROM (
+      SELECT v.id, v.product_id, v.name
+      FROM product_variants v
+      WHERE v.is_active = 1
+      ORDER BY v.sort_order, v.id
+    ) active_variants
+    GROUP BY active_variants.product_id
+  ) variant_summary ON variant_summary.product_id = p.id
 `;
 
 function fetchProductForResponse(id) {
@@ -54,6 +69,19 @@ function buildUniqueCategorySlug(name) {
   return `${base}-${Date.now()}`;
 }
 
+function parseVariantOptions(value) {
+  if (!value) return [];
+  try {
+    const parsed = JSON.parse(value);
+    if (!Array.isArray(parsed)) return [];
+    return parsed
+      .filter((item) => item && item.id != null && typeof item.name === 'string')
+      .map((item) => ({ id: String(item.id), name: item.name }));
+  } catch {
+    return [];
+  }
+}
+
 function shapeProduct(r) {
   const stock = r.stock_count ?? 0;
   const soldStock = r.sold_count ?? 0;
@@ -66,6 +94,7 @@ function shapeProduct(r) {
     stock,
     soldStock,
     totalStock: stock + soldStock,
+    variantOptions: parseVariantOptions(r.variant_options),
     lowStockThreshold: r.low_stock_threshold,
     active: !!r.is_active,
     description: r.description || '',

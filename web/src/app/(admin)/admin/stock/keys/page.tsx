@@ -9,6 +9,7 @@ import { Copy, Pencil, Search, Trash2 } from '@/lib/icons'
 import { ResponsiveTable, Column } from '@/components/ResponsiveTable'
 import { useToast } from '@/components/Toast'
 import { QuickAddKeysModal } from '../QuickAddKeysModal'
+import { ProductVariantFilterCombobox } from './ProductVariantFilterCombobox'
 
 interface ProductRow {
   id: string
@@ -16,6 +17,7 @@ interface ProductRow {
   category?: string
   slug?: string
   variantNames?: string[]
+  variantOptions?: Array<{ id: string; name: string }>
 }
 
 interface VariantRow {
@@ -414,7 +416,7 @@ export default function AllStockKeysPage() {
       </div>
 
       <div className="clay-card p-4 space-y-3">
-        <div className="grid gap-3 lg:grid-cols-[1fr_240px_200px_180px]">
+        <div className="grid gap-3 lg:grid-cols-[1fr_minmax(280px,340px)_220px_180px]">
           <div className="relative">
             <Search size={16} className="absolute left-3 top-1/2 -translate-y-1/2 text-clay-silver" />
             <input
@@ -425,16 +427,17 @@ export default function AllStockKeysPage() {
               className="clay-input w-full text-sm pl-9"
             />
           </div>
-          <select
-            value={productId}
-            onChange={(e) => { setProductId(e.target.value); setVariantId(''); setPage(1); setSelectedIds(new Set()) }}
-            className="clay-input text-sm"
-          >
-            <option value="">Tất cả sản phẩm</option>
-            {products.map((product) => (
-              <option key={product.id} value={product.id}>{product.name}</option>
-            ))}
-          </select>
+          <ProductVariantFilterCombobox
+            products={products}
+            value={{ productId, variantId }}
+            loading={productsQuery.isLoading}
+            onChange={(next) => {
+              setProductId(next.productId)
+              setVariantId(next.variantId)
+              setPage(1)
+              setSelectedIds(new Set())
+            }}
+          />
           <select
             value={variantId}
             onChange={(e) => { setVariantId(e.target.value); setPage(1); setSelectedIds(new Set()) }}
