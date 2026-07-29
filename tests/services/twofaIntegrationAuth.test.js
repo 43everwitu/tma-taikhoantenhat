@@ -15,32 +15,61 @@ test('Node HMAC khớp shared Python contract vector', () => {
   );
 });
 
-test('verifySignedPayload từ chối signature sai và timestamp hết hạn', () => {
+test('verifySignedPayload dùng cửa sổ mặc định 300 giây và chấp nhận future skew', () => {
   const body = Buffer.from('{"eventId":"evt-1","bindingId":"bind-1"}');
-  const signature = signPayload('shared-secret', '1785348000', body);
+  const signature = signPayload('shared-secret', '1300', body);
 
   assert.strictEqual(verifySignedPayload({
     secret: 'shared-secret',
-    timestamp: '1785348000',
+    timestamp: '1300',
     signature,
     rawBody: body,
-    nowSeconds: 1785348060,
-    maxAgeSeconds: 120,
+    nowSeconds: 1000,
   }), true);
   assert.strictEqual(verifySignedPayload({
     secret: 'shared-secret',
-    timestamp: '1785348000',
+    timestamp: '1301',
+    signature: signPayload('shared-secret', '1301', body),
+    rawBody: body,
+    nowSeconds: 1000,
+  }), false);
+});
+
+test('verifySignedPayload dùng thời gian hiện tại khi không truyền nowSeconds', () => {
+  const body = Buffer.from('{"eventId":"evt-now","bindingId":"bind-now"}');
+  const timestamp = String(Math.floor(Date.now() / 1000));
+
+  assert.strictEqual(verifySignedPayload({
+    secret: 'shared-secret',
+    timestamp,
+    signature: signPayload('shared-secret', timestamp, body),
+    rawBody: body,
+  }), true);
+});
+
+test('verifySignedPayload từ chối signature sai, timestamp malformed và timestamp hết hạn', () => {
+  const body = Buffer.from('{"eventId":"evt-1","bindingId":"bind-1"}');
+  const signature = signPayload('shared-secret', '1000', body);
+
+  assert.strictEqual(verifySignedPayload({
+    secret: 'shared-secret',
+    timestamp: '1000',
     signature: 'v1=invalid',
     rawBody: body,
-    nowSeconds: 1785348060,
-    maxAgeSeconds: 120,
+    nowSeconds: 1000,
   }), false);
   assert.strictEqual(verifySignedPayload({
     secret: 'shared-secret',
-    timestamp: '1785348000',
+    timestamp: '1000.5',
     signature,
     rawBody: body,
-    nowSeconds: 1785348201,
-    maxAgeSeconds: 120,
+    nowSeconds: 1000,
+  }), false);
+  assert.strictEqual(verifySignedPayload({
+    secret: 'shared-secret',
+    timestamp: '699',
+    signature: signPayload('shared-secret', '699', body),
+    rawBody: body,
+    nowSeconds: 1000,
   }), false);
 });
