@@ -5,15 +5,16 @@ import { usePathname, useRouter } from 'next/navigation'
 import { useEffect } from 'react'
 import { useQuery } from '@tanstack/react-query'
 import { api, clearAdminToken } from '@/lib/api'
-import { BarChart3, Receipt, Package, Boxes, Megaphone, Settings, LogOut, Users, Wallet, X, MessageSquare, ShieldCheck, Ticket, KeyRound, ClipboardList } from '@/lib/icons'
+import { BarChart3, Receipt, Package, Boxes, Megaphone, Settings, LogOut, Users, Wallet, X, MessageSquare, ShieldCheck, Ticket, KeyRound, ClipboardList, Clock } from '@/lib/icons'
 import { MascotBadge } from '@/components/MascotBadge'
 import { t } from '@/i18n/vi'
 
 const NAV = [
   { href: '/admin/dashboard', label: 'Tổng quan', icon: BarChart3, perm: 'dashboard.read' },
   { href: '/admin/orders', label: 'Đơn hàng', icon: Receipt, perm: 'orders.read' },
+  { href: '/admin/renewals', label: 'Gia hạn', icon: Clock, perm: 'orders.read' },
   { href: '/admin/products', label: 'Sản phẩm', icon: Package, perm: 'products.read' },
-  { href: '/admin/stock', label: 'Kho', icon: Boxes, perm: 'stock.read' },
+  { href: '/admin/stock/keys', label: 'Kho', icon: Boxes, perm: 'stock.read', activePrefix: '/admin/stock' },
   { href: '/admin/users', label: 'Người dùng', icon: Users, perm: 'users.read' },
   { href: '/admin/admins', label: 'Quản trị', icon: ShieldCheck, perm: 'admins.read' },
   { href: '/admin/topups', label: 'Nạp tiền', icon: Wallet, feature: 'topups' as const, perm: 'topups.read' },
@@ -81,7 +82,8 @@ export function AdminSidebar({ open, onClose }: Props) {
         </div>
         <nav className="flex flex-col gap-1 flex-1">
           {NAV.filter((it) => hasPerm(it.perm) && (!('feature' in it) || features[it.feature as keyof typeof features])).map(item => {
-            const active = pathname === item.href || pathname?.startsWith(item.href + '/')
+            const activeBase = 'activePrefix' in item ? item.activePrefix : item.href
+            const active = pathname === item.href || pathname === activeBase || pathname?.startsWith(activeBase + '/')
             const Icon = item.icon
             return (
               <Link

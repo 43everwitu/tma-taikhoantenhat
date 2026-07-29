@@ -12,6 +12,7 @@ import { RichEditor } from '@/components/RichEditor'
 import { RichEditorRich } from '@/components/RichEditorRich'
 import { VariantsManager } from './VariantsManager'
 import { useToast } from '@/components/Toast'
+import { MediaLibrary } from '@/components/admin/MediaLibrary'
 
 interface Product {
   id: string
@@ -20,7 +21,9 @@ interface Product {
   categoryId?: number
   price: number
   stock: number
-  lowStockThreshold: number
+  lowStockThreshold: number | null
+  effectiveLowStockThreshold: number
+  usesDefaultLowStockThreshold?: boolean
   active: boolean
   description?: string
   longDescription?: string
@@ -31,13 +34,16 @@ interface Product {
   isFeatured?: boolean
   contactOnly?: boolean
   contactUrl?: string
+  archived?: boolean
 }
 
 interface Category {
   id: number
   name: string
-  slug: string
+  slug?: string | null
 }
+
+type ProductView = 'active' | 'archived'
 
 interface RowActionsMenuProps {
   product: Product
@@ -100,30 +106,34 @@ function RowActionsMenu({
           onClick={(e) => e.stopPropagation()}
           role="menu"
         >
-          <button
-            type="button"
-            className={common}
-            onClick={() => { onToggleFeatured(); setOpen(false) }}
-            disabled={featuredPending}
-          >
-            {product.isFeatured ? 'Bỏ nổi bật' : 'Đặt nổi bật'}
-          </button>
-          <button
-            type="button"
-            className={common}
-            onClick={() => { onNotify('new'); setOpen(false) }}
-            disabled={notifyPending}
-          >
-            Thông báo SP mới
-          </button>
-          <button
-            type="button"
-            className={common}
-            onClick={() => { onNotify('update'); setOpen(false) }}
-            disabled={notifyPending}
-          >
-            Thông báo cập nhật
-          </button>
+          {!product.archived && (
+            <>
+              <button
+                type="button"
+                className={common}
+                onClick={() => { onToggleFeatured(); setOpen(false) }}
+                disabled={featuredPending}
+              >
+                {product.isFeatured ? 'Bỏ nổi bật' : 'Đặt nổi bật'}
+              </button>
+              <button
+                type="button"
+                className={common}
+                onClick={() => { onNotify('new'); setOpen(false) }}
+                disabled={notifyPending}
+              >
+                Thông báo SP mới
+              </button>
+              <button
+                type="button"
+                className={common}
+                onClick={() => { onNotify('update'); setOpen(false) }}
+                disabled={notifyPending}
+              >
+                Thông báo cập nhật
+              </button>
+            </>
+          )}
           <button
             type="button"
             className={common}
@@ -155,12 +165,34 @@ interface ProductForm {
   longDescription: string
   usageInstructions: string
   imageUrl: string
-  lowStockThreshold: number
+  lowStockThreshold: number | null
+  effectiveLowStockThreshold: number
   promotion: string
   contactOnly: boolean
   contactUrl: string
   notifyOnCreate: boolean
   notifyOnUpdate: boolean
+}
+
+type ProductPayload = Omit<ProductForm, 'effectiveLowStockThreshold'>
+
+function productPayload(form: ProductForm): ProductPayload {
+  return {
+    name: form.name,
+    category: form.category,
+    price: form.price,
+    emoji: form.emoji,
+    description: form.description,
+    longDescription: form.longDescription,
+    usageInstructions: form.usageInstructions,
+    imageUrl: form.imageUrl,
+    lowStockThreshold: form.lowStockThreshold,
+    promotion: form.promotion,
+    contactOnly: form.contactOnly,
+    contactUrl: form.contactUrl,
+    notifyOnCreate: form.notifyOnCreate,
+    notifyOnUpdate: form.notifyOnUpdate,
+  }
 }
 
 const emptyForm: ProductForm = {
@@ -172,7 +204,8 @@ const emptyForm: ProductForm = {
   longDescription: '',
   usageInstructions: '',
   imageUrl: '',
-  lowStockThreshold: 5,
+  lowStockThreshold: null,
+  effectiveLowStockThreshold: 5,
   promotion: '',
   contactOnly: false,
   contactUrl: '',
@@ -190,6 +223,7 @@ export default function ProductsPage() {
   const [search, setSearch] = useState('')
   const [debouncedSearch, setDebouncedSearch] = useState('')
   const [categoryFilter, setCategoryFilter] = useState('')
+  const [productView, setProductView] = useState<ProductView>('active')
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set())
 
   useEffect(() => {
@@ -198,18 +232,19 @@ export default function ProductsPage() {
   }, [search])
 
   const { data: catsData } = useQuery({
-    queryKey: ['categories'],
-    queryFn: () => api.get<Category[]>('/categories'),
+    queryKey: ['admin', 'categories'],
+    queryFn: () => api.get<Category[]>('/admin/categories'),
     staleTime: 5 * 60_000,
     refetchOnWindowFocus: false,
   })
   const categories = catsData?.data ?? []
 
   const { data, isLoading } = useQuery({
-    queryKey: ['admin', 'products', debouncedSearch],
+    queryKey: ['admin', 'products', productView, debouncedSearch],
     queryFn: () => {
-      let url = '/admin/products'
-      if (debouncedSearch) url += `?q=${encodeURIComponent(debouncedSearch)}`
+      const qs = new URLSearchParams({ view: productView })
+      if (debouncedSearch) qs.set('q', debouncedSearch)
+      const url = `/admin/products?${qs.toString()}`
       return api.get<Product[]>(url)
     },
     staleTime: 30_000,
@@ -224,7 +259,7 @@ export default function ProductsPage() {
   }
 
   const createMutation = useMutation({
-    mutationFn: (body: ProductForm) => api.post<{ notify?: { sent?: number; failed?: number; skipped?: string | null } }>('/admin/products', body),
+    mutationFn: (body: ProductPayload) => api.post<{ notify?: { sent?: number; failed?: number; skipped?: string | null } }>('/admin/products', body),
     onSuccess: (res) => {
       queryClient.invalidateQueries({ queryKey: ['admin', 'products'] })
       closeModal()
@@ -236,7 +271,7 @@ export default function ProductsPage() {
   })
 
   const updateMutation = useMutation({
-    mutationFn: ({ id, body }: { id: string; body: ProductForm }) =>
+    mutationFn: ({ id, body }: { id: string; body: ProductPayload }) =>
       api.put<{ notify?: { sent?: number; failed?: number; skipped?: string | null } }>(`/admin/products/${id}`, body),
     onSuccess: (res) => {
       queryClient.invalidateQueries({ queryKey: ['admin', 'products'] })
@@ -364,7 +399,8 @@ export default function ProductsPage() {
     {
       header: 'Tồn kho', className: 'text-right',
       cell: (p) => {
-        const isLow = p.stock <= p.lowStockThreshold
+        const threshold = p.effectiveLowStockThreshold ?? p.lowStockThreshold ?? 0
+        const isLow = threshold > 0 && p.stock > 0 && p.stock <= threshold
         return (
           <span className={`clay-pill ${isLow ? 'text-pomegranate-700' : ''}`}
                 style={isLow ? { background: 'var(--color-pomegranate-100)' } : {}}>
@@ -376,12 +412,16 @@ export default function ProductsPage() {
     {
       header: 'Trạng thái', className: 'text-center',
       cell: (p) => (
-        <button
-          onClick={() => toggleMutation.mutate(p.id)}
-          disabled={toggleMutation.isPending}
-          className="clay-btn text-xs py-1 px-3"
-          style={p.active ? { background: 'var(--color-matcha-300)' } : {}}
-        >{p.active ? 'Hoạt động' : 'Tắt'}</button>
+        p.archived ? (
+          <span className="clay-pill text-clay-silver">Đã lưu trữ</span>
+        ) : (
+          <button
+            onClick={() => toggleMutation.mutate(p.id)}
+            disabled={toggleMutation.isPending}
+            className="clay-btn text-xs py-1 px-3"
+            style={p.active ? { background: 'var(--color-matcha-300)' } : {}}
+          >{p.active ? 'Hoạt động' : 'Tắt'}</button>
+        )
       ),
     },
     {
@@ -436,6 +476,7 @@ export default function ProductsPage() {
 
   const [generatingImage, setGeneratingImage] = useState(false)
   const [imagePrompt, setImagePrompt] = useState('')
+  const [mediaLibraryOpen, setMediaLibraryOpen] = useState(false)
 
   async function handleGenerateImage() {
     if (!form.name.trim()) {
@@ -459,9 +500,9 @@ export default function ProductsPage() {
   }
 
   const allProducts = data?.data ?? []
-  // Client-side category filter — uses Category.slug. Server already orders
+  // Client-side category filter — uses Category.id. Server already orders
   // by sort_order so the filtered subset preserves the global ordering.
-  const selectedCat = categories.find(c => c.slug === categoryFilter)
+  const selectedCat = categories.find(c => String(c.id) === categoryFilter)
   const products = categoryFilter && selectedCat
     ? allProducts.filter(p => p.categoryId === selectedCat.id)
     : allProducts
@@ -483,6 +524,7 @@ export default function ProductsPage() {
       usageInstructions: product.usageInstructions || '',
       imageUrl: product.imageUrl || '',
       lowStockThreshold: product.lowStockThreshold,
+      effectiveLowStockThreshold: product.effectiveLowStockThreshold,
       promotion: product.promotion || '',
       contactOnly: !!product.contactOnly,
       contactUrl: product.contactUrl || '',
@@ -496,15 +538,17 @@ export default function ProductsPage() {
   function closeModal() {
     setShowModal(false)
     setEditingId(null)
+    setMediaLibraryOpen(false)
     setForm(emptyForm)
   }
 
   function handleSubmit(e: React.FormEvent) {
     e.preventDefault()
+    const body = productPayload(form)
     if (editingId) {
-      updateMutation.mutate({ id: editingId, body: form })
+      updateMutation.mutate({ id: editingId, body })
     } else {
-      createMutation.mutate(form)
+      createMutation.mutate(body)
     }
   }
 
@@ -539,6 +583,7 @@ export default function ProductsPage() {
   }
   async function bulkToggle() {
     if (!someSelected) return
+    if (productView === 'archived') return
     await Promise.all([...selectedIds].map(id => api.patch(`/admin/products/${id}/toggle`)))
     clearSelection()
     queryClient.invalidateQueries({ queryKey: ['admin', 'products'] })
@@ -567,7 +612,7 @@ export default function ProductsPage() {
           >
             <option value="">Tất cả danh mục</option>
             {categories.map((c) => (
-              <option key={c.slug} value={c.slug}>{c.name}</option>
+              <option key={c.id} value={String(c.id)}>{c.name}</option>
             ))}
           </select>
           <button
@@ -579,10 +624,32 @@ export default function ProductsPage() {
         </div>
       </div>
 
+      <div className="flex flex-wrap items-center gap-2">
+        {[
+          { value: 'active' as const, label: 'Đang quản lý' },
+          { value: 'archived' as const, label: 'Đã lưu trữ' },
+        ].map((tab) => (
+          <button
+            key={tab.value}
+            type="button"
+            onClick={() => {
+              setProductView(tab.value)
+              setSelectedIds(new Set())
+            }}
+            className="clay-btn text-sm py-1.5 px-4"
+            style={productView === tab.value ? { background: 'var(--color-clay-ink)', color: 'white' } : undefined}
+          >
+            {tab.label}
+          </button>
+        ))}
+      </div>
+
       {someSelected && (
         <div className="flex flex-wrap items-center gap-3 p-3 rounded-2xl bg-clay-oat-light">
           <span className="text-sm font-medium">Đã chọn {selectedIds.size}</span>
-          <button onClick={bulkToggle} className="clay-btn text-xs py-1 px-3">Bật / tắt</button>
+          {productView !== 'archived' && (
+            <button onClick={bulkToggle} className="clay-btn text-xs py-1 px-3">Bật / tắt</button>
+          )}
           <button onClick={bulkDelete} className="clay-btn clay-btn--pomegranate text-xs py-1 px-3">Xoá</button>
           <button onClick={clearSelection} className="clay-btn text-xs py-1 px-3">Bỏ chọn</button>
         </div>
@@ -625,14 +692,15 @@ export default function ProductsPage() {
                 </tr>
               ) : (
                 products.map((product) => {
-                  const isLowStock = product.stock <= product.lowStockThreshold
+                  const threshold = product.effectiveLowStockThreshold ?? product.lowStockThreshold ?? 0
+                  const isLowStock = threshold > 0 && product.stock > 0 && product.stock <= threshold
                   const isDragging = dragId === product.id
                   const isOver = overId === product.id
                   return (
                     <tr
                       key={product.id}
                       ref={refFor(product.id)}
-                      draggable
+                      draggable={productView !== 'archived'}
                       onDragStart={(e) => handleDragStart(e, product.id)}
                       onDragOver={(e) => handleDragOver(e, product.id)}
                       onDragLeave={() => handleDragLeave(product.id)}
@@ -672,14 +740,18 @@ export default function ProductsPage() {
                         </span>
                       </td>
                       <td className="py-3 px-4 text-center">
-                        <button
-                          onClick={() => toggleMutation.mutate(product.id)}
-                          disabled={toggleMutation.isPending}
-                          className="clay-btn text-xs py-1 px-3"
-                          style={product.active ? { background: 'var(--color-matcha-300)' } : {}}
-                        >
-                          {product.active ? 'Hoạt động' : 'Tắt'}
-                        </button>
+                        {product.archived ? (
+                          <span className="clay-pill text-clay-silver">Đã lưu trữ</span>
+                        ) : (
+                          <button
+                            onClick={() => toggleMutation.mutate(product.id)}
+                            disabled={toggleMutation.isPending}
+                            className="clay-btn text-xs py-1 px-3"
+                            style={product.active ? { background: 'var(--color-matcha-300)' } : {}}
+                          >
+                            {product.active ? 'Hoạt động' : 'Tắt'}
+                          </button>
+                        )}
                       </td>
                       <td className="py-3 px-4 text-center">
                         <div className="flex items-center justify-center gap-2">
@@ -695,14 +767,16 @@ export default function ProductsPage() {
                           >
                             <Pencil size={14} />Sửa
                           </button>
-                          <button
-                            onClick={() => toggleFeaturedMutation.mutate(product.id)}
-                            disabled={toggleFeaturedMutation.isPending}
-                            className="clay-btn text-xs py-1 px-3 flex items-center gap-1 disabled:opacity-50"
-                            style={product.isFeatured ? { background: 'var(--brand-gold-soft)', color: 'var(--brand-ink)' } : undefined}
-                          >
-                            <Sparkles size={14} />{product.isFeatured ? 'Nổi bật' : 'Đặt nổi bật'}
-                          </button>
+                          {!product.archived && (
+                            <button
+                              onClick={() => toggleFeaturedMutation.mutate(product.id)}
+                              disabled={toggleFeaturedMutation.isPending}
+                              className="clay-btn text-xs py-1 px-3 flex items-center gap-1 disabled:opacity-50"
+                              style={product.isFeatured ? { background: 'var(--brand-gold-soft)', color: 'var(--brand-ink)' } : undefined}
+                            >
+                              <Sparkles size={14} />{product.isFeatured ? 'Nổi bật' : 'Đặt nổi bật'}
+                            </button>
+                          )}
                           <RowActionsMenu
                             product={product}
                             onNotify={(kind) => notifyMutation.mutate({ id: product.id, kind })}
@@ -740,7 +814,11 @@ export default function ProductsPage() {
       {/* Modal */}
       {showModal && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50" onClick={closeModal}>
-          <div onClick={(e) => e.stopPropagation()} className="bg-white rounded-lg shadow-xl w-full max-w-lg md:max-w-3xl lg:max-w-5xl xl:max-w-6xl mx-4 max-h-[92vh] overflow-y-auto">
+          <div
+            onClick={(e) => e.stopPropagation()}
+            className="admin-product-modal-scroll bg-white rounded-lg shadow-xl w-full max-w-lg md:max-w-3xl lg:max-w-5xl xl:max-w-6xl mx-4 max-h-[92vh] overflow-y-auto"
+            data-rich-editor-scroll-container="product-modal"
+          >
             <div className="flex items-center justify-between px-6 py-4 border-b border-gray-200">
               <h3 className="text-lg font-semibold text-gray-900">
                 {editingId ? 'Sửa sản phẩm' : 'Thêm sản phẩm mới'}
@@ -793,13 +871,25 @@ export default function ProductsPage() {
                   </label>
                   <input
                     type="number"
-                    value={form.lowStockThreshold}
+                    value={form.lowStockThreshold ?? form.effectiveLowStockThreshold}
+                    disabled={form.lowStockThreshold == null}
                     onChange={(e) =>
                       setForm({ ...form, lowStockThreshold: Number(e.target.value) })
                     }
                     min={0}
-                    className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 outline-none text-gray-900"
+                    className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 outline-none text-gray-900 disabled:bg-gray-100 disabled:text-gray-500"
                   />
+                  <label className="mt-2 flex items-center gap-2 text-xs text-gray-600">
+                    <input
+                      type="checkbox"
+                      checked={form.lowStockThreshold == null}
+                      onChange={(e) => setForm({
+                        ...form,
+                        lowStockThreshold: e.target.checked ? null : Math.max(0, form.effectiveLowStockThreshold || 5),
+                      })}
+                    />
+                    Dùng ngưỡng mặc định trong cài đặt
+                  </label>
                 </div>
               </div>
               <label className="block text-sm font-medium text-gray-700 mt-3">Mô tả ngắn</label>
@@ -836,6 +926,13 @@ export default function ProductsPage() {
                   />
                   <button
                     type="button"
+                    onClick={() => setMediaLibraryOpen(true)}
+                    className="clay-btn text-sm whitespace-nowrap"
+                  >
+                    Chọn từ thư viện
+                  </button>
+                  <button
+                    type="button"
                     onClick={handleGenerateImage}
                     disabled={generatingImage || !form.name.trim()}
                     className="clay-btn clay-btn--ube text-sm flex items-center gap-1.5 whitespace-nowrap disabled:opacity-50"
@@ -856,6 +953,15 @@ export default function ProductsPage() {
                     src={form.imageUrl}
                     alt="Preview"
                     className="w-32 h-32 object-cover rounded-lg border border-gray-200"
+                  />
+                )}
+                {mediaLibraryOpen && (
+                  <MediaLibrary
+                    onPick={(url) => {
+                      setForm({ ...form, imageUrl: url })
+                      setMediaLibraryOpen(false)
+                    }}
+                    onClose={() => setMediaLibraryOpen(false)}
                   />
                 )}
               </div>
@@ -893,7 +999,7 @@ export default function ProductsPage() {
                 </span>
               </label>
               <p className="text-xs text-gray-500 -mt-1">
-                Khi bật, khách trên Telegram sẽ thấy nút liên hệ thay vì chọn số lượng.
+                Khi bật, sản phẩm và mọi biến thể mặc định chỉ liên hệ. Có thể đổi riêng từng biến thể sang bán trực tiếp.
               </p>
 
               {form.contactOnly && (
@@ -933,7 +1039,7 @@ export default function ProductsPage() {
               )}
 
               <div className="mt-4 pt-4 border-t border-gray-200">
-                <VariantsManager productId={editingId} />
+                <VariantsManager productId={editingId} productContactOnly={form.contactOnly} />
               </div>
 
               <div className="flex justify-end gap-3 pt-2">

@@ -4,6 +4,8 @@ const adminNotifyService = require('./adminNotifyService');
 const messageTemplateService = require('./messageTemplateService');
 const telegramApiClient = require('./telegramApiClient');
 const userNotificationPreferenceService = require('./userNotificationPreferenceService');
+const { openShopButton } = require('../utils/miniAppButton');
+const { toTelegramHtml } = require('../utils/richHtml');
 
 const sleep = (ms) => new Promise(r => setTimeout(r, ms));
 
@@ -126,23 +128,38 @@ class NotificationService {
    *   - bot.stock_replenished  → Telegram chat message
    *   - web.stock_replenished  → Mini App notification body
    */
-  async notifyStockReplenished(productId) {
+  async notifyStockReplenished(productId, variantId = null) {
     db.prepare('UPDATE products SET last_low_stock_alert_at = NULL WHERE id = ?').run(productId);
+    db.prepare(`
+      UPDATE low_stock_alert_states
+      SET last_alert_at = NULL,
+          updated_at = CURRENT_TIMESTAMP
+      WHERE target_key = ?
+    `).run(variantId == null ? `p:${productId}` : `v:${variantId}`);
 
     const product = db.prepare('SELECT * FROM products WHERE id = ?').get(productId);
     if (!product) return { sent: 0, failed: 0, total: 0, skipped: 'product_not_found' };
 
-    const stockCount = db.prepare(
-      'SELECT COUNT(*) as c FROM stock WHERE product_id = ? AND is_sold = 0'
-    ).get(productId).c;
+    const variant = variantId == null ? null : db.prepare(`
+      SELECT id, name, price
+      FROM product_variants
+      WHERE id = ? AND product_id = ?
+    `).get(variantId, productId);
+
+    const stockCount = variant
+      ? db.prepare('SELECT COUNT(*) as c FROM stock WHERE product_id = ? AND variant_id = ? AND is_sold = 0').get(productId, variant.id).c
+      : db.prepare('SELECT COUNT(*) as c FROM stock WHERE product_id = ? AND variant_id IS NULL AND is_sold = 0').get(productId).c;
 
     const recipients = db.prepare('SELECT telegram_id FROM users').all();
 
     if (recipients.length === 0) return { sent: 0, failed: 0, total: 0, skipped: 'no_users' };
 
+    const productName = variant ? `${product.name} - ${variant.name}` : product.name;
+    const productPrice = variant?.price ?? product.price;
     const vars = {
       productEmoji: product.emoji || '📦',
-      productName: product.name,
+      productName,
+      productPrice: this.formatVnd(productPrice),
       stockCount,
     };
     const botBody = messageTemplateService.renderIfEnabled('bot.stock_replenished', vars);
@@ -179,16 +196,22 @@ class NotificationService {
    * usable link can be built (so the message still sends, just without a button).
    */
   _openShopExtra() {
-    const username = this.bot?.botInfo?.username;
-    const url = username
-      ? `https://t.me/${username}?startapp`
-      : (process.env.MINIAPP_URL || config.WEB_URL || '');
-    if (!url) return {};
+    const button = openShopButton('🛍 Mở cửa hàng', { botUsername: this.bot?.botInfo?.username });
+    if (!button.web_app && !button.url) return {};
     return {
       reply_markup: {
-        inline_keyboard: [[{ text: '🛍 Mở cửa hàng', url }]],
+        inline_keyboard: [[button]],
       },
     };
+  }
+
+  _telegramImageUrl(imageUrl) {
+    const raw = String(imageUrl || '').trim();
+    if (!raw) return '';
+    if (/^https?:\/\//i.test(raw)) return raw;
+    const base = (config.WEB_URL || '').replace(/\/$/, '');
+    if (!base || !raw.startsWith('/')) return '';
+    return `${base}${raw}`;
   }
 
   formatVnd(amount) {
@@ -226,15 +249,19 @@ class NotificationService {
    * per low-stock episode via products.last_low_stock_alert_at — marker
    * cleared on replenish (notifyStockReplenished) or self-heal (this method's
    * opening UPDATE when stock returns above threshold).
-   */
+  */
   async checkLowStock() {
-    const { effectiveLowStockProducts } = require('./lowStockQuery');
+    const {
+      effectiveLowStockProducts,
+      effectiveOutOfStockProducts,
+      getDefaultLowStockThreshold,
+      clearRecoveredLowStockStates,
+    } = require('./lowStockQuery');
+    const defaultLowStockThreshold = getDefaultLowStockThreshold();
 
-    // Self-heal: clear the alert marker for any product whose stock is back
-    // above its effective threshold. Covers paths that don't go through
-    // notifyStockReplenished (order cancel returning reserved keys, manual
-    // DB edits, restored deletions). Keeps the "once per episode" guarantee
-    // honest: a new episode can only fire after this pass NULLs the marker.
+    // Tự phục hồi: xóa marker cảnh báo khi tồn kho đã vượt ngưỡng hiệu lực.
+    // Bao phủ các luồng không đi qua notifyStockReplenished như hủy đơn trả key,
+    // sửa DB thủ công hoặc restore dữ liệu.
     db.prepare(`
       UPDATE products
       SET last_low_stock_alert_at = NULL
@@ -242,56 +269,119 @@ class NotificationService {
         AND (
           SELECT COUNT(*) FROM stock s
           WHERE s.product_id = products.id AND s.is_sold = 0
-        ) > COALESCE(
-          NULLIF(low_stock_threshold, 0),
-          (SELECT CAST(value AS INTEGER) FROM settings WHERE key = 'low_stock_alert_threshold'),
-          5
-        )
-    `).run();
+        ) > COALESCE(low_stock_threshold, ?)
+    `).run(defaultLowStockThreshold);
+    clearRecoveredLowStockStates();
 
+    const outOfStockProducts = effectiveOutOfStockProducts();
     const lowStockProducts = effectiveLowStockProducts();
 
-    if (lowStockProducts.length === 0) return;
+    if (outOfStockProducts.length === 0 && lowStockProducts.length === 0) return;
 
     const rawUrl = (config.WEB_URL || '').replace(/\/$/, '');
     // Telegram rejects inline-button URLs that are not publicly resolvable
     // (localhost, private IPs, http on a private host). Detect → drop the
     // button and put the URL inline in the text instead.
     const isPublicUrl = /^https?:\/\/(?!(localhost|127\.|10\.|192\.168\.|172\.(1[6-9]|2\d|3[01])\.))/.test(rawUrl);
-    const updateAlert = db.prepare(
-      'UPDATE products SET last_low_stock_alert_at = CURRENT_TIMESTAMP WHERE id = ?'
-    );
-
-    for (const p of lowStockProducts) {
-      const stockUrl = rawUrl ? `${rawUrl}/admin/stock/${p.id}` : '';
-      // stockUrlBlock is trusted-as-HTML — empty when we'll use an inline
-      // button (public URL) so the body stays clean.
+    const alertMeta = (p) => {
+      const stockUrl = rawUrl
+        ? `${rawUrl}/admin/stock/${p.id}${p.variant_id ? `?variantId=${p.variant_id}` : ''}`
+        : '';
       const stockUrlBlock = (stockUrl && !isPublicUrl)
         ? `\n\n🔗 <a href="${stockUrl}">Thêm kho qua dashboard</a>`
         : '';
+      const variantLine = p.variant_id
+        ? `\n🔖 Biến thể: <b>${messageTemplateService.escapeHtml(p.variant_name || '')}</b>\n🧩 Variant ID: <code>${p.variant_id}</code>`
+        : '';
+      const buttons = [];
+      if (stockUrl && isPublicUrl) {
+        buttons.push({ text: `📥 Thêm kho cho #${p.id}`, url: stockUrl });
+      }
+      return { stockUrlBlock, variantLine, buttons };
+    };
+    const updateProductAlert = db.prepare(
+      'UPDATE products SET last_low_stock_alert_at = CURRENT_TIMESTAMP WHERE id = ?'
+    );
+    const upsertAlertState = db.prepare(`
+      INSERT INTO low_stock_alert_states (
+        target_key, target_type, product_id, variant_id, last_alert_at, snoozed_until, updated_at
+      )
+      VALUES (?, ?, ?, ?, CURRENT_TIMESTAMP, NULL, CURRENT_TIMESTAMP)
+      ON CONFLICT(target_key) DO UPDATE SET
+        last_alert_at = CURRENT_TIMESTAMP,
+        snoozed_until = NULL,
+        updated_at = CURRENT_TIMESTAMP
+    `);
+    const markAlertSent = (p) => {
+      if (p.target_key) {
+        upsertAlertState.run(p.target_key, p.target_type || 'product', p.id, p.variant_id || null);
+      }
+      if (p.target_type !== 'variant') {
+        updateProductAlert.run(p.id);
+      }
+    };
+
+    const markOutOfStockAlertSent = db.prepare(`
+      UPDATE low_stock_alert_states
+      SET out_of_stock_alert_at = CURRENT_TIMESTAMP,
+          updated_at = CURRENT_TIMESTAMP
+      WHERE target_key = ?
+    `);
+
+    for (const p of outOfStockProducts) {
+      const { stockUrlBlock, variantLine, buttons } = alertMeta(p);
+      const body = messageTemplateService.renderIfEnabled('admin.out_of_stock', {
+        productEmoji: p.emoji || '📦',
+        productName: p.name,
+        productId: p.id,
+        variantLine,
+        variantName: p.variant_name || '',
+        variantId: p.variant_id || '',
+        targetType: p.target_type || 'product',
+        targetKey: p.target_key || `p:${p.id}`,
+        stockUrlBlock,
+      });
+      if (!body) continue;
+
+      const doneCallback = p.target_type === 'variant'
+        ? `outstock_done:v:${p.variant_id}`
+        : `outstock_done:p:${p.id}`;
+      buttons.push({ text: '✅ Đã up Stock', callback_data: doneCallback });
+      const delivered = await adminNotifyService.notify('low_stock', body, {
+        parse_mode: 'HTML',
+        reply_markup: { inline_keyboard: [buttons] },
+      });
+      if (delivered) markOutOfStockAlertSent.run(p.target_key);
+    }
+
+    for (const p of lowStockProducts) {
+      const { stockUrlBlock, variantLine, buttons } = alertMeta(p);
 
       const body = messageTemplateService.renderIfEnabled('admin.low_stock', {
         productEmoji: p.emoji || '📦',
         productName: p.name,
         productId: p.id,
+        variantLine,
+        variantName: p.variant_name || '',
+        variantId: p.variant_id || '',
+        targetType: p.target_type || 'product',
+        targetKey: p.target_key || `p:${p.id}`,
         stockCount: p.stock_count,
         threshold: p.effective_threshold,
         stockUrlBlock,
       });
-      if (!body) { updateAlert.run(p.id); continue; }
+      if (!body) { markAlertSent(p); continue; }
 
       const opts = { parse_mode: 'HTML' };
-      if (stockUrl && isPublicUrl) {
-        opts.reply_markup = {
-          inline_keyboard: [[
-            { text: `📥 Thêm kho cho #${p.id}`, url: stockUrl },
-          ]],
-        };
-      }
+      const doneCallback = p.target_type === 'variant'
+        ? `lowstock_done:v:${p.variant_id}`
+        : `lowstock_done:p:${p.id}`;
+      buttons.push({ text: '✅ Đã up Stock', callback_data: doneCallback });
+      opts.reply_markup = { inline_keyboard: [buttons] };
 
       try {
         await adminNotifyService.notify('low_stock', body, opts);
-        updateAlert.run(p.id);
+        markAlertSent(p);
       } catch (err) {
         console.error(`❌ Low stock alert for product ${p.id}:`, err.message);
       }
@@ -312,13 +402,16 @@ class NotificationService {
    */
   async broadcast(title, body, target = 'all', adminId = null, webBody = undefined, options = {}) {
     const effectiveWeb = (webBody === undefined || webBody === null) ? body : webBody;
+    const imageUrl = options.imageUrl ? String(options.imageUrl).trim() : null;
     const notificationType = options.notificationType || 'announcement';
+    const telegramImageUrl = this._telegramImageUrl(imageUrl);
+    const telegramBody = body ? toTelegramHtml(body) : '';
 
     // Save announcement
     const result = db.prepare(`
-      INSERT INTO announcements (title, body, admin_id, target)
-      VALUES (?, ?, ?, ?)
-    `).run(title, body || effectiveWeb || '', adminId || 0, target);
+      INSERT INTO announcements (title, body, admin_id, target, image_url)
+      VALUES (?, ?, ?, ?, ?)
+    `).run(title, body || effectiveWeb || '', adminId || 0, target, imageUrl);
 
     const announcementId = result.lastInsertRowid;
     const users = db.prepare('SELECT telegram_id, username, notification_prefs FROM users').all();
@@ -335,7 +428,11 @@ class NotificationService {
           skippedByPreference++;
         } else {
           try {
-            await telegramApiClient.sendMessage(user.telegram_id, body, { parse_mode: 'HTML' });
+            if (telegramImageUrl) {
+              await this.bot.telegram.sendPhoto(user.telegram_id, telegramImageUrl, { caption: telegramBody, parse_mode: 'HTML' });
+            } else {
+              await telegramApiClient.sendMessage(user.telegram_id, telegramBody, { parse_mode: 'HTML' });
+            }
             sent++;
           } catch (err) {
             failed++;

@@ -1,8 +1,11 @@
 'use client'
 
-import { useCallback, useEffect, useState } from 'react'
+import { useCallback, useSyncExternalStore } from 'react'
 
 const STORAGE_KEY = 'taikhoantenhat:cart:v1'
+const EMPTY_ITEMS: CartItem[] = []
+let cachedRaw: string | null | undefined
+let cachedItems: CartItem[] = EMPTY_ITEMS
 
 export interface CartItem {
   id: string;
@@ -11,6 +14,7 @@ export interface CartItem {
   variantId?: string | null;
   variantName?: string | null;
   inputValue?: string | null;
+  isBackorder?: boolean;
   slug: string;
   name: string;
   emoji: string;
@@ -34,6 +38,7 @@ function migrateLine(it: Partial<CartItem>): CartItem {
     variantId: it.variantId ?? null,
     variantName: it.variantName ?? null,
     inputValue: it.inputValue ?? null,
+    isBackorder: !!it.isBackorder,
     slug: it.slug ?? '',
     name: it.name ?? '',
     emoji: it.emoji ?? '',
@@ -44,13 +49,22 @@ function migrateLine(it: Partial<CartItem>): CartItem {
 }
 
 function read(): CartItem[] {
-  if (typeof window === 'undefined') return []
+  if (typeof window === 'undefined') return EMPTY_ITEMS
   try {
     const raw = window.localStorage.getItem(STORAGE_KEY)
-    if (!raw) return []
+    if (raw === cachedRaw) return cachedItems
+    cachedRaw = raw
+    if (!raw) {
+      cachedItems = EMPTY_ITEMS
+      return cachedItems
+    }
     const parsed = JSON.parse(raw) as Stored
-    return (parsed.items as Partial<CartItem>[]).map(migrateLine).filter((it) => it.quantity > 0)
-  } catch { return [] }
+    cachedItems = (parsed.items as Partial<CartItem>[]).map(migrateLine).filter((it) => it.quantity > 0)
+    return cachedItems
+  } catch {
+    cachedItems = EMPTY_ITEMS
+    return cachedItems
+  }
 }
 
 function write(items: CartItem[]) {
@@ -59,14 +73,21 @@ function write(items: CartItem[]) {
   window.dispatchEvent(new CustomEvent('cart:updated'))
 }
 
+function subscribe(onStoreChange: () => void) {
+  if (typeof window === 'undefined') return () => {}
+  const onStorage = (e: StorageEvent) => {
+    if (e.key === STORAGE_KEY || e.key === null) onStoreChange()
+  }
+  window.addEventListener('cart:updated', onStoreChange)
+  window.addEventListener('storage', onStorage)
+  return () => {
+    window.removeEventListener('cart:updated', onStoreChange)
+    window.removeEventListener('storage', onStorage)
+  }
+}
+
 export function useCart() {
-  const [items, setItems] = useState<CartItem[]>([])
-  useEffect(() => {
-    setItems(read())
-    const onUpdate = () => setItems(read())
-    window.addEventListener('cart:updated', onUpdate)
-    return () => window.removeEventListener('cart:updated', onUpdate)
-  }, [])
+  const items = useSyncExternalStore(subscribe, read, () => EMPTY_ITEMS)
 
   type AddArg = Omit<CartItem, 'quantity' | 'lineKey' | 'id'> & { quantity?: number }
 
@@ -94,9 +115,10 @@ export function useCart() {
 
   const clear = useCallback(() => write([]), [])
 
+  const count = items.reduce((s, it) => s + it.quantity, 0)
   const total = items.reduce((s, it) => s + it.price * it.quantity, 0)
 
-  return { items, add, setQuantity, remove, clear, total, lineKeyOf }
+  return { items, add, setQuantity, remove, clear, count, total, lineKeyOf }
 }
 
 export { lineKeyOf }

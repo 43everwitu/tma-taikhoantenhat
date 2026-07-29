@@ -96,3 +96,55 @@ test('resolveBestForOrder chooses the larger discount between manual and global'
     restore();
   }
 });
+
+test('validateForOrder enforces per-user coupon limit', () => {
+  const db = makeDb();
+  const discount = db.prepare(`
+    INSERT INTO discount_codes (code, type, amount, per_user_limit)
+    VALUES ('OLDFRIEND10', 'percent', 10, 1)
+  `).run();
+  db.prepare(`
+    INSERT INTO orders (user_id, discount_code_id, status)
+    VALUES (?, ?, 'delivered')
+  `).run(1001, discount.lastInsertRowid);
+
+  const { service, restore } = loadServiceWithDb(db);
+  try {
+    const sameUser = service.validateForOrder('OLDFRIEND10', 200000, 1001);
+    const otherUser = service.validateForOrder('OLDFRIEND10', 200000, 1002);
+
+    assert.equal(sameUser.ok, false);
+    assert.match(sameUser.reason, /tối đa 1 lần/);
+    assert.equal(otherUser.ok, true);
+    assert.equal(otherUser.discount, 20000);
+  } finally {
+    restore();
+  }
+});
+
+test('validateForOrder ignores expired or cancelled orders for per-user limit', () => {
+  const db = makeDb();
+  const discount = db.prepare(`
+    INSERT INTO discount_codes (code, type, amount, per_user_limit)
+    VALUES ('TRYAGAIN', 'fixed', 50000, 1)
+  `).run();
+  db.prepare(`
+    INSERT INTO orders (user_id, discount_code_id, status)
+    VALUES (?, ?, 'expired'), (?, ?, 'cancelled')
+  `).run(
+    1001,
+    discount.lastInsertRowid,
+    1001,
+    discount.lastInsertRowid,
+  );
+
+  const { service, restore } = loadServiceWithDb(db);
+  try {
+    const result = service.validateForOrder('TRYAGAIN', 200000, 1001);
+
+    assert.equal(result.ok, true);
+    assert.equal(result.discount, 50000);
+  } finally {
+    restore();
+  }
+});

@@ -6,11 +6,12 @@ import { Icon } from './Icon'
 interface Props {
   children: ReactNode
   ariaLabel?: string
+  enableMouseDrag?: boolean
 }
 
 const DRAG_THRESHOLD_PX = 6
 
-export function HScroll({ children, ariaLabel }: Props) {
+export function HScroll({ children, ariaLabel, enableMouseDrag = true }: Props) {
   const trackRef = useRef<HTMLDivElement>(null)
   const dragRef = useRef({ active: false, startX: 0, scrollLeft: 0, moved: false, pointerId: -1 })
   const [atStart, setAtStart] = useState(true)
@@ -39,25 +40,6 @@ export function HScroll({ children, ariaLabel }: Props) {
     }
   }, [])
 
-  // Desktop: vertical wheel → horizontal scroll while hovering the rail.
-  useEffect(() => {
-    const el = trackRef.current
-    if (!el) return
-    const track = el
-
-    function onWheel(e: WheelEvent) {
-      if (track.scrollWidth <= track.clientWidth) return
-      // Respect native horizontal / shift+wheel.
-      if (Math.abs(e.deltaX) > Math.abs(e.deltaY)) return
-      if (e.shiftKey) return
-      e.preventDefault()
-      track.scrollLeft += e.deltaY
-    }
-
-    track.addEventListener('wheel', onWheel, { passive: false })
-    return () => track.removeEventListener('wheel', onWheel)
-  }, [])
-
   // Suppress accidental link clicks after a drag gesture.
   useEffect(() => {
     const el = trackRef.current
@@ -81,6 +63,7 @@ export function HScroll({ children, ariaLabel }: Props) {
   }
 
   function onPointerDown(e: React.PointerEvent<HTMLDivElement>) {
+    if (!enableMouseDrag || e.pointerType !== 'mouse') return
     if (e.button !== 0) return
     const el = trackRef.current
     if (!el || el.scrollWidth <= el.clientWidth) return
@@ -97,6 +80,7 @@ export function HScroll({ children, ariaLabel }: Props) {
   }
 
   function onPointerMove(e: React.PointerEvent<HTMLDivElement>) {
+    if (!enableMouseDrag) return
     const el = trackRef.current
     const d = dragRef.current
     if (!el || !d.active) return
@@ -107,6 +91,7 @@ export function HScroll({ children, ariaLabel }: Props) {
   }
 
   function endDrag(e: React.PointerEvent<HTMLDivElement>) {
+    if (!enableMouseDrag) return
     const el = trackRef.current
     const d = dragRef.current
     if (!el || !d.active) return
@@ -134,7 +119,7 @@ export function HScroll({ children, ariaLabel }: Props) {
       )}
       <div
         ref={trackRef}
-        className="miniapp-hscroll-track"
+        className={`miniapp-hscroll-track${enableMouseDrag ? ' miniapp-hscroll-track--mouse-drag' : ''}`}
         onPointerDown={onPointerDown}
         onPointerMove={onPointerMove}
         onPointerUp={endDrag}

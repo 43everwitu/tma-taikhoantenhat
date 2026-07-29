@@ -1,18 +1,29 @@
 const authService = require('../../services/authService');
+const userModerationService = require('../../services/userModerationService');
+
+function bannedResponse(res) {
+  return res.status(403).json({
+    success: false,
+    error: {
+      code: 'USER_BANNED',
+      message: 'Tài khoản của bạn đã bị hạn chế. Vui lòng liên hệ hỗ trợ.',
+    },
+  });
+}
 
 /**
  * Admin JWT authentication middleware.
  */
 function requireAdmin(req, res, next) {
   const token = extractToken(req);
-  if (!token) return res.status(401).json({ success: false, error: { code: 'UNAUTHORIZED', message: 'Token required' } });
+  if (!token) return res.status(401).json({ success: false, error: { code: 'UNAUTHORIZED', message: 'Vui lòng đăng nhập để tiếp tục.' } });
 
   authService.verifyAdminToken(token).then(payload => {
-    if (!payload) return res.status(401).json({ success: false, error: { code: 'INVALID_TOKEN', message: 'Invalid or expired token' } });
+    if (!payload) return res.status(401).json({ success: false, error: { code: 'INVALID_TOKEN', message: 'Phiên đăng nhập đã hết hạn. Vui lòng đăng nhập lại.' } });
     req.admin = payload;
     next();
   }).catch(() => {
-    res.status(401).json({ success: false, error: { code: 'INVALID_TOKEN', message: 'Invalid token' } });
+    res.status(401).json({ success: false, error: { code: 'INVALID_TOKEN', message: 'Phiên đăng nhập không hợp lệ. Vui lòng đăng nhập lại.' } });
   });
 }
 
@@ -21,14 +32,39 @@ function requireAdmin(req, res, next) {
  */
 function requireCustomer(req, res, next) {
   const token = extractToken(req);
-  if (!token) return res.status(401).json({ success: false, error: { code: 'UNAUTHORIZED', message: 'Token required' } });
+  if (!token) {
+    return res.status(401).json({
+      success: false,
+      error: {
+        code: 'UNAUTHORIZED',
+        message: 'Phiên Telegram chưa sẵn sàng. Vui lòng mở lại Mini App từ Telegram rồi thử lại.',
+      },
+    });
+  }
 
   authService.verifyCustomerToken(token).then(payload => {
-    if (!payload) return res.status(401).json({ success: false, error: { code: 'INVALID_TOKEN', message: 'Invalid or expired token' } });
+    if (!payload) {
+      return res.status(401).json({
+        success: false,
+        error: {
+          code: 'INVALID_TOKEN',
+          message: 'Phiên Telegram đã hết hạn. Vui lòng mở lại Mini App từ Telegram rồi thử lại.',
+        },
+      });
+    }
+    if (userModerationService.isBanned(payload.telegramId)) {
+      return bannedResponse(res);
+    }
     req.customer = payload;
     next();
   }).catch(() => {
-    res.status(401).json({ success: false, error: { code: 'INVALID_TOKEN', message: 'Invalid token' } });
+    res.status(401).json({
+      success: false,
+      error: {
+        code: 'INVALID_TOKEN',
+        message: 'Phiên Telegram không hợp lệ. Vui lòng mở lại Mini App từ Telegram rồi thử lại.',
+      },
+    });
   });
 }
 
@@ -40,7 +76,7 @@ function optionalCustomer(req, res, next) {
   if (!token) return next();
 
   authService.verifyCustomerToken(token).then(payload => {
-    if (payload) req.customer = payload;
+    if (payload && !userModerationService.isBanned(payload.telegramId)) req.customer = payload;
     next();
   }).catch(() => next());
 }

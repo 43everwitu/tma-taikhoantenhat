@@ -4,8 +4,53 @@ const rateLimit = require('express-rate-limit');
 const config = require('../config');
 const { requireAdmin, loadAdminPermissions } = require('./middleware/auth');
 
+const KNOWN_API_ERRORS = {
+  DUPLICATE_PENDING: {
+    status: 409,
+    message: 'Bạn đã có đơn chờ thanh toán cho sản phẩm này',
+  },
+  INSUFFICIENT_STOCK: {
+    status: 400,
+    message: 'Sản phẩm vừa hết hàng, vui lòng thử lại',
+  },
+  INSUFFICIENT_BALANCE: {
+    status: 400,
+    message: 'Số dư không đủ để thanh toán',
+  },
+};
+
+function normalizeApiError(err) {
+  if (err && typeof err === 'object' && err.body) {
+    return {
+      status: Number.isInteger(err.status) ? err.status : 500,
+      body: err.body,
+    };
+  }
+
+  const code = err instanceof Error ? err.message : 'INTERNAL';
+  const known = KNOWN_API_ERRORS[code];
+  if (known) {
+    return {
+      status: known.status,
+      body: { success: false, error: { code, message: known.message } },
+    };
+  }
+
+  return {
+    status: 500,
+    body: {
+      success: false,
+      error: { code: 'INTERNAL', message: 'Có lỗi xảy ra, vui lòng thử lại' },
+    },
+  };
+}
+
 function createApiRouter() {
   const router = Router();
+
+  router.get('/health', (req, res) => {
+    res.json({ status: 'ok', timestamp: new Date().toISOString() });
+  });
 
   // CORS. Build the allow-list: explicit localhost, the configured WEB_URL
   // (trailing slash stripped — browsers send Origin without one), and any
@@ -53,7 +98,21 @@ function createApiRouter() {
   // Admin routes
   router.use('/admin', adminLimiter, requireAdmin, loadAdminPermissions, require('./routes/admin'));
 
+  router.use((req, res) => {
+    res.status(404).json({
+      success: false,
+      error: { code: 'NOT_FOUND', message: 'API không tồn tại' },
+    });
+  });
+
+  router.use((err, req, res, next) => {
+    if (res.headersSent) return next(err);
+    const { status, body } = normalizeApiError(err);
+    if (status >= 500) console.error('[api]', err);
+    return res.status(status).json(body);
+  });
+
   return router;
 }
 
-module.exports = { createApiRouter };
+module.exports = { createApiRouter, normalizeApiError };

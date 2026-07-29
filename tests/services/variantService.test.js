@@ -20,7 +20,11 @@ function makeDb() {
       input_type TEXT DEFAULT 'text',
       created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
       updated_at DATETIME DEFAULT CURRENT_TIMESTAMP,
-      image_url TEXT
+      image_url TEXT,
+      input_fields_json TEXT,
+      is_backorder INTEGER DEFAULT 0,
+      default_duration_days INTEGER,
+      contact_only INTEGER
     );
     CREATE TABLE stock (
       id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -104,4 +108,15 @@ test('reorder sets sort_order in one transaction', () => {
   variantService.reorder(db, 1, [{ id: c.id, sortOrder: 0 }, { id: a.id, sortOrder: 1 }, { id: b.id, sortOrder: 2 }]);
   const names = variantService.listByProduct(db, 1).map(r => r.name);
   assert.deepEqual(names, ['C', 'A', 'B']);
+});
+
+test('contactOnly giữ được trạng thái kế thừa, liên hệ và bán trực tiếp', () => {
+  const db = makeDb();
+  const inherited = variantService.create(db, { productId: 1, name: 'Kế thừa', price: 100 });
+  const contact = variantService.create(db, { productId: 1, name: 'Liên hệ', price: 100, contactOnly: true });
+  const direct = variantService.create(db, { productId: 1, name: 'Bán trực tiếp', price: 100, contactOnly: false });
+
+  assert.equal(variantService.getById(db, inherited.id).contact_only, null);
+  assert.equal(variantService.getById(db, contact.id).contact_only, 1);
+  assert.equal(variantService.getById(db, direct.id).contact_only, 0);
 });

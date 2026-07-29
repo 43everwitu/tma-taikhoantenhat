@@ -7,20 +7,14 @@ import Link from 'next/link'
 import { ResponsiveTable, Column } from '@/components/ResponsiveTable'
 import { useHighlightId, useHighlightedRowRef } from '@/lib/useHighlightedRow'
 import { QuickAddKeysModal } from './QuickAddKeysModal'
+import { StockManagerModal } from './StockManagerModal'
 import { useToast } from '@/components/Toast'
 
-function VariantStockBadge({ productId }: { productId: string }) {
-  const { data } = useQuery({
-    queryKey: ['admin', 'variants', productId, 'count'],
-    queryFn: () => api.get<{ id: string; name: string; stock: number }[]>(`/admin/products/${productId}/variants`),
-    staleTime: 30000,
-  })
-  const variants = data?.data ?? []
-  if (variants.length === 0) return <span className="text-xs opacity-40">—</span>
-  const total = variants.reduce((s, v) => s + (v.stock || 0), 0)
+function VariantStockBadge({ count, stock }: { count?: number; stock?: number }) {
+  if (!count) return <span className="text-xs opacity-40">—</span>
   return (
-    <span className="text-xs px-2 py-0.5 rounded-full bg-purple-100 text-purple-700" title={variants.map(v => `${v.name}: ${v.stock}`).join(' · ')}>
-      {variants.length} biến thể · {total}
+    <span className="text-xs px-2 py-0.5 rounded-full bg-purple-100 text-purple-700">
+      {count} biến thể · {stock ?? 0}
     </span>
   )
 }
@@ -34,9 +28,13 @@ interface ProductStock {
   totalStock: number
   lowStockThreshold?: number | null
   effectiveLowStockThreshold?: number | null
+  variantCount?: number
+  variantStock?: number
+  slug?: string
+  variantNames?: string[]
 }
 
-const columns: Column<ProductStock>[] = [
+const baseColumns: Column<ProductStock>[] = [
   {
     header: 'ID',
     cell: (p) => (
@@ -69,7 +67,7 @@ const columns: Column<ProductStock>[] = [
   {
     header: 'Biến thể',
     className: 'text-center',
-    cell: (p) => <VariantStockBadge productId={p.id} />,
+    cell: (p) => <VariantStockBadge count={p.variantCount} stock={p.variantStock} />,
   },
   {
     header: 'Còn lại',
@@ -78,19 +76,6 @@ const columns: Column<ProductStock>[] = [
       <span className="clay-pill" style={{ background: 'var(--color-matcha-300)' }}>
         {p.stock ?? '-'}
       </span>
-    ),
-  },
-  {
-    header: 'Thao tác',
-    className: 'text-center',
-    hideOnCard: true,
-    cell: (p) => (
-      <Link
-        href={`/admin/stock/${p.id}`}
-        className="clay-btn clay-btn--ink text-xs py-1 px-3"
-      >
-        Xem kho
-      </Link>
     ),
   },
 ]
@@ -108,7 +93,8 @@ export default function StockIndexPage() {
   const [q, setQ] = useState('')
   const [statusFilter, setStatusFilter] = useState<'all' | 'in' | 'out' | 'low'>('all')
   const [sort, setSort] = useState<'default' | 'stock_asc' | 'stock_desc'>('default')
-  const [quickAddOpen, setQuickAddOpen] = useState(false)
+  const [quickAddProductId, setQuickAddProductId] = useState<string | null | undefined>(undefined)
+  const [viewingProductId, setViewingProductId] = useState<string | null>(null)
   const [expanded, setExpanded] = useState<string | null>(null)
 
   const notifyFollowersMutation = useMutation({
@@ -122,12 +108,20 @@ export default function StockIndexPage() {
 
   const cardActionsFor = (p: ProductStock) => (
     <div className="flex gap-2">
-      <Link
-        href={`/admin/stock/${p.id}`}
+      <button
+        type="button"
+        onClick={() => setViewingProductId(p.id)}
         className="clay-btn clay-btn--ink text-xs py-1 px-3"
       >
         Xem kho
-      </Link>
+      </button>
+      <button
+        type="button"
+        onClick={() => setQuickAddProductId(p.id)}
+        className="clay-btn clay-btn--lemon text-xs py-1 px-3"
+      >
+        Thêm key
+      </button>
       <button
         type="button"
         onClick={() => setExpanded(expanded === p.id ? null : p.id)}
@@ -146,7 +140,34 @@ export default function StockIndexPage() {
     </div>
   )
 
-  const products = data?.data ?? []
+  const products = useMemo(() => data?.data ?? [], [data?.data])
+
+  const columns: Column<ProductStock>[] = useMemo(() => [
+    ...baseColumns,
+    {
+      header: 'Thao tác',
+      className: 'text-center',
+      hideOnCard: true,
+      cell: (p) => (
+        <div className="flex gap-2 justify-center">
+          <button
+            type="button"
+            onClick={() => setViewingProductId(p.id)}
+            className="clay-btn clay-btn--ink text-xs py-1 px-3"
+          >
+            Xem kho
+          </button>
+          <button
+            type="button"
+            onClick={() => setQuickAddProductId(p.id)}
+            className="clay-btn clay-btn--lemon text-xs py-1 px-3"
+          >
+            Thêm key
+          </button>
+        </div>
+      ),
+    },
+  ], [])
 
   const filtered = useMemo(() => {
     const ql = q.trim().toLowerCase()
@@ -167,15 +188,20 @@ export default function StockIndexPage() {
 
   return (
     <div className="space-y-4">
-      <div className="flex items-center justify-between">
+      <div className="flex flex-wrap items-center justify-between gap-3">
         <h1 className="clay-display text-3xl">Kho</h1>
-        <button
-          type="button"
-          onClick={() => setQuickAddOpen(true)}
-          className="clay-btn clay-btn--lemon text-sm"
-        >
-          + Thêm key
-        </button>
+        <div className="flex flex-wrap items-center gap-2">
+          <Link href="/admin/stock/keys" className="clay-btn text-sm">
+            Tất cả Key
+          </Link>
+          <button
+            type="button"
+            onClick={() => setQuickAddProductId(null)}
+            className="clay-btn clay-btn--lemon text-sm"
+          >
+            + Thêm key
+          </button>
+        </div>
       </div>
 
       <div className="clay-input flex items-center gap-2">
@@ -229,8 +255,16 @@ export default function StockIndexPage() {
         <VariantBreakdownPanel productId={expanded} onClose={() => setExpanded(null)} />
       )}
 
-      {quickAddOpen && (
-        <QuickAddKeysModal products={products} onClose={() => setQuickAddOpen(false)} />
+      {quickAddProductId !== undefined && (
+        <QuickAddKeysModal
+          products={products}
+          initialProductId={quickAddProductId}
+          onClose={() => setQuickAddProductId(undefined)}
+        />
+      )}
+
+      {viewingProductId && (
+        <StockManagerModal productId={viewingProductId} onClose={() => setViewingProductId(null)} />
       )}
     </div>
   )

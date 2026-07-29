@@ -35,6 +35,7 @@ export interface Variant {
   inputFields?: VariantInputField[] | null
   imageUrl?: string
   isBackorder?: boolean
+  contactOnly?: boolean
 }
 
 interface Props {
@@ -46,12 +47,14 @@ interface Props {
 }
 
 function stockLabel(v: Variant) {
+  if (v.contactOnly) return 'Liên hệ'
   if (v.isBackorder) return '∞'
   if (v.stock <= 0) return 'Hết'
   return `Còn ${v.stock}`
 }
 
 function stockTone(v: Variant): 'in' | 'out' {
+  if (v.contactOnly) return 'in'
   if (v.isBackorder) return 'in'
   return v.stock <= 0 ? 'out' : 'in'
 }
@@ -114,7 +117,7 @@ export function VariantPicker({ variants, selectedId, onSelect, inputValues, onI
         {open && (
           <ul role="listbox" className="miniapp-variant-list" aria-label="Biến thể">
             {variants.map((v) => {
-              const out = v.stock <= 0 && !v.isBackorder
+              const out = v.stock <= 0 && !v.isBackorder && !v.contactOnly
               const isSelected = selectedId === v.id
               return (
                 <li key={v.id}>

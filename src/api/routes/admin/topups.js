@@ -99,7 +99,8 @@ router.post('/:id/manual-credit', (req, res) => {
     const bot = req.app.get('bot');
     if (bot) {
       const messageTemplateService = require('../../../services/messageTemplateService');
-      bot.telegram.sendMessage(topup.user_id,
+      const telegramApiClient = require('../../../services/telegramApiClient');
+      telegramApiClient.sendMessage(topup.user_id,
         messageTemplateService.render('topup_success', {
           amount: result.amount.toLocaleString('vi'),
           newBalance: result.newBalance.toLocaleString('vi'),

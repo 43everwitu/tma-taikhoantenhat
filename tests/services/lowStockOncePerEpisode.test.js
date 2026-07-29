@@ -18,6 +18,7 @@ function seedLowStockProduct() {
 }
 
 function cleanup({ productId, categoryId }) {
+  db.prepare("DELETE FROM low_stock_alert_states WHERE product_id = ?").run(productId);
   db.prepare("DELETE FROM stock WHERE product_id = ?").run(productId);
   db.prepare("DELETE FROM products WHERE id = ?").run(productId);
   db.prepare("DELETE FROM categories WHERE id = ?").run(categoryId);

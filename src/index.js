@@ -140,11 +140,14 @@ async function start() {
   app.locals.notificationService = notificationService;
   notificationService.startLowStockMonitor();
 
-  // Sweep stale expired orders (>24h) on every boot so the table doesn't grow
-  // unbounded between deploys. Cheap delete on an indexed status column.
+  // Sweep stale expired orders and old trash on every boot so the table
+  // doesn't grow unbounded between deploys. Cheap deletes on indexed columns.
   try {
-    const n = require('./services/orderService').cleanupExpiredOrders(24);
-    if (n > 0) console.log(`🧹 Startup: cleaned ${n} expired orders`);
+    const orderService = require('./services/orderService');
+    const expired = orderService.cleanupExpiredOrders(24);
+    const deleted = orderService.cleanupDeletedOrders(30);
+    if (expired > 0) console.log(`🧹 Startup: cleaned ${expired} expired orders`);
+    if (deleted > 0) console.log(`🧹 Startup: purged ${deleted} deleted orders`);
   } catch (e) { console.error('Startup cleanup error:', e.message); }
 
   // Initialize payment poller singleton (so bot handlers can access it)
@@ -152,11 +155,12 @@ async function start() {
     getPaymentPoller();
     console.log(`💳 Auto-payment enabled (poll interval: ${config.PAYMENT_POLL_INTERVAL}ms)`);
 
-    // Check for pending orders on startup — wake poller if any exist
+    // Check for pending/recoverable orders on startup — wake poller if any exist
     const orderService = require('./services/orderService');
     const pending = orderService.getActivePending();
-    if (pending.length > 0) {
-      console.log(`💳 ${pending.length} pending orders found, starting payment poller...`);
+    const recentlyExpired = orderService.getRecentlyExpired(24);
+    if (pending.length + recentlyExpired.length > 0) {
+      console.log(`💳 ${pending.length} pending + ${recentlyExpired.length} recoverable expired orders found, starting payment poller...`);
       paymentPoller.ensureRunning();
     }
   } else {

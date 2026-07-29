@@ -1,7 +1,8 @@
 'use client'
 
 import Link from 'next/link'
-import { useEffect, useState } from 'react'
+import { useRouter } from 'next/navigation'
+import { useEffect, useState, type MouseEvent } from 'react'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { apiFetch } from '@/lib/miniappApi'
 import { MiniAppShell } from './components/MiniAppShell'
@@ -13,9 +14,26 @@ import { AnnouncementCarousel } from './components/AnnouncementCarousel'
 import { Icon } from './components/Icon'
 import { DiscountCodeMeta, type DiscountMetaMode } from './components/DiscountCodeMeta'
 import { getRecentlyViewedIds } from '@/lib/recentlyViewed'
+import { getVisibleRenewalNotifications, removeNotificationById } from '@/lib/renewalNotifications'
+import { acknowledgeRenewalNotification } from '@/lib/renewalNotificationActions'
 import { t } from '@/i18n/vi'
 
 interface Announcement { id: string; title: string; body: string; pinned: boolean; createdAt: string }
+interface RenewalNotificationData {
+  renewUrl?: string
+  orderUrl?: string
+  expiryDate?: string
+  remainingDays?: number
+}
+interface CustomerNotification {
+  id: number
+  type: string
+  title: string
+  body: string
+  data: string | null
+  is_read: number
+  created_at: string
+}
 interface Category { id: number; name: string; slug: string; emoji: string }
 interface GlobalDiscount {
   code: string
@@ -35,6 +53,7 @@ interface HomePayload {
 
 export default function MiniAppHome() {
   const queryClient = useQueryClient()
+  const router = useRouter()
   const [recentIds] = useState<string[]>(() => getRecentlyViewedIds())
   const [q, setQ] = useState('')
   const [copiedGlobalCode, setCopiedGlobalCode] = useState(false)
@@ -49,7 +68,19 @@ export default function MiniAppHome() {
     queryFn: () => apiFetch<ProductSummary[]>(`/products?ids=${recentIds.join(',')}`),
     enabled: recentIds.length > 0,
   })
+  const notifications = useQuery({
+    queryKey: ['notifications', 'renewals'],
+    queryFn: async () => {
+      try {
+        return await apiFetch<CustomerNotification[]>('/notifications/my')
+      } catch {
+        return []
+      }
+    },
+    staleTime: 60_000,
+  })
   const ann = home.data?.announcements ?? []
+  const renewalNotifications = getVisibleRenewalNotifications(notifications.data ?? []) as CustomerNotification[]
   const cats = home.data?.categories ?? []
   const featured = home.data?.featured ?? []
   const newest = home.data?.newest ?? []
@@ -73,6 +104,29 @@ export default function MiniAppHome() {
     } catch {
       // No-op: clipboard can fail on unsupported clients.
     }
+  }
+
+  async function handleRenewalNotificationAction(
+    item: CustomerNotification,
+    url: string,
+    event: MouseEvent<HTMLAnchorElement>,
+  ) {
+    event.preventDefault()
+    await acknowledgeRenewalNotification({
+      notificationId: item.id,
+      url,
+      removeFromCache: (notificationId: number) => {
+        queryClient.setQueryData<CustomerNotification[]>(['notifications', 'renewals'], (old) =>
+          removeNotificationById(old ?? [], notificationId),
+        )
+      },
+      markRead: (notificationId: number) => apiFetch<{ id: number; isRead: boolean }>(
+        `/notifications/${notificationId}/read`,
+        { method: 'PATCH' },
+        { auth: 'required' },
+      ),
+      navigate: (targetUrl: string) => router.push(targetUrl),
+    })
   }
 
   return (
@@ -120,6 +174,22 @@ export default function MiniAppHome() {
       <div className="mb-3 mt-2">
         <SearchBox value={q} onChange={setQ} placeholder="Tìm sản phẩm…" />
       </div>
+
+      {renewalNotifications.length > 0 && (
+        <section className="miniapp-section miniapp-section--compact">
+          <div className="miniapp-section-title">
+            <span className="inline-flex items-center gap-1.5">
+              <Icon name="clock" size={16} />
+              Gia hạn
+            </span>
+          </div>
+          <div className="space-y-2">
+            {renewalNotifications.map((item) => (
+              <RenewalNotificationCard key={item.id} item={item} onAction={handleRenewalNotificationAction} />
+            ))}
+          </div>
+        </section>
+      )}
 
       {ann.length > 0 && (
         <section className="miniapp-section miniapp-section--compact miniapp-home-notifications">
@@ -175,5 +245,59 @@ export default function MiniAppHome() {
         </section>
       )}
     </MiniAppShell>
+  )
+}
+
+function parseNotificationData(raw: string | null): RenewalNotificationData {
+  if (!raw) return {}
+  try {
+    return JSON.parse(raw) as RenewalNotificationData
+  } catch {
+    return {}
+  }
+}
+
+function RenewalNotificationCard({
+  item,
+  onAction,
+}: {
+  item: CustomerNotification
+  onAction: (item: CustomerNotification, url: string, event: MouseEvent<HTMLAnchorElement>) => void
+}) {
+  const data = parseNotificationData(item.data)
+  return (
+    <article className="rounded-2xl p-3.5" style={{ background: 'var(--brand-gold-soft)', color: 'var(--brand-ink)', border: '1px solid color-mix(in srgb, var(--brand-gold-deep) 25%, transparent)' }}>
+      <div className="flex items-start justify-between gap-3">
+        <div>
+          <p className="text-sm font-semibold leading-snug">{item.title}</p>
+          <p className="text-xs opacity-75 mt-1 leading-relaxed">{item.body}</p>
+        </div>
+        {typeof data.remainingDays === 'number' && (
+          <span className="miniapp-status miniapp-status--key-soon whitespace-nowrap">
+            Còn {Math.max(0, data.remainingDays)} ngày
+          </span>
+        )}
+      </div>
+      <div className="grid grid-cols-2 gap-2 mt-3">
+        {data.renewUrl && (
+          <Link
+            href={data.renewUrl}
+            className="miniapp-btn miniapp-btn--ink justify-center text-sm"
+            onClick={(event) => onAction(item, data.renewUrl!, event)}
+          >
+            Gia hạn ngay
+          </Link>
+        )}
+        {data.orderUrl && (
+          <Link
+            href={data.orderUrl}
+            className="miniapp-btn miniapp-btn--ghost justify-center text-sm"
+            onClick={(event) => onAction(item, data.orderUrl!, event)}
+          >
+            Xem đơn
+          </Link>
+        )}
+      </div>
+    </article>
   )
 }

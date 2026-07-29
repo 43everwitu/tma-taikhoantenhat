@@ -7,26 +7,19 @@ const auditService = require('../../../services/auditService');
 const { validate } = require('../../middleware/validate');
 const { requirePermission } = require('../../middleware/auth');
 const { deliverOrder } = require('../../../services/orderFulfillmentService');
+const { getKeyLifecycleForOrder } = require('../../../services/orderExpiryService');
+const telegramApiClient = require('../../../services/telegramApiClient');
 
 const router = Router();
 
 function shapeOrder(r) {
-  // Compute key expiry: earliest stock.sold_at+duration_days for this order's
-  // (user, product) pair. Cheap subquery per row; could be batched if list
-  // size grows large.
   let keyExpiresAt = null;
   let keyExpired = false;
   if (r.status === 'delivered') {
-    const exp = db.prepare(`
-      SELECT MIN(DATE(sold_at, '+' || duration_days || ' days')) AS d
-      FROM stock
-      WHERE sold_to = ? AND product_id = ? AND is_sold = 1
-        AND duration_days IS NOT NULL
-    `).get(r.user_id, r.product_id);
-    if (exp?.d) {
-      keyExpiresAt = exp.d;
-      const today = new Date().toISOString().slice(0, 10);
-      keyExpired = keyExpiresAt < today;
+    const lifecycle = getKeyLifecycleForOrder(r);
+    if (lifecycle) {
+      keyExpiresAt = lifecycle.expiryDate;
+      keyExpired = lifecycle.status === 'expired';
     }
   }
   return {
@@ -46,6 +39,8 @@ function shapeOrder(r) {
     paidAt: r.paid_at,
     deliveredAt: r.delivered_at,
     expiresAt: r.expires_at,
+    deletedAt: r.deleted_at,
+    deletedBy: r.deleted_by,
     keyExpiresAt,
     keyExpired,
     hasCustomerInput: !!r.input_value,
@@ -250,12 +245,13 @@ function getRenewalLogs(orderId, stockItems) {
 // GET /admin/orders?status=pending&page=1&limit=20&from=&to=&userId=
 router.get('/', requirePermission('orders.read'), (req, res) => {
   const status = req.query.status;
+  const view = req.query.view === 'deleted' ? 'deleted' : 'active';
   const page = parseInt(req.query.page) || 1;
   const limit = parseInt(req.query.limit) || 20;
   const offset = (page - 1) * limit;
   const { from, to, userId } = req.query;
 
-  let where = '1=1';
+  let where = view === 'deleted' ? 'o.deleted_at IS NOT NULL' : 'o.deleted_at IS NULL';
   const params = [];
 
   if (status === 'expired_key') {
@@ -263,6 +259,20 @@ router.get('/', requirePermission('orders.read'), (req, res) => {
       SELECT 1 FROM stock s
       WHERE s.sold_to = o.user_id AND s.product_id = o.product_id AND s.is_sold = 1
         AND s.duration_days IS NOT NULL
+        AND (
+          (o.variant_id IS NULL AND s.variant_id IS NULL)
+          OR s.variant_id = o.variant_id
+        )
+        AND (
+          o.delivered_keys_json IS NULL
+          OR json_valid(o.delivered_keys_json) = 0
+          OR json_array_length(o.delivered_keys_json) = 0
+          OR EXISTS (
+            SELECT 1
+            FROM json_each(o.delivered_keys_json) delivered_key
+            WHERE CAST(delivered_key.value AS TEXT) = s.data
+          )
+        )
         AND DATE(s.sold_at, '+' || s.duration_days || ' days') < DATE('now')
     )`;
   } else if (status) {
@@ -332,8 +342,34 @@ router.get('/', requirePermission('orders.read'), (req, res) => {
   });
 });
 
+const bulkOrderIdsSchema = z.object({
+  ids: z.array(z.union([z.string(), z.number()])).min(1).max(500),
+});
+
 const orderNoteSchema = z.object({
   content: z.string().transform(value => value.trim()).pipe(z.string().min(1).max(2000)),
+});
+
+// POST /admin/orders/bulk-delete — soft-delete orders for 30-day recovery
+router.post('/bulk-delete', validate(bulkOrderIdsSchema), (req, res) => {
+  const result = orderService.softDeleteOrders(req.validated.ids, req.admin.adminId);
+  auditService.log(req.admin.adminId, 'order.bulk_delete', 'order', null, {
+    ids: req.validated.ids.map(String),
+    requested: result.requested,
+    affected: result.affected,
+  }, req.ip);
+  res.json({ success: true, data: result });
+});
+
+// POST /admin/orders/bulk-restore — restore soft-deleted orders within 30 days
+router.post('/bulk-restore', validate(bulkOrderIdsSchema), (req, res) => {
+  const result = orderService.restoreDeletedOrders(req.validated.ids);
+  auditService.log(req.admin.adminId, 'order.bulk_restore', 'order', null, {
+    ids: req.validated.ids.map(String),
+    requested: result.requested,
+    affected: result.affected,
+  }, req.ip);
+  res.json({ success: true, data: result });
 });
 
 // POST /admin/orders/:id/notes
@@ -387,7 +423,8 @@ router.delete('/:id/notes/:noteId', requirePermission('orders.write'), (req, res
 // GET /admin/orders/export?status=&from=&to=
 router.get('/export', requirePermission('orders.read'), (req, res) => {
   const { status, from, to } = req.query;
-  let where = '1=1';
+  const view = req.query.view === 'deleted' ? 'deleted' : 'active';
+  let where = view === 'deleted' ? 'o.deleted_at IS NOT NULL' : 'o.deleted_at IS NULL';
   const params = [];
 
   if (status) { where += ' AND o.status = ?'; params.push(status); }
@@ -480,9 +517,36 @@ router.post('/:id/confirm', async (req, res) => {
   const id = parseInt(req.params.id);
   const bot = req.app.get('bot');
   if (!bot) return res.status(500).json({ success: false, error: { code: 'BOT_UNAVAILABLE' } });
+  const order = orderService.getById(id);
+  if (!order) return res.status(404).json({ success: false, error: { code: 'NOT_FOUND', message: 'Đơn hàng không tồn tại' } });
+  if (order.status === 'expired') {
+    orderService.markRecoveredPaid(id);
+  }
   const result = await deliverOrder(bot, id);
   if (!result.success) return res.status(400).json({ success: false, error: { code: 'DELIVERY_FAILED', message: result.error } });
   auditService.log(req.admin.adminId, 'order.confirm', 'order', id, null, req.ip);
+  res.json({ success: true, data: result.order });
+});
+
+// POST /admin/orders/:id/restore — khôi phục đơn đã hủy về trạng thái đang xử lý
+router.post('/:id/restore', requirePermission('orders.write'), validate(z.object({
+  status: z.literal('paid'),
+})), (req, res) => {
+  const orderId = parseInt(req.params.id);
+  const result = orderService.restoreCancelledToPaid(orderId);
+
+  if (!result.success) {
+    const status = result.code === 'NOT_FOUND' ? 404 : 409;
+    return res.status(status).json({
+      success: false,
+      error: { code: result.code, message: result.error },
+    });
+  }
+
+  auditService.log(req.admin.adminId, 'order.restore_status', 'order', orderId, {
+    from: 'cancelled',
+    to: req.validated.status,
+  }, req.ip);
   res.json({ success: true, data: result.order });
 });
 
@@ -495,11 +559,22 @@ router.post('/:id/manual-deliver', validate(z.object({
   const order = orderService.getById(orderId);
 
   if (!order) return res.status(404).json({ success: false, error: { code: 'NOT_FOUND', message: 'Đơn hàng không tồn tại' } });
-  if (order.status !== 'pending' && order.status !== 'paid') {
+  if (order.status !== 'pending' && order.status !== 'paid' && order.status !== 'expired' && order.status !== 'cancelled') {
     return res.status(400).json({ success: false, error: { code: 'INVALID_STATUS', message: 'Đơn đã được xử lý' } });
   }
 
-  orderService.markPaid(orderId);
+  if (order.status === 'expired') orderService.markRecoveredPaid(orderId);
+  else if (order.status === 'cancelled') {
+    const restored = orderService.restoreCancelledToPaid(orderId);
+    if (!restored.success) {
+      return res.status(409).json({
+        success: false,
+        error: { code: restored.code, message: restored.error },
+      });
+    }
+  } else if (order.status === 'pending') {
+    orderService.markPaid(orderId);
+  }
   db.prepare(`UPDATE orders SET status = 'delivered', delivered_at = CURRENT_TIMESTAMP, delivered_keys_json = ? WHERE id = ?`)
     .run(JSON.stringify(req.validated.accounts), orderId);
 
@@ -581,7 +656,7 @@ router.post('/:id/resend-keys', async (req, res) => {
     `📦 ${order.product_name}\n📋 SL: ${order.quantity}\n\n` +
     `🔑 Tài khoản:\n${accountList}`;
   try {
-    await bot.telegram.sendMessage(order.user_id, message, { parse_mode: 'HTML' });
+    await telegramApiClient.sendMessage(order.user_id, message, { parse_mode: 'HTML' });
   } catch (err) {
     return res.status(502).json({ success: false, error: { code: 'TELEGRAM_FAILED', message: err.message } });
   }

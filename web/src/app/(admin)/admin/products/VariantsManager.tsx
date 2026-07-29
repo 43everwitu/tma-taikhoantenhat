@@ -31,6 +31,7 @@ interface Variant {
   inputFields: InputField[] | null
   isBackorder: boolean
   defaultDurationDays: number | null
+  contactOnly: boolean | null
   stock: number
   imageUrl: string | null
 }
@@ -45,7 +46,13 @@ const INPUT_TYPES = [
   { value: 'textarea', label: 'Textarea' },
 ]
 
-export function VariantsManager({ productId }: { productId: string | null }) {
+export function VariantsManager({
+  productId,
+  productContactOnly = false,
+}: {
+  productId: string | null
+  productContactOnly?: boolean
+}) {
   const qc = useQueryClient()
   const t = useToast()
   const { data, isLoading } = useQuery({
@@ -242,6 +249,7 @@ export function VariantsManager({ productId }: { productId: string | null }) {
                 selected={selectedIds.has(v.id)}
                 onToggle={() => toggleOne(v.id)}
                 onEdit={() => setEditing(v)}
+                productContactOnly={productContactOnly}
                 onDelete={() => {
                   if (confirm(`Xoá vĩnh viễn biến thể "${v.name}"? Không thể hoàn tác.`)) deleteMut.mutate(v.id)
                 }}
@@ -255,6 +263,7 @@ export function VariantsManager({ productId }: { productId: string | null }) {
         <VariantEditModal
           productId={productId}
           variant={editing === 'new' ? null : editing}
+          productContactOnly={productContactOnly}
           onClose={() => setEditing(null)}
           onSaved={() => { qc.invalidateQueries({ queryKey: ['admin', 'variants', productId] }); qc.invalidateQueries({ queryKey: ['admin', 'variants', productId, 'panel'] }); setEditing(null) }}
         />
@@ -294,9 +303,10 @@ export function VariantsManager({ productId }: { productId: string | null }) {
   )
 }
 
-function VariantEditModal({ productId, variant, onClose, onSaved }: {
+function VariantEditModal({ productId, variant, productContactOnly, onClose, onSaved }: {
   productId: string
   variant: Variant | null
+  productContactOnly: boolean
   onClose: () => void
   onSaved: () => void
 }) {
@@ -319,6 +329,7 @@ function VariantEditModal({ productId, variant, onClose, onSaved }: {
     imageUrl: variant?.imageUrl ?? '',
     isBackorder: variant?.isBackorder ?? false,
     defaultDurationDays: variant?.defaultDurationDays ?? '',
+    contactOnly: variant?.contactOnly ?? null,
   })
   const [inputFields, setInputFields] = useState<InputField[]>(initialFields)
   const [err, setErr] = useState<string | null>(null)
@@ -344,6 +355,7 @@ function VariantEditModal({ productId, variant, onClose, onSaved }: {
         imageUrl: form.imageUrl || null,
         isBackorder: form.isBackorder,
         defaultDurationDays: form.defaultDurationDays === '' ? null : Number(form.defaultDurationDays),
+        contactOnly: form.contactOnly,
         ...(variant ? { isActive: form.isActive } : {}),
       }
       if (variant) return api.put(`/admin/products/${productId}/variants/${variant.id}`, payload)
@@ -439,6 +451,27 @@ function VariantEditModal({ productId, variant, onClose, onSaved }: {
           </span>
         </label>
 
+        <label className="block text-sm">
+          <span className="text-xs opacity-70 mb-1 inline-block">Cách bán</span>
+          <select
+            value={form.contactOnly == null ? 'inherit' : form.contactOnly ? 'contact' : 'direct'}
+            onChange={(e) => {
+              const value = e.target.value
+              setForm({ ...form, contactOnly: value === 'inherit' ? null : value === 'contact' })
+            }}
+            className="clay-input w-full text-sm"
+          >
+            <option value="inherit">
+              Theo sản phẩm ({productContactOnly ? 'Chỉ liên hệ' : 'Bán trực tiếp'})
+            </option>
+            <option value="contact">Chỉ liên hệ</option>
+            <option value="direct">Bán trực tiếp</option>
+          </select>
+          <span className="block text-xs opacity-60 mt-1">
+            Mặc định kế thừa lựa chọn “Chỉ liên hệ” của sản phẩm.
+          </span>
+        </label>
+
         {form.requiresInput && (
           <div className="pl-5 space-y-3 border-l-2 border-yellow-200">
             {inputFields.length === 0 && (
@@ -531,9 +564,10 @@ function VariantEditModal({ productId, variant, onClose, onSaved }: {
   )
 }
 
-function SortableVariantRow({ v, selected, onToggle, onEdit, onDelete }: {
+function SortableVariantRow({ v, selected, productContactOnly, onToggle, onEdit, onDelete }: {
   v: Variant
   selected: boolean
+  productContactOnly: boolean
   onToggle: () => void
   onEdit: () => void
   onDelete: () => void
@@ -575,6 +609,11 @@ function SortableVariantRow({ v, selected, onToggle, onEdit, onDelete }: {
           {v.isBackorder && (
             <span className="ml-2 text-[10px] uppercase tracking-wide bg-blue-500 text-white px-1.5 py-0.5 rounded">
               Đặt trước
+            </span>
+          )}
+          {(v.contactOnly ?? productContactOnly) && (
+            <span className="ml-2 text-[10px] uppercase tracking-wide bg-emerald-600 text-white px-1.5 py-0.5 rounded">
+              Liên hệ
             </span>
           )}
         </p>

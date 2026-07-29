@@ -7,6 +7,7 @@ import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { useCart } from '@/lib/cart'
 import { apiFetch } from '@/lib/miniappApi'
 import { formatCartInputLines } from '@/lib/formatCartInput'
+import { getBackorderCheckoutMessage } from '@/lib/backorderWaitMessage'
 import { MiniAppShell } from '../components/MiniAppShell'
 import { Icon } from '../components/Icon'
 import { formatPrice } from '@/lib/utils'
@@ -77,7 +78,7 @@ export default function CheckoutPage() {
       const resp = await apiFetch<{ discount: number; total: number; code: string | null; source?: 'manual' | 'global' | null }>('/discounts/preview', {
         method: 'POST',
         body: JSON.stringify({ code: discountCode.trim(), subtotal: cart.total }),
-      })
+      }, { auth: 'required' })
       setApplied(resp.code ? { code: resp.code, discount: resp.discount, source: resp.source } : null)
       setApplyMsg(`✅ Áp dụng ${resp.code}: giảm ${resp.discount.toLocaleString('vi-VN')}đ`)
     } catch (e) {
@@ -120,7 +121,7 @@ export default function CheckoutPage() {
       const responses = await apiFetch<CreateOrderResp[]>('/orders/batch', {
         method: 'POST',
         body: JSON.stringify({ items: items.map((x) => x.body) }),
-      })
+      }, { auth: 'required' })
       let lastOrderId: number | null = null
       responses.forEach((resp, index) => {
         const it = items[index].item
@@ -136,7 +137,9 @@ export default function CheckoutPage() {
           accountName: resp.payment.accountName,
           expiresAt: resp.order.expiresAt,
           productName: it.name,
+          variantName: it.variantName ?? null,
           quantity: it.quantity,
+          isBackorder: !!it.isBackorder,
           discountCode: resp.payment.discountCode,
           discountAmount: resp.payment.discountAmount ?? 0,
         })
@@ -162,6 +165,8 @@ export default function CheckoutPage() {
   const globalAutoActive = !!autoGlobal && !applied
 
   const empty = cart.items.length === 0
+  const hasBackorderItems = cart.items.some((it) => it.isBackorder)
+  const backorderCheckoutMessage = hasBackorderItems ? getBackorderCheckoutMessage() : ''
 
   return (
     <MiniAppShell title={t.checkout.title} hasBottombar={!empty}>
@@ -243,6 +248,13 @@ export default function CheckoutPage() {
             </div>
           )}
 
+          {hasBackorderItems && (
+            <div className="rounded-2xl p-3 mb-3 text-sm" style={{ background: '#e0f2fe', color: '#075985' }}>
+              <p className="font-semibold mb-1">Đơn đặt trước</p>
+              <p className="opacity-85 leading-relaxed">{backorderCheckoutMessage}</p>
+            </div>
+          )}
+
           {(!globalAutoActive || showManualDiscount) && !applied && (
             <div className="rounded-2xl p-3 mb-3" style={{ background: 'var(--tg-bg-2)' }}>
               <p className="text-xs font-medium mb-2">{globalAutoActive ? 'Mã giảm giá khác' : 'Mã giảm giá'}</p>
@@ -275,7 +287,10 @@ export default function CheckoutPage() {
 
           <div className="rounded-2xl p-3 mb-4 text-sm" style={{ background: 'var(--brand-gold-soft)', color: 'var(--brand-ink)' }}>
             <p className="font-medium mb-1">💡 Thanh toán bằng VietQR</p>
-            <p className="opacity-80 leading-relaxed">Quét mã QR ở trang sau, chuyển đúng số tiền và nội dung để hệ thống tự động giao key.</p>
+            <p className="opacity-80 leading-relaxed">
+              Quét mã QR ở trang sau, chuyển đúng số tiền và nội dung
+              {hasBackorderItems ? ' để hệ thống ghi nhận thanh toán.' : ' để hệ thống tự động giao key.'}
+            </p>
           </div>
 
           {err && (

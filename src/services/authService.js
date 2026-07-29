@@ -4,7 +4,6 @@ const config = require('../config');
 const twofaPolicy = require('./twofaPolicy');
 
 const SALT_ROUNDS = 12;
-const ADMIN_TOKEN_EXPIRY = '24h';
 const CHALLENGE_TOKEN_EXPIRY = '5m';
 const ENROLL_TOKEN_EXPIRY = '15m';
 const CUSTOMER_TOKEN_EXPIRY = '30d';
@@ -113,7 +112,7 @@ const authService = {
     db.prepare('UPDATE admins SET last_login_at = CURRENT_TIMESTAMP WHERE id = ?').run(admin.id);
     const token = await sign(
       { adminId: admin.id, role: admin.role, username: admin.username },
-      ADMIN_TOKEN_EXPIRY,
+      config.ADMIN_TOKEN_EXPIRY,
     );
     return {
       ok: true,
@@ -191,7 +190,7 @@ const authService = {
     })
       .setProtectedHeader({ alg: 'HS256' })
       .setIssuedAt()
-      .setExpirationTime(ADMIN_TOKEN_EXPIRY)
+      .setExpirationTime(config.ADMIN_TOKEN_EXPIRY)
       .sign(getSecretKey());
 
     return {
@@ -221,7 +220,7 @@ const authService = {
     })
       .setProtectedHeader({ alg: 'HS256' })
       .setIssuedAt()
-      .setExpirationTime(ADMIN_TOKEN_EXPIRY)
+      .setExpirationTime(config.ADMIN_TOKEN_EXPIRY)
       .sign(getSecretKey());
   },
 

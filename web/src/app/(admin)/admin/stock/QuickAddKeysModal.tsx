@@ -1,14 +1,47 @@
 'use client'
 
-import { useState, useEffect } from 'react'
+import { useState, useMemo } from 'react'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { api } from '@/lib/api'
 import { useToast } from '@/components/Toast'
 
-interface Product { id: string; name: string }
+export interface Product {
+  id: string
+  name: string
+  category?: string
+  slug?: string
+  variantNames?: string[]
+}
 
-export function QuickAddKeysModal({ products, onClose }: { products: Product[]; onClose: () => void }) {
-  const [productId, setProductId] = useState<string>(products[0]?.id ?? '')
+interface QuickAddKeysModalProps {
+  products: Product[]
+  initialProductId?: string | null
+  onClose: () => void
+}
+
+function getInitialProductId(products: Product[], initialProductId?: string | null) {
+  if (initialProductId === undefined) return products[0]?.id ?? ''
+  return initialProductId ?? ''
+}
+
+export function productMatchesKeySearch(product: Product, query: string) {
+  const normalizedQuery = query.trim().toLowerCase()
+  if (!normalizedQuery) return true
+
+  return [
+    product.name,
+    product.category,
+    product.id,
+    product.slug,
+    ...(product.variantNames ?? []),
+  ].some((value) => value?.toLowerCase().includes(normalizedQuery))
+}
+
+export function QuickAddKeysModal({ products, initialProductId, onClose }: QuickAddKeysModalProps) {
+  const initialSelectedProductId = getInitialProductId(products, initialProductId)
+  const initialProduct = products.find((p) => p.id === initialSelectedProductId)
+  const [productId, setProductId] = useState<string>(initialSelectedProductId)
+  const [search, setSearch] = useState<string>(initialProduct?.name ?? '')
   const [variantId, setVariantId] = useState<string>('')
   const [durationDays, setDurationDays] = useState<string>('')
   const [notifyFollowers, setNotifyFollowers] = useState(false)
@@ -24,24 +57,27 @@ export function QuickAddKeysModal({ products, onClose }: { products: Product[]; 
   })
   const variants = variantsQuery.data?.data ?? []
   const hasVariants = variants.length > 0
-
-  useEffect(() => {
-    if (hasVariants && !variantId) setVariantId(variants[0].id)
-  }, [hasVariants, variantId, variants])
+  const selectedVariantId = variantId || (hasVariants ? variants[0].id : '')
+  const selectedProduct = products.find((p) => p.id === productId) ?? null
+  const filteredProducts = useMemo(
+    () => products.filter((p) => productMatchesKeySearch(p, search)).slice(0, 8),
+    [products, search],
+  )
 
   const mutation = useMutation({
     mutationFn: async () => {
       const items = text.split('\n').map((s) => s.trim()).filter(Boolean)
       if (items.length === 0) throw new Error('Chưa nhập key nào')
       if (!productId) throw new Error('Chưa chọn sản phẩm')
-      if (hasVariants && !variantId) throw new Error('Sản phẩm có biến thể — phải chọn biến thể')
+      if (hasVariants && !selectedVariantId) throw new Error('Sản phẩm có biến thể — phải chọn biến thể')
       const payload: { items: string[]; variantId?: number; durationDays?: number; notifyFollowers?: boolean } = { items, notifyFollowers }
-      if (variantId) payload.variantId = Number(variantId)
+      if (selectedVariantId) payload.variantId = Number(selectedVariantId)
       if (durationDays && Number(durationDays) > 0) payload.durationDays = Number(durationDays)
       return api.post(`/admin/stock/${productId}`, payload)
     },
     onSuccess: (res) => {
       qc.invalidateQueries({ queryKey: ['admin', 'products'] })
+      qc.invalidateQueries({ queryKey: ['admin', 'stock'] })
       qc.invalidateQueries({ queryKey: ['admin', 'variants', productId] })
       qc.invalidateQueries({ queryKey: ['admin', 'variants', productId, 'panel'] })
       const added = (res?.data as { added?: number } | undefined)?.added ?? 0
@@ -63,18 +99,44 @@ export function QuickAddKeysModal({ products, onClose }: { products: Product[]; 
           <button onClick={onClose} className="opacity-60 text-xl leading-none">×</button>
         </div>
 
-        <label className="block text-sm">
+        <div className="block text-sm">
           <span className="text-xs text-clay-charcoal mb-1 inline-block">Sản phẩm</span>
-          <select
-            value={productId}
-            onChange={(e) => { setProductId(e.target.value); setVariantId('') }}
+          <input
+            type="search"
+            value={search}
+            onChange={(e) => setSearch(e.target.value)}
+            placeholder="Tìm theo tên, danh mục, ID, slug, biến thể"
             className="clay-input w-full text-sm"
-          >
-            {products.map((p) => (
-              <option key={p.id} value={p.id}>{p.name}</option>
-            ))}
-          </select>
-        </label>
+          />
+          <div className="mt-2 rounded-xl border border-clay-border bg-white overflow-hidden">
+            {filteredProducts.length > 0 ? (
+              <div className="max-h-56 overflow-y-auto divide-y divide-clay-border">
+                {filteredProducts.map((p) => (
+                  <button
+                    key={p.id}
+                    type="button"
+                    onClick={() => {
+                      setProductId(p.id)
+                      setVariantId('')
+                      setSearch(p.name)
+                    }}
+                    className={`w-full text-left px-3 py-2 text-sm hover:bg-clay-cream/60 ${productId === p.id ? 'bg-clay-lemon/25' : ''}`}
+                  >
+                    <span className="font-medium text-clay-charcoal">{p.name}</span>
+                    <span className="mt-0.5 block text-[11px] text-clay-charcoal/60">
+                      {[p.category, p.slug, p.id].filter(Boolean).join(' · ')}
+                    </span>
+                  </button>
+                ))}
+              </div>
+            ) : (
+              <p className="px-3 py-2 text-xs text-clay-charcoal/60">Không tìm thấy sản phẩm phù hợp.</p>
+            )}
+          </div>
+          <p className="mt-2 text-xs text-clay-charcoal">
+            Đang chọn: <span className="font-semibold">{selectedProduct?.name ?? 'Chưa chọn sản phẩm'}</span>
+          </p>
+        </div>
 
         <label className="flex items-center gap-2 mt-1 cursor-pointer select-none">
           <input
@@ -92,7 +154,7 @@ export function QuickAddKeysModal({ products, onClose }: { products: Product[]; 
               Biến thể <span className="text-red-500">*</span>
             </span>
             <select
-              value={variantId}
+              value={selectedVariantId}
               onChange={(e) => setVariantId(e.target.value)}
               className="clay-input w-full text-sm"
               required
@@ -102,7 +164,7 @@ export function QuickAddKeysModal({ products, onClose }: { products: Product[]; 
                 <option key={v.id} value={v.id}>{v.name} (kho {v.stock})</option>
               ))}
             </select>
-            {!variantId && (
+            {!selectedVariantId && (
               <span className="text-xs text-red-600 mt-1 inline-block">Sản phẩm này có biến thể, phải chọn biến thể.</span>
             )}
           </label>

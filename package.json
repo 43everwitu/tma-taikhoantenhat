@@ -11,6 +11,8 @@
         "dev:web": "cd web && npm run dev",
         "dev:mbbank": "cd mbbank-api && python -m uvicorn app.main:app --port 8000",
         "dev:all": "./scripts/dev-all.sh",
+        "deploy:pm2": "./scripts/deploy-pm2.sh",
+        "cache:product-images": "node scripts/cache-product-images.js",
         "migrate:wp": "node scripts/migrate-wp.js",
         "admin:reset-password": "node scripts/admin-reset-password.js"
     },

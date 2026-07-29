@@ -5,6 +5,7 @@ import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { api } from '@/lib/api'
 import { formatDate } from '@/lib/utils'
 import { useHighlightId, useHighlightedRowRef } from '@/lib/useHighlightedRow'
+import { MediaLibrary } from '@/components/admin/MediaLibrary'
 
 interface BroadcastError {
   userId: number
@@ -17,6 +18,7 @@ interface Announcement {
   id: string
   title: string
   body: string
+  imageUrl: string
   target: 'all' | 'telegram' | 'web'
   pinned: boolean
   sentCount: number
@@ -38,12 +40,16 @@ export default function AnnouncementsPage() {
 
   const [title, setTitle] = useState('')
   const [body, setBody] = useState('')
+  const [imageUrl, setImageUrl] = useState('')
+  const [mediaOpen, setMediaOpen] = useState(false)
   const [errorView, setErrorView] = useState<Announcement | null>(null)
   const [target, setTarget] = useState<'all' | 'telegram' | 'web'>('all')
   const [pinned, setPinned] = useState(false)
   const [editing, setEditing] = useState<Announcement | null>(null)
   const [editTitle, setEditTitle] = useState('')
   const [editBody, setEditBody] = useState('')
+  const [editImageUrl, setEditImageUrl] = useState('')
+  const [editMediaOpen, setEditMediaOpen] = useState(false)
   const [editTarget, setEditTarget] = useState<'all' | 'telegram' | 'web'>('all')
   const [editPinned, setEditPinned] = useState(false)
 
@@ -56,11 +62,13 @@ export default function AnnouncementsPage() {
 
   const createMutation = useMutation({
     mutationFn: () =>
-      api.post('/admin/announcements', { title, body, target, pinned }),
+      api.post('/admin/announcements', { title, body, imageUrl: imageUrl || null, target, isPinned: pinned }),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['admin', 'announcements'] })
       setTitle('')
       setBody('')
+      setImageUrl('')
+      setMediaOpen(false)
       setTarget('all')
       setPinned(false)
     },
@@ -92,6 +100,7 @@ export default function AnnouncementsPage() {
     setEditing(ann)
     setEditTitle(ann.title)
     setEditBody(ann.body)
+    setEditImageUrl(ann.imageUrl || '')
     setEditTarget(ann.target)
     setEditPinned(ann.pinned)
   }
@@ -132,6 +141,25 @@ export default function AnnouncementsPage() {
               className="clay-input w-full resize-none"
               placeholder="Nội dung thông báo..."
             />
+          </div>
+          <div>
+            <label className="block text-sm font-medium text-clay-charcoal mb-1">Ảnh Telegram</label>
+            <div className="flex gap-2">
+              <input
+                type="text"
+                value={imageUrl}
+                onChange={(e) => setImageUrl(e.target.value)}
+                className="clay-input w-full"
+                placeholder="https://... hoặc /uploads/..."
+              />
+              <button type="button" onClick={() => setMediaOpen(true)} className="clay-btn text-sm whitespace-nowrap">
+                Chọn ảnh
+              </button>
+            </div>
+            <p className="text-xs text-clay-silver mt-1">Ảnh chỉ gửi qua Telegram bot, Mini App vẫn hiển thị text.</p>
+            {imageUrl && (
+              <button type="button" onClick={() => setImageUrl('')} className="text-xs text-red-600 mt-1">Xoá ảnh</button>
+            )}
           </div>
           <div className="flex items-center gap-6">
             <div>
@@ -220,6 +248,9 @@ export default function AnnouncementsPage() {
                       {ann.pinned && (
                         <span className="clay-pill" style={{ background: 'var(--color-lemon-400)' }}>Ghim</span>
                       )}
+                      {ann.imageUrl && (
+                        <span className="clay-pill text-xs">Ảnh Telegram</span>
+                      )}
                     </div>
                   </td>
                   <td className="py-3 px-4 text-clay-charcoal text-sm max-w-xs truncate">
@@ -287,6 +318,23 @@ export default function AnnouncementsPage() {
               <span className="text-xs opacity-70 mb-1 inline-block">Nội dung</span>
               <textarea value={editBody} onChange={(e) => setEditBody(e.target.value)} rows={5} className="clay-input w-full text-sm resize-none" />
             </label>
+            <label className="block text-sm">
+              <span className="text-xs opacity-70 mb-1 inline-block">Ảnh Telegram</span>
+              <div className="flex gap-2">
+                <input
+                  value={editImageUrl}
+                  onChange={(e) => setEditImageUrl(e.target.value)}
+                  className="clay-input w-full text-sm"
+                  placeholder="https://... hoặc /uploads/..."
+                />
+                <button type="button" onClick={() => setEditMediaOpen(true)} className="clay-btn text-sm whitespace-nowrap">
+                  Chọn ảnh
+                </button>
+              </div>
+            </label>
+            {editImageUrl && (
+              <button type="button" onClick={() => setEditImageUrl('')} className="text-xs text-red-600">Xoá ảnh</button>
+            )}
             <div className="flex items-center gap-3">
               <label className="block text-sm flex-1">
                 <span className="text-xs opacity-70 mb-1 inline-block">Đối tượng</span>
@@ -305,13 +353,33 @@ export default function AnnouncementsPage() {
               <button type="button" onClick={() => setEditing(null)} className="clay-btn text-sm">Huỷ</button>
               <button
                 type="button"
-                onClick={() => updateMutation.mutate({ id: editing.id, body: { title: editTitle, body: editBody, target: editTarget, isPinned: editPinned } })}
+                onClick={() => updateMutation.mutate({ id: editing.id, body: { title: editTitle, body: editBody, imageUrl: editImageUrl || null, target: editTarget, isPinned: editPinned } })}
                 disabled={updateMutation.isPending || !editTitle || !editBody}
                 className="clay-btn clay-btn--lemon text-sm"
               >{updateMutation.isPending ? 'Đang lưu…' : 'Lưu'}</button>
             </div>
           </div>
         </div>
+      )}
+
+      {mediaOpen && (
+        <MediaLibrary
+          onPick={(url) => {
+            setImageUrl(url)
+            setMediaOpen(false)
+          }}
+          onClose={() => setMediaOpen(false)}
+        />
+      )}
+
+      {editMediaOpen && (
+        <MediaLibrary
+          onPick={(url) => {
+            setEditImageUrl(url)
+            setEditMediaOpen(false)
+          }}
+          onClose={() => setEditMediaOpen(false)}
+        />
       )}
 
       {errorView && (

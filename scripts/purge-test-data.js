@@ -36,7 +36,10 @@ function collectTargets() {
     FROM products p
     LEFT JOIN orders o ON o.product_id = p.id
     WHERE p.name IN ('R', 'Test')
+       OR p.name = 'Dedup'
+       OR p.name LIKE 'Notify variant product %'
        OR p.slug LIKE 'r-%'
+       OR p.slug LIKE 'notify-variant-product-%'
        OR o.user_id = ?
   `).all(TEST_USER_ID);
   const productIds = allIds(products);
@@ -52,6 +55,9 @@ function collectTargets() {
   const stockRows = productIds.length
     ? db.prepare(`SELECT id FROM stock WHERE product_id IN (${placeholders(productIds)})`).all(...productIds)
     : [];
+  const lowStockAlertStates = productIds.length
+    ? db.prepare(`SELECT COUNT(*) AS c FROM low_stock_alert_states WHERE product_id IN (${placeholders(productIds)})`).get(...productIds).c
+    : 0;
   const transactions = orderIds.length
     ? db.prepare(`SELECT id FROM transactions WHERE matched_order_id IN (${placeholders(orderIds)})`).all(...orderIds)
     : [];
@@ -67,6 +73,7 @@ function collectTargets() {
     orderIds,
     nonTestUserOrders,
     stockRows,
+    lowStockAlertStates,
     transactions,
     notifications,
     walletTopups,
@@ -82,6 +89,7 @@ function printCounts(label, targets) {
   console.log(`target orders: ${targets.orders.length}`);
   console.log(`non-test-user orders via product rule: ${targets.nonTestUserOrders.length}`);
   console.log(`target stock rows: ${targets.stockRows.length}`);
+  console.log(`target low stock alert states: ${targets.lowStockAlertStates}`);
   console.log(`target transactions: ${targets.transactions.length}`);
   console.log(`target notifications: ${targets.notifications.length}`);
   console.log(`target wallet topups: ${targets.walletTopups.length}`);
@@ -106,6 +114,7 @@ function runDelete(targets) {
       db.prepare(`DELETE FROM orders WHERE id IN (${placeholders(targets.orderIds)})`).run(...targets.orderIds);
     }
     if (targets.productIds.length) {
+      db.prepare(`DELETE FROM low_stock_alert_states WHERE product_id IN (${placeholders(targets.productIds)})`).run(...targets.productIds);
       db.prepare(`DELETE FROM stock WHERE product_id IN (${placeholders(targets.productIds)})`).run(...targets.productIds);
       db.prepare(`DELETE FROM product_variants WHERE product_id IN (${placeholders(targets.productIds)})`).run(...targets.productIds);
       db.prepare(`DELETE FROM product_follows WHERE product_id IN (${placeholders(targets.productIds)})`).run(...targets.productIds);

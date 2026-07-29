@@ -1,9 +1,7 @@
 const orderService = require('./orderService');
 const productService = require('./productService');
 const { sendDelivery } = require('./notificationService');
-const adminNotifyService = require('./adminNotifyService');
-const { richifyText, buildCustomerInputBlock } = require('../utils/messages');
-const messageTemplateService = require('./messageTemplateService');
+const { richifyText } = require('../utils/messages');
 const { postDeliveryKeyboard } = require('../utils/keyboard');
 
 async function deliverOrder(bot, orderId) {
@@ -18,16 +16,6 @@ async function deliverOrder(bot, orderId) {
     const orderChannelService = require('./orderChannelService');
 
     if (result.backorder) {
-        const inputBlock = buildCustomerInputBlock(order.input_value);
-        const body = messageTemplateService.render('admin.backorder_paid', {
-            orderCode: order.id,
-            productName: product.name,
-            quantity: order.quantity,
-            total: order.total_price.toLocaleString('vi-VN'),
-            userMention: String(order.user_id),
-            inputBlock,
-        });
-        await adminNotifyService.notify('backorder_paid', body, { order_id: order.id });
         await orderChannelService.postOrderCard({ order, product, variant, keys: null });
         return result;
     }

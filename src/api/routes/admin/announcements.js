@@ -1,8 +1,8 @@
 const { Router } = require('express');
 const { z } = require('zod');
 const db = require('../../../database');
-const sanitizeHtml = require('sanitize-html');
 const auditService = require('../../../services/auditService');
+const { sanitizeRich } = require('../../../utils/richHtml');
 const { validate } = require('../../middleware/validate');
 
 const router = Router();
@@ -16,6 +16,7 @@ function shapeAnnouncement(r) {
     id: String(r.id),
     title: r.title,
     body: r.body,
+    imageUrl: r.image_url || '',
     target: r.target || 'all',
     pinned: !!r.is_pinned,
     sentCount: r.sent_count || 0,
@@ -24,6 +25,14 @@ function shapeAnnouncement(r) {
     createdAt: r.created_at,
     errorDetails,
   };
+}
+
+function formatAnnouncementBody(raw) {
+  if (raw == null) return '';
+  const withMarkdown = String(raw)
+    .replace(/\*\*([^\n*][\s\S]*?[^\n*]|\S)\*\*/g, '<b>$1</b>')
+    .replace(/~~([^\n~][\s\S]*?[^\n~]|\S)~~/g, '<s>$1</s>');
+  return sanitizeRich(withMarkdown);
 }
 
 // GET /admin/announcements
@@ -38,21 +47,20 @@ router.get('/', (req, res) => {
 router.post('/', validate(z.object({
   title: z.string().min(1).max(200),
   body: z.string().min(1).max(5000),
+  imageUrl: z.string().max(500).nullable().optional(),
   target: z.enum(['all', 'telegram', 'web']).optional().default('all'),
   isPinned: z.boolean().optional().default(false),
 })), async (req, res) => {
   const d = req.validated;
-  const cleanBody = sanitizeHtml(d.body, {
-    allowedTags: ['b', 'i', 'a', 'code', 'pre'],
-    allowedAttributes: { a: ['href'] },
-  });
+  const cleanBody = formatAnnouncementBody(d.body);
 
   const notificationService = req.app.locals.notificationService;
   if (!notificationService) {
     return res.status(500).json({ success: false, error: { code: 'SERVICE_UNAVAILABLE' } });
   }
 
-  const result = await notificationService.broadcast(d.title, cleanBody, d.target, req.admin.adminId);
+  const imageUrl = d.imageUrl ? d.imageUrl.trim() : null;
+  const result = await notificationService.broadcast(d.title, cleanBody, d.target, req.admin.adminId, undefined, { imageUrl });
 
   // Update pinned status
   if (d.isPinned) {
@@ -68,6 +76,7 @@ router.post('/', validate(z.object({
 router.patch('/:id', validate(z.object({
   title: z.string().min(1).max(200).optional(),
   body: z.string().min(1).max(5000).optional(),
+  imageUrl: z.string().max(500).nullable().optional(),
   target: z.enum(['all', 'telegram', 'web']).optional(),
   isPinned: z.boolean().optional(),
 })), (req, res) => {
@@ -78,11 +87,11 @@ router.patch('/:id', validate(z.object({
   const sets = []; const params = [];
   if (req.validated.title !== undefined) { sets.push('title = ?'); params.push(req.validated.title); }
   if (req.validated.body !== undefined) {
-    const cleanBody = sanitizeHtml(req.validated.body, {
-      allowedTags: ['b', 'i', 'a', 'code', 'pre'],
-      allowedAttributes: { a: ['href'] },
-    });
+    const cleanBody = formatAnnouncementBody(req.validated.body);
     sets.push('body = ?'); params.push(cleanBody);
+  }
+  if (req.validated.imageUrl !== undefined) {
+    sets.push('image_url = ?'); params.push(req.validated.imageUrl ? req.validated.imageUrl.trim() : null);
   }
   if (req.validated.target !== undefined) { sets.push('target = ?'); params.push(req.validated.target); }
   if (req.validated.isPinned !== undefined) { sets.push('is_pinned = ?'); params.push(req.validated.isPinned ? 1 : 0); }
@@ -102,7 +111,9 @@ router.post('/:id/resend', async (req, res) => {
   const notificationService = req.app.locals.notificationService;
   if (!notificationService) return res.status(500).json({ success: false, error: { code: 'SERVICE_UNAVAILABLE' } });
 
-  const result = await notificationService.broadcast(row.title, row.body, row.target || 'all', req.admin.adminId);
+  const result = await notificationService.broadcast(row.title, row.body, row.target || 'all', req.admin.adminId, undefined, {
+    imageUrl: row.image_url || null,
+  });
   // Merge stats — overwrite with latest run's stats so admin sees fresh numbers.
   // Delete the new row created by broadcast (it dup-inserted) and update original.
   db.prepare('DELETE FROM announcements WHERE id = ?').run(result.announcementId);

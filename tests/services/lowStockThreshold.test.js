@@ -39,6 +39,14 @@ test('product with explicit threshold=10 keeps its own value', () => {
   assert.strictEqual(hit.effective_threshold, 10);
 });
 
+test('product with threshold=0 disables low-stock alerts', () => {
+  db.prepare("UPDATE settings SET value='3' WHERE key='low_stock_alert_threshold'").run();
+  const id = seedProduct(0);
+  addStock(id, 2);
+  const rows = effectiveLowStockProducts();
+  assert.strictEqual(rows.find(r => r.id === id), undefined);
+});
+
 test('product with stock=0 excluded even when threshold would match', () => {
   const id = seedProduct(5);
   // no stock added

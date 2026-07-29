@@ -10,6 +10,7 @@ Hướng dẫn này áp dụng cho repo `/home/peanut/tma-taikhoantenhat`. Luôn
 - Runtime DB là `data/shop.db`; `data/db.sqlite` là artifact cũ, không dùng làm nguồn sự thật.
 - Không commit `data/shop.db`, backup DB, `data/uploads/`, log, temporary test, hoặc file ảnh local.
 - Không chạy hoặc viết test/lệnh gửi Telegram broadcast tới toàn bộ user thật. Khi cần kiểm thử Telegram notification, phải mock `telegramApiClient`/bot hoặc chỉ gửi tới admin/test chat được chỉ định; không dùng runtime `users` làm danh sách nhận thật.
+- Luôn dọn dữ liệu test/prompt sau khi tạo hoặc phát hiện: user `9990001`, product `R`, product `Test`, `Dedup`, `Notify variant product *`, slug `r-*`, slug `notify-variant-product-*`, và các order/stock/transaction/notification liên quan. Quy trình bắt buộc: chạy `node scripts/purge-test-data.js` dry-run, kiểm tra counts, rồi mới `node scripts/purge-test-data.js --apply`; không bỏ qua backup và không stage DB/backup.
 
 ## Cấu Trúc Project
 
@@ -33,7 +34,7 @@ Hướng dẫn này áp dụng cho repo `/home/peanut/tma-taikhoantenhat`. Luôn
 
 - Sửa automatic MBBank polling để query theo ngày ngân hàng Việt Nam (`Asia/Ho_Chi_Minh`) thay vì UTC ISO date. Incident gốc: order `100479` ngày `2026-06-12/2026-06-13`; order này đã confirm thủ công, không được reprocess.
 - Đặt runtime timezone `TZ=Asia/Ho_Chi_Minh` cho PM2 API/Web và `.env.example`, nhưng vẫn giữ SQLite `CURRENT_TIMESTAMP`/`datetime('now')` là UTC.
-- Dọn sạch dữ liệu test/prompt: user `9990001`, product `R`, product `Test`, slug `r-*`, các order/stock/transaction liên quan. Phải dry-run, tạo backup, xóa trong transaction, và không commit DB.
+- Dọn sạch dữ liệu test/prompt: user `9990001`, product `R`, product `Test`, `Dedup`, `Notify variant product *`, slug `r-*`, slug `notify-variant-product-*`, các order/stock/transaction/notification liên quan. Đây là quy tắc thường trực sau mọi lần tạo/chạy test data: phải dry-run, tạo backup, xóa trong transaction, và không commit DB/backup.
 - Hiển thị timestamp frontend theo giờ Hà Nội: parse SQLite timestamp `YYYY-MM-DD HH:mm:ss` như UTC, format với `Asia/Ho_Chi_Minh`.
 - Giữ late-payment recovery: đơn `expired` nhưng khách chuyển đúng tiền/đúng memo trong 24 giờ vẫn được xử lý theo flow thanh toán hiện có.
 

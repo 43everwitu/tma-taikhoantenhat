@@ -22,8 +22,7 @@ export async function getMiniAppToken(initData: string): Promise<string> {
       body: JSON.stringify({ initData }),
     })
     if (!res.ok) {
-      const text = await res.text()
-      throw new Error(`Mini App auth failed: ${res.status} ${text}`)
+      throw new Error('Không thể xác thực Telegram. Vui lòng đóng Mini App và mở lại từ Telegram.')
     }
     const json = await res.json()
     cachedToken = json.data.token as string
@@ -35,4 +34,16 @@ export async function getMiniAppToken(initData: string): Promise<string> {
 
 export function getCachedMe(): MiniAppMe | null { return cachedMe }
 export function getCachedToken(): string | null { return cachedToken }
+
+export async function requireMiniAppToken(): Promise<string> {
+  if (cachedToken) return cachedToken
+  if (inflight) return inflight
+  const initData = typeof window !== 'undefined'
+    ? window.Telegram?.WebApp?.initData
+    : ''
+  if (!initData) {
+    throw new Error('Vui lòng mở Mini App từ Telegram để tiếp tục.')
+  }
+  return getMiniAppToken(initData)
+}
 export function clearAuth() { cachedToken = null; cachedMe = null }

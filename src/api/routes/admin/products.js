@@ -4,16 +4,36 @@ const db = require('../../../database');
 const productService = require('../../../services/productService');
 const auditService = require('../../../services/auditService');
 const eventBus = require('../../../services/eventBus');
+const { cacheImageUrl } = require('../../../services/imageCacheService');
+const { getDefaultLowStockThreshold } = require('../../../services/lowStockQuery');
 const { slugify } = require('../../../utils/slugify');
 const { validate } = require('../../middleware/validate');
 const { sanitizeRich, sanitizeDescription } = require('../../../utils/richHtml');
 
 const router = Router();
 
+const PRODUCT_ARCHIVED_SQL = `
+  (
+    COALESCE(p.is_archived, 0) = 1
+    OR EXISTS (
+      SELECT 1
+      FROM audit_log al
+      WHERE al.action = 'product.delete'
+        AND al.entity_type = 'product'
+        AND al.entity_id = p.id
+        AND al.details LIKE '%"archived":true%'
+    )
+  )
+`;
+
 const PRODUCT_JOINS_SQL = `
   SELECT p.*,
+    CASE WHEN ${PRODUCT_ARCHIVED_SQL} THEN 1 ELSE 0 END as archived_flag,
     (SELECT COUNT(*) FROM stock s WHERE s.product_id = p.id AND s.is_sold = 0) as stock_count,
     (SELECT COUNT(*) FROM stock s WHERE s.product_id = p.id AND s.is_sold = 1) as sold_count,
+    COALESCE(variant_summary.variant_count, 0) as variant_count,
+    COALESCE(variant_summary.variant_stock, 0) as variant_stock,
+    variant_summary.variant_names as variant_names,
     variant_summary.variant_options as variant_options,
     c.name as category_name
   FROM products p
@@ -21,11 +41,25 @@ const PRODUCT_JOINS_SQL = `
   LEFT JOIN (
     SELECT
       active_variants.product_id,
+      COUNT(*) AS variant_count,
+      COALESCE(SUM(active_variants.stock_count), 0) AS variant_stock,
+      GROUP_CONCAT(active_variants.name, '|||') AS variant_names,
       JSON_GROUP_ARRAY(
         JSON_OBJECT('id', active_variants.id, 'name', active_variants.name)
       ) AS variant_options
     FROM (
-      SELECT v.id, v.product_id, v.name
+      SELECT
+        v.id,
+        v.product_id,
+        v.name,
+        (
+          SELECT COUNT(*)
+          FROM stock s
+          WHERE s.product_id = v.product_id
+            AND s.variant_id = v.id
+            AND s.is_sold = 0
+            AND s.reserved_for_order_id IS NULL
+        ) AS stock_count
       FROM product_variants v
       WHERE v.is_active = 1
       ORDER BY v.sort_order, v.id
@@ -82,9 +116,11 @@ function parseVariantOptions(value) {
   }
 }
 
-function shapeProduct(r) {
+function shapeProduct(r, defaultLowStockThreshold = getDefaultLowStockThreshold()) {
   const stock = r.stock_count ?? 0;
   const soldStock = r.sold_count ?? 0;
+  const lowStockThreshold = r.low_stock_threshold == null ? null : Number(r.low_stock_threshold);
+  const effectiveLowStockThreshold = lowStockThreshold == null ? defaultLowStockThreshold : lowStockThreshold;
   return {
     id: String(r.id),
     name: r.name,
@@ -94,9 +130,15 @@ function shapeProduct(r) {
     stock,
     soldStock,
     totalStock: stock + soldStock,
+    variantCount: r.variant_count ?? 0,
+    variantStock: r.variant_stock ?? 0,
+    variantNames: r.variant_names ? String(r.variant_names).split('|||').filter(Boolean) : [],
     variantOptions: parseVariantOptions(r.variant_options),
-    lowStockThreshold: r.low_stock_threshold,
+    lowStockThreshold,
+    effectiveLowStockThreshold,
+    usesDefaultLowStockThreshold: lowStockThreshold == null,
     active: !!r.is_active,
+    archived: !!(r.archived_flag ?? r.is_archived),
     description: r.description || '',
     longDescription: r.long_description || '',
     usageInstructions: r.usage_instructions || '',
@@ -113,8 +155,14 @@ function shapeProduct(r) {
 // GET /admin/products
 router.get('/', (req, res) => {
   const q = (req.query.q || '').trim();
+  const view = (req.query.view || 'active').trim();
   let where = '1=1';
   const params = [];
+  if (view === 'archived') {
+    where += ` AND ${PRODUCT_ARCHIVED_SQL}`;
+  } else if (view !== 'all') {
+    where += ` AND NOT ${PRODUCT_ARCHIVED_SQL}`;
+  }
   if (q) {
     where += ` AND (p.name LIKE ? OR p.slug LIKE ? OR c.name LIKE ?)`;
     const wild = `%${q}%`;
@@ -122,7 +170,8 @@ router.get('/', (req, res) => {
   }
   const rows = db.prepare(`${PRODUCT_JOINS_SQL} WHERE ${where} ORDER BY p.sort_order, p.id`).all(...params);
 
-  const products = rows.map(shapeProduct);
+  const defaultLowStockThreshold = getDefaultLowStockThreshold();
+  const products = rows.map((row) => shapeProduct(row, defaultLowStockThreshold));
 
   res.json({ success: true, data: products });
 });
@@ -138,7 +187,7 @@ router.post('/', validate(z.object({
   usageInstructions: z.string().max(20000).nullable().optional(),
   emoji: z.string().max(10).nullable().optional(),
   imageUrl: z.string().max(500).nullable().optional(),
-  lowStockThreshold: z.number().int().min(0).optional().default(5),
+  lowStockThreshold: z.number().int().min(0).nullable().optional().default(null),
   promotion: z.string().max(200).nullable().optional(),
   contactOnly: z.boolean().optional().default(false),
   contactUrl: z.string().max(500).nullable().optional(),
@@ -158,13 +207,14 @@ router.post('/', validate(z.object({
     }
   }
   const slug = buildUniqueProductSlug(d.name);
+  const imageUrl = await cacheImageUrl(d.imageUrl);
   const result = db.prepare(`
     INSERT INTO products (category_id, name, price, description, emoji, slug, image_url, long_description, low_stock_threshold, usage_instructions, promotion, contact_only, contact_url)
     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
   `).run(categoryId, d.name, d.price,
     d.description ? sanitizeDescription(d.description) : null,
     d.emoji || null, slug,
-    d.imageUrl || null,
+    imageUrl,
     d.longDescription ? sanitizeDescription(d.longDescription) : null,
     d.lowStockThreshold,
     d.usageInstructions ? sanitizeRich(d.usageInstructions) : null,
@@ -205,7 +255,7 @@ router.put('/:id', validate(z.object({
   contactOnly: z.boolean().optional(),
   contactUrl: z.string().max(500).nullable().optional(),
   imageUrl: z.string().max(500).nullable().optional(),
-  lowStockThreshold: z.number().int().min(0).optional(),
+  lowStockThreshold: z.number().int().min(0).nullable().optional(),
   sortOrder: z.number().int().optional(),
   notifyOnUpdate: z.boolean().optional().default(false),
 })), async (req, res) => {
@@ -236,7 +286,7 @@ router.put('/:id', validate(z.object({
   if (d.promotion !== undefined) { sets.push('promotion = ?'); params.push(d.promotion); }
   if (d.contactOnly !== undefined) { sets.push('contact_only = ?'); params.push(d.contactOnly ? 1 : 0); }
   if (d.contactUrl !== undefined) { sets.push('contact_url = ?'); params.push(d.contactUrl); }
-  if (d.imageUrl !== undefined) { sets.push('image_url = ?'); params.push(d.imageUrl); }
+  if (d.imageUrl !== undefined) { sets.push('image_url = ?'); params.push(await cacheImageUrl(d.imageUrl)); }
   if (d.longDescription !== undefined) { sets.push('long_description = ?'); params.push(d.longDescription == null ? null : sanitizeDescription(d.longDescription)); }
   if (d.usageInstructions !== undefined) { sets.push('usage_instructions = ?'); params.push(d.usageInstructions == null ? null : sanitizeRich(d.usageInstructions)); }
   if (d.lowStockThreshold !== undefined) { sets.push('low_stock_threshold = ?'); params.push(d.lowStockThreshold); }
@@ -318,15 +368,43 @@ router.delete('/:id', (req, res) => {
   const id = parseInt(req.params.id);
   const existing = db.prepare('SELECT id, name, slug, price FROM products WHERE id = ?').get(id);
   if (!existing) return res.status(404).json({ success: false, error: { code: 'NOT_FOUND' } });
-  db.prepare('DELETE FROM stock WHERE product_id = ? AND is_sold = 0').run(id);
-  db.prepare('DELETE FROM products WHERE id = ?').run(id);
+  const hasHistory = db.prepare(`
+    SELECT
+      (SELECT COUNT(*) FROM orders WHERE product_id = ?) AS order_count,
+      (SELECT COUNT(*) FROM stock WHERE product_id = ? AND is_sold = 1) AS sold_stock_count
+  `).get(id, id);
+  const archived = (hasHistory.order_count || 0) > 0 || (hasHistory.sold_stock_count || 0) > 0;
+
+  const deleteProduct = db.transaction(() => {
+    db.prepare('DELETE FROM product_follows WHERE product_id = ?').run(id);
+    db.prepare('DELETE FROM stock WHERE product_id = ? AND is_sold = 0').run(id);
+
+    if (archived) {
+      db.prepare(`
+        UPDATE products
+        SET is_active = 0, is_featured = 0, is_archived = 1, updated_at = CURRENT_TIMESTAMP
+        WHERE id = ?
+      `).run(id);
+      db.prepare(`
+        UPDATE product_variants
+        SET is_active = 0, updated_at = CURRENT_TIMESTAMP
+        WHERE product_id = ?
+      `).run(id);
+      return;
+    }
+
+    db.prepare('DELETE FROM product_variants WHERE product_id = ?').run(id);
+    db.prepare('DELETE FROM products WHERE id = ?').run(id);
+  });
+  deleteProduct();
   auditService.log(req.admin.adminId, 'product.delete', 'product', id, {
     entityLabel: existing.name,
     slug: existing.slug,
     price: existing.price,
+    archived,
   }, req.ip);
   eventBus.publish({ type: 'product.delete', productId: id });
-  res.json({ success: true });
+  res.json({ success: true, data: { archived } });
 });
 
 // POST /admin/products/:id/generate-image — AI image via Pollinations
@@ -343,7 +421,7 @@ router.post('/:id/generate-image', validate(z.object({
   height: z.number().int().min(256).max(1536).optional().default(768),
   seed: z.number().int().optional(),
   save: z.boolean().optional().default(true),
-})), (req, res) => {
+})), async (req, res) => {
   const id = parseInt(req.params.id);
   const product = db.prepare('SELECT id, name, description FROM products WHERE id = ?').get(id);
   if (!product) return res.status(404).json({ success: false, error: { code: 'NOT_FOUND' } });
@@ -363,13 +441,14 @@ router.post('/:id/generate-image', validate(z.object({
     seed: String(seed),
   });
   const imageUrl = `${POLLINATIONS_BASE}/${encodeURIComponent(prompt)}?${params.toString()}`;
+  const finalImageUrl = d.save !== false ? await cacheImageUrl(imageUrl) : imageUrl;
 
   if (d.save !== false) {
-    db.prepare('UPDATE products SET image_url = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?').run(imageUrl, id);
+    db.prepare('UPDATE products SET image_url = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?').run(finalImageUrl, id);
     auditService.log(req.admin.adminId, 'product.image_generate', 'product', id, { prompt, seed }, req.ip);
   }
 
-  res.json({ success: true, data: { imageUrl, prompt, seed } });
+  res.json({ success: true, data: { imageUrl: finalImageUrl, prompt, seed } });
 });
 
 // PATCH /admin/products/reorder — bulk update sort_order (and optionally category_id)
@@ -403,8 +482,11 @@ router.patch('/reorder', validate(z.object({
 // PATCH /admin/products/:id/toggle
 router.patch('/:id/toggle', (req, res) => {
   const id = parseInt(req.params.id);
-  const product = db.prepare('SELECT is_active FROM products WHERE id = ?').get(id);
+  const product = db.prepare('SELECT is_active, is_archived FROM products WHERE id = ?').get(id);
   if (!product) return res.status(404).json({ success: false, error: { code: 'NOT_FOUND' } });
+  if (product.is_archived) {
+    return res.status(400).json({ success: false, error: { code: 'PRODUCT_ARCHIVED' } });
+  }
 
   const newStatus = product.is_active ? 0 : 1;
   db.prepare('UPDATE products SET is_active = ? WHERE id = ?').run(newStatus, id);
@@ -435,7 +517,7 @@ router.patch('/:id/featured', (req, res) => {
 // Stock rows are NOT copied; the duplicate starts empty so admins can re-stock
 // independently. sort_order is appended to the end so the new row doesn't
 // silently displace siblings.
-router.post('/:id/duplicate', (req, res) => {
+router.post('/:id/duplicate', async (req, res) => {
   const id = parseInt(req.params.id);
   const src = db.prepare('SELECT * FROM products WHERE id = ?').get(id);
   if (!src) return res.status(404).json({ success: false, error: { code: 'NOT_FOUND' } });
@@ -448,12 +530,12 @@ router.post('/:id/duplicate', (req, res) => {
     INSERT INTO products
       (category_id, name, price, description, emoji, slug, image_url,
        long_description, low_stock_threshold, usage_instructions,
-       promotion, contact_only, contact_url, is_active, sort_order)
-    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+       promotion, contact_only, contact_url, is_active, is_archived, sort_order)
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
   `).run(
-    src.category_id, newName, src.price, src.description, src.emoji, newSlug, src.image_url,
+    src.category_id, newName, src.price, src.description, src.emoji, newSlug, await cacheImageUrl(src.image_url),
     src.long_description, src.low_stock_threshold, src.usage_instructions,
-    src.promotion, src.contact_only, src.contact_url, src.is_active,
+    src.promotion, src.contact_only, src.contact_url, src.is_active, 0,
     maxSort + 10,
   );
 

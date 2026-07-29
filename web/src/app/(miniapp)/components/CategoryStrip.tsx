@@ -14,7 +14,7 @@ interface Props {
 export function CategoryStrip({ items }: Props) {
   if (items.length === 0) return null
   return (
-    <HScroll ariaLabel="Danh mục">
+    <HScroll ariaLabel="Danh mục" enableMouseDrag={false}>
       {items.map((c) => (
         <Link
           key={c.id}

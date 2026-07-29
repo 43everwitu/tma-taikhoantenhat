@@ -122,6 +122,7 @@ export default function DiscountsPage() {
                 {d.maxDiscount ? ` (tối đa ${d.maxDiscount.toLocaleString('vi-VN')}đ)` : ''}
                 {d.minOrder ? ` · đơn từ ${d.minOrder.toLocaleString('vi-VN')}đ` : ''}
                 {d.usageLimit != null ? ` · ${d.usedCount}/${d.usageLimit} lượt` : ` · ${d.usedCount} lượt dùng`}
+                {d.perUserLimit != null ? ` · tối đa ${d.perUserLimit} lần/khách` : ''}
                 {!d.isActive && ' · TẮT'}
               </p>
               {d.isGlobal && (d.notifyTitle || d.appMessage || d.botMessage) && (
@@ -250,13 +251,16 @@ function DiscountModal({ initial, onClose, onSubmit, isPending }: {
         <div className="grid grid-cols-2 gap-2">
           <label className="block text-sm">
             <span className="text-xs opacity-70 mb-1 inline-block">Tổng lượt dùng</span>
-            <input type="number" value={form.usageLimit} onChange={(e) => setForm({ ...form, usageLimit: e.target.value === '' ? '' : Number(e.target.value) })} className="clay-input w-full text-sm" placeholder="∞" />
+            <input type="number" min={0} value={form.usageLimit} onChange={(e) => setForm({ ...form, usageLimit: e.target.value === '' ? '' : Number(e.target.value) })} className="clay-input w-full text-sm" placeholder="∞" />
           </label>
           <label className="block text-sm">
-            <span className="text-xs opacity-70 mb-1 inline-block">/ khách</span>
-            <input type="number" value={form.perUserLimit} onChange={(e) => setForm({ ...form, perUserLimit: e.target.value === '' ? '' : Number(e.target.value) })} className="clay-input w-full text-sm" placeholder="∞" />
+            <span className="text-xs opacity-70 mb-1 inline-block">Số lần mỗi khách được dùng</span>
+            <input type="number" min={1} value={form.perUserLimit} onChange={(e) => setForm({ ...form, perUserLimit: e.target.value === '' ? '' : Number(e.target.value) })} className="clay-input w-full text-sm" placeholder="∞" />
           </label>
         </div>
+        <p className="text-xs opacity-60 -mt-1">
+          Ví dụ nhập 1: mỗi user chỉ dùng được mã này một lần. Để trống nếu không giới hạn theo user.
+        </p>
         <div className="grid grid-cols-2 gap-2">
           <label className="block text-sm">
             <span className="text-xs opacity-70 mb-1 inline-block">Bắt đầu</span>

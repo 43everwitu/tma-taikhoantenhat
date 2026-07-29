@@ -2,13 +2,18 @@ const db = require('../database');
 const userService = require('./userService');
 const eventBus = require('./eventBus');
 const { encryptString } = require('../utils/secrets');
+const userModerationService = require('./userModerationService');
 
 const DUPLICATE_WINDOW_SECONDS = 60;
 
 // Prepared statements (compiled once at module load)
 const insertOrder = db.prepare(`
-  INSERT INTO orders (user_id, product_id, variant_id, quantity, total_price, payment_code, status, source, bank_name, input_value, expires_at, payment_method)
-  VALUES (?, ?, ?, ?, ?, '', 'pending', ?, ?, ?, datetime('now', '+' || ? || ' minutes'), ?)
+  INSERT INTO orders (
+    user_id, product_id, variant_id, quantity, total_price, payment_code,
+    status, source, bank_name, input_value, expires_at, payment_method,
+    requires_manual_review, manual_review_reason
+  )
+  VALUES (?, ?, ?, ?, ?, '', 'pending', ?, ?, ?, datetime('now', '+' || ? || ' minutes'), ?, ?, ?)
 `);
 const setPaymentCode = db.prepare(`UPDATE orders SET payment_code = ? WHERE id = ?`);
 const reserveStockBatchByVariant = db.prepare(`
@@ -51,6 +56,8 @@ const orderService = {
     const paymentMethod = opts.paymentMethod || 'bank';
     const variantId = opts.variantId ?? null;
     const encryptedInput = opts.inputValue ? encryptString(String(opts.inputValue)) : null;
+    const requiresManualReview = userModerationService.isShadowBanned(userId) ? 1 : 0;
+    const manualReviewReason = requiresManualReview ? 'shadow_banned' : null;
     let expiryMinutes = opts.expiryMinutes;
     if (!Number.isFinite(expiryMinutes) || expiryMinutes <= 0) {
       const row = db.prepare("SELECT value FROM settings WHERE key = 'order_expiry_minutes'").get();
@@ -79,7 +86,8 @@ const orderService = {
     const txn = db.transaction(() => {
       const r = insertOrder.run(
         userId, productId, variantId, quantity, totalPrice,
-        source, bankName, encryptedInput, expiryMinutes, paymentMethod
+        source, bankName, encryptedInput, expiryMinutes, paymentMethod,
+        requiresManualReview, manualReviewReason
       );
       const id = r.lastInsertRowid;
       setPaymentCode.run(`PNS${id}`, id);
@@ -90,8 +98,9 @@ const orderService = {
           .run(discountCodeId);
       }
 
-      // Backorder variants have no key inventory — admin fulfils each order
-      // manually. Skip reservation + stock check entirely for those.
+      // Backorder variants can still have preloaded stock. If stock exists,
+      // payment confirmation should deliver it; otherwise the order stays for
+      // manual fulfilment.
       let isBackorder = false;
       if (variantId) {
         const v = db.prepare('SELECT is_backorder FROM product_variants WHERE id = ?').get(variantId);
@@ -118,9 +127,10 @@ const orderService = {
 
   getById(id) {
     return db.prepare(`
-      SELECT o.*, p.name as product_name
+      SELECT o.*, p.name as product_name, v.name as variant_name
       FROM orders o
       JOIN products p ON o.product_id = p.id
+      LEFT JOIN product_variants v ON v.id = o.variant_id
       WHERE o.id = ?
     `).get(id);
   },
@@ -179,7 +189,7 @@ const orderService = {
       UPDATE orders SET status = 'paid',
         paid_at = COALESCE(paid_at, CURRENT_TIMESTAMP),
         auto_confirmed = ?
-      WHERE id = ?
+      WHERE id = ? AND status = 'pending'
     `);
     const getReserved = db.prepare(
       `SELECT * FROM stock WHERE reserved_for_order_id = ? AND is_sold = 0 LIMIT ?`
@@ -211,21 +221,17 @@ const orderService = {
       WHERE id = ?
     `);
 
-    const atomicDeliver = db.transaction((orderId, autoConfirmed = 0) => {
+    const atomicDeliver = db.transaction((orderId, autoConfirmed = 0, options = {}) => {
       const order = getOrder.get(orderId);
       if (!order) return { success: false, error: 'Đơn hàng không tồn tại' };
       if (order.status !== 'pending' && order.status !== 'paid') {
         return { success: false, error: 'Đơn hàng đã được xử lý' };
       }
 
-      // Back-order variant: mark paid, skip stock + delivery. Admin handles
-      // fulfilment via /admin/orders/:id/manual-deliver.
+      let isBackorder = false;
       if (order.variant_id) {
         const v = getVariantBackorder.get(order.variant_id);
-        if (v && v.is_backorder) {
-          markPaidPending.run(autoConfirmed, orderId);
-          return { success: true, backorder: true, order };
-        }
+        isBackorder = !!(v && v.is_backorder);
       }
 
       let stock = getReserved.all(orderId, order.quantity);
@@ -241,6 +247,16 @@ const orderService = {
           : getFreeStockNoVariant.all(order.product_id, orderId, need);
         stock = [...stock, ...extra];
         if (stock.length < order.quantity) {
+          if (isBackorder) {
+            if (order.status === 'paid' && options.allowPaidBackorder) {
+              return { success: true, backorder: true, order };
+            }
+            const paid = markPaidPending.run(autoConfirmed, orderId);
+            if (paid.changes === 0) {
+              return { success: false, error: 'Đơn hàng đã được xử lý' };
+            }
+            return { success: true, backorder: true, order };
+          }
           return { success: false, error: `Không đủ hàng. Chỉ còn ${stock.length} sản phẩm.` };
         }
       }
@@ -252,8 +268,8 @@ const orderService = {
       return { success: true, accounts, order };
     });
 
-    return function confirmAndDeliver(orderId, autoConfirmed = 0) {
-      const r = atomicDeliver(orderId, autoConfirmed);
+    return function confirmAndDeliver(orderId, autoConfirmed = 0, options = {}) {
+      const r = atomicDeliver(orderId, autoConfirmed, options);
       if (r.success && r.backorder) {
         eventBus.publish({ type: 'order.backorder_paid', orderId });
       } else if (r.success) {
@@ -314,17 +330,18 @@ const orderService = {
    * Used when payment matches but stock ran out.
    */
   markPaid(orderId) {
-    const order = this.getById(orderId);
-    if (!order) return { success: false, error: 'Đơn hàng không tồn tại' };
-    if (order.status !== 'pending') return { success: false, error: 'Đơn hàng đã được xử lý' };
-
-    db.prepare(`
+    const r = db.prepare(`
       UPDATE orders SET status = 'paid', paid_at = CURRENT_TIMESTAMP
-      WHERE id = ?
+      WHERE id = ? AND status = 'pending'
     `).run(orderId);
+    if (r.changes === 0) {
+      const order = this.getById(orderId);
+      if (!order) return { success: false, error: 'Đơn hàng không tồn tại' };
+      return { success: false, error: 'Đơn hàng đã được xử lý' };
+    }
     eventBus.publish({ type: 'order.status', orderId, status: 'paid' });
 
-    return { success: true, order };
+    return { success: true, order: this.getById(orderId) };
   },
 
   manualDeliver(orderId) {
@@ -349,6 +366,29 @@ const orderService = {
       return r.changes > 0;
     });
     return tx();
+  },
+
+  restoreCancelledToPaid(orderId) {
+    const r = db.prepare(`
+      UPDATE orders
+      SET status = 'paid',
+          paid_at = COALESCE(paid_at, CURRENT_TIMESTAMP),
+          delivered_at = NULL,
+          delivered_keys_json = NULL,
+          delivered_keys_resent_at = NULL
+      WHERE id = ? AND status = 'cancelled'
+    `).run(orderId);
+
+    if (r.changes === 0) {
+      const order = this.getById(orderId);
+      if (!order) {
+        return { success: false, code: 'NOT_FOUND', error: 'Đơn hàng không tồn tại' };
+      }
+      return { success: false, code: 'INVALID_STATE', error: 'Chỉ có thể khôi phục đơn đã hủy' };
+    }
+
+    eventBus.publish({ type: 'order.status', orderId, status: 'paid' });
+    return { success: true, order: this.getById(orderId) };
   },
 
   getAllPending() {
@@ -417,6 +457,38 @@ const orderService = {
     `).all(`-${hoursBack} hours`);
   },
 
+  getPaymentMatchCandidates(hoursBack = 24) {
+    return db.prepare(`
+      SELECT o.*, p.name AS product_name
+      FROM orders o
+      JOIN products p ON p.id = o.product_id
+      WHERE o.deleted_at IS NULL
+        AND COALESCE(o.payment_method, 'bank') = 'bank'
+        AND o.expires_at IS NOT NULL
+        AND (
+          (o.status = 'pending' AND o.expires_at > datetime('now'))
+          OR (
+            o.status = 'expired'
+            AND o.expires_at >= datetime('now', ?)
+          )
+        )
+      ORDER BY o.created_at ASC
+    `).all(`-${hoursBack} hours`);
+  },
+
+  getRecoverableExpiredByPaymentCode(paymentCode, hoursBack = 24) {
+    return db.prepare(`
+      SELECT o.*, p.name as product_name
+      FROM orders o
+      JOIN products p ON o.product_id = p.id
+      WHERE o.status = 'expired'
+        AND o.payment_code = ?
+        AND o.expires_at IS NOT NULL
+        AND o.expires_at > datetime('now', ?)
+      LIMIT 1
+    `).get(paymentCode, `-${hoursBack} hours`);
+  },
+
   /**
    * Flip an expired order back to 'paid' because its payment was found late.
    * Idempotent: only succeeds if current status is 'expired'. Returns true on
@@ -425,7 +497,9 @@ const orderService = {
   markRecoveredPaid(orderId) {
     const r = db.prepare(`
       UPDATE orders
-      SET status = 'paid', payment_matched_at = CURRENT_TIMESTAMP
+      SET status = 'paid',
+          paid_at = COALESCE(paid_at, CURRENT_TIMESTAMP),
+          payment_matched_at = CURRENT_TIMESTAMP
       WHERE id = ? AND status = 'expired'
     `).run(orderId);
     return r.changes > 0;
@@ -442,9 +516,73 @@ const orderService = {
       DELETE FROM orders
       WHERE status = 'expired'
         AND expires_at IS NOT NULL
+        AND deleted_at IS NULL
         AND expires_at < datetime('now', ?)
     `).run(`-${hoursBack} hours`);
     return r.changes;
+  },
+
+  softDeleteOrders(orderIds, adminId) {
+    const ids = [...new Set((orderIds || []).map(id => parseInt(id, 10)).filter(Number.isInteger))];
+    if (ids.length === 0) return { requested: 0, affected: 0 };
+
+    const placeholders = ids.map(() => '?').join(',');
+    const tx = db.transaction(() => {
+      const r = db.prepare(`
+        UPDATE orders
+        SET deleted_at = COALESCE(deleted_at, CURRENT_TIMESTAMP),
+            deleted_by = ?
+        WHERE id IN (${placeholders})
+          AND deleted_at IS NULL
+      `).run(adminId ?? null, ...ids);
+      return r.changes;
+    });
+
+    return { requested: ids.length, affected: tx() };
+  },
+
+  restoreDeletedOrders(orderIds) {
+    const ids = [...new Set((orderIds || []).map(id => parseInt(id, 10)).filter(Number.isInteger))];
+    if (ids.length === 0) return { requested: 0, affected: 0 };
+
+    const placeholders = ids.map(() => '?').join(',');
+    const tx = db.transaction(() => {
+      const r = db.prepare(`
+        UPDATE orders
+        SET deleted_at = NULL,
+            deleted_by = NULL
+        WHERE id IN (${placeholders})
+          AND deleted_at IS NOT NULL
+          AND deleted_at > datetime('now', '-30 days')
+      `).run(...ids);
+      return r.changes;
+    });
+
+    return { requested: ids.length, affected: tx() };
+  },
+
+  cleanupDeletedOrders(days = 30) {
+    const cutoff = `-${days} days`;
+    const ids = db.prepare(`
+      SELECT id
+      FROM orders
+      WHERE deleted_at IS NOT NULL
+        AND deleted_at <= datetime('now', ?)
+    `).all(cutoff).map(r => r.id);
+
+    if (ids.length === 0) return 0;
+
+    const placeholders = ids.map(() => '?').join(',');
+    const tx = db.transaction(() => {
+      db.prepare(`
+        UPDATE transactions
+        SET matched_order_id = NULL
+        WHERE matched_order_id IN (${placeholders})
+      `).run(...ids);
+      return db.prepare(`DELETE FROM orders WHERE id IN (${placeholders})`).run(...ids).changes;
+    });
+
+    return tx();
   },
 
   markPaymentMatched(orderId) {

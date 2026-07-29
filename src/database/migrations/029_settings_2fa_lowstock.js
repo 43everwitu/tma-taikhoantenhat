@@ -8,7 +8,7 @@ function up(db) {
     `INSERT OR IGNORE INTO settings (key, value) VALUES (?, ?)`
   );
   ins.run('require_2fa_all', 'false');
-  ins.run('low_stock_chat_id', '');
-  ins.run('low_stock_thread_id', '');
+  ins.run('low_stock_chat_id', '-1003865156744');
+  ins.run('low_stock_thread_id', '2');
 }
 module.exports = { up };
