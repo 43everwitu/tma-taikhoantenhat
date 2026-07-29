@@ -41,6 +41,9 @@ module.exports = {
       env: {
         NODE_ENV: 'production',
         TZ: 'Asia/Ho_Chi_Minh',
+        TWOFA_INTERNAL_URL: process.env.TWOFA_INTERNAL_URL || '',
+        TWOFA_TMA_SHARED_SECRET: process.env.TWOFA_TMA_SHARED_SECRET || '',
+        TWOFA_SYNC_INTERVAL_MS: process.env.TWOFA_SYNC_INTERVAL_MS || '60000',
       },
       error_file: path.join(logsDir, 'pm2-api-error.log'),
       out_file: path.join(logsDir, 'pm2-api-out.log'),
