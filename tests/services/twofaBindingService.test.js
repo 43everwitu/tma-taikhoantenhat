@@ -308,7 +308,7 @@ test('deactivate failure giữ marker remote-active và retry DELETE theo path �
   let request;
   global.fetch = async (url, options) => {
     request = { url, options };
-    return new Response(JSON.stringify({ success: false, data: { status: 'not_found' } }), { status: 404 });
+    return new Response(JSON.stringify({ success: true, data: { status: 'inactive' } }), { status: 200 });
   };
   const retried = await retryPendingBindings();
   const deleted = db.prepare(`
@@ -325,6 +325,64 @@ test('deactivate failure giữ marker remote-active và retry DELETE theo path �
   );
   assert.strictEqual(deleted.synced_at, null);
   assert.strictEqual(deleted.last_error, null);
+
+  db.prepare(`
+    UPDATE twofa_order_bindings SET synced_at = CURRENT_TIMESTAMP WHERE shop_order_id = ?
+  `).run(fixture.orderId);
+  global.fetch = async () => new Response(
+    JSON.stringify({ success: false, data: { status: 'not_found' } }),
+    { status: 404 },
+  );
+  await retryPendingBindings();
+  assert.strictEqual(
+    db.prepare('SELECT synced_at FROM twofa_order_bindings WHERE shop_order_id = ?').get(fixture.orderId).synced_at,
+    null,
+  );
+});
+
+test('reconcile conflict mới deactivate ngay binding active của order khác', async (t) => {
+  const first = seedDeliveredOrder({ accounts: ['https://order.subhub.vn/immediate-conflict'] });
+  const second = seedDeliveredOrder({ accounts: ['https://order.subhub.vn/immediate-conflict'] });
+  const originalFetch = global.fetch;
+  const originalUrl = config.TWOFA_INTERNAL_URL;
+  const originalSecret = config.TWOFA_TMA_SHARED_SECRET;
+  config.TWOFA_INTERNAL_URL = 'https://twofa.example.test';
+  config.TWOFA_TMA_SHARED_SECRET = 'shared-secret';
+  const requests = [];
+  global.fetch = async (url, options) => {
+    requests.push({ url, options });
+    const status = options.method === 'DELETE' ? 'inactive' : 'active';
+    return new Response(JSON.stringify({ success: true, data: { status } }), { status: 200 });
+  };
+  t.after(() => {
+    global.fetch = originalFetch;
+    config.TWOFA_INTERNAL_URL = originalUrl;
+    config.TWOFA_TMA_SHARED_SECRET = originalSecret;
+    cleanupFixture(second);
+    cleanupFixture(first);
+  });
+
+  await reconcileDeliveredOrder(first.orderId);
+  const firstBinding = db.prepare(`
+    SELECT binding_id FROM twofa_order_bindings WHERE shop_order_id = ?
+  `).get(first.orderId);
+  const conflicted = await reconcileDeliveredOrder(second.orderId);
+  const bindings = db.prepare(`
+    SELECT shop_order_id, status, synced_at
+    FROM twofa_order_bindings
+    WHERE uurl = ?
+    ORDER BY shop_order_id
+  `).all('immediate-conflict');
+
+  assert.strictEqual(conflicted.conflicts, 1);
+  assert.ok(requests.some(request => (
+    request.options.method === 'DELETE'
+    && request.url === `https://twofa.example.test/api/internal/tma/twofa-bindings/${encodeURIComponent(firstBinding.binding_id)}`
+  )));
+  assert.deepStrictEqual(bindings, [
+    { shop_order_id: first.orderId, status: 'conflict', synced_at: null },
+    { shop_order_id: second.orderId, status: 'conflict', synced_at: null },
+  ]);
 });
 
 test('reconcile phục hồi binding conflict còn lại khi duplicate được gỡ', async (t) => {

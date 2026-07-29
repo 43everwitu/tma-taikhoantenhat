@@ -89,6 +89,17 @@ function getBindingsForOrder(orderId, statuses) {
   `).all(orderId, ...statuses);
 }
 
+function getBindingsForUurls(uurls, statuses) {
+  if (uurls.size === 0) return [];
+  const uurlPlaceholders = Array.from(uurls, () => '?').join(', ');
+  const statusPlaceholders = statuses.map(() => '?').join(', ');
+  return db.prepare(`
+    SELECT * FROM twofa_order_bindings
+    WHERE uurl IN (${uurlPlaceholders}) AND status IN (${statusPlaceholders})
+    ORDER BY id
+  `).all(...uurls, ...statuses);
+}
+
 function upsertCandidates(order, links) {
   const existing = db.prepare(`
     SELECT uurl FROM twofa_order_bindings WHERE shop_order_id = ?
@@ -197,7 +208,7 @@ async function sendSignedRequest(method, pathname, rawBody = Buffer.alloc(0)) {
     throw new Error('2FA trả về JSON không hợp lệ');
   }
   const status = envelope?.data?.status;
-  if (typeof envelope?.success !== 'boolean' || !['active', 'conflict', 'not_found', 'invalid'].includes(status)) {
+  if (typeof envelope?.success !== 'boolean' || !['active', 'conflict', 'inactive', 'not_found', 'invalid'].includes(status)) {
     throw new Error('2FA trả về trạng thái không hợp lệ');
   }
   return status;
@@ -309,7 +320,7 @@ async function reconcileDeliveredOrder(orderId, options = {}) {
   `).get(order.id).count;
   if (options.register === false) return result;
 
-  const deactivate = getBindingsForOrder(order.id, ['inactive', 'conflict'])
+  const deactivate = getBindingsForUurls(affectedUurls, ['inactive', 'conflict'])
     .filter(binding => binding.synced_at);
   for (const binding of deactivate) {
     const synced = await syncBinding(binding);
