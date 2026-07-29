@@ -452,13 +452,86 @@ test('POST active response compensates with DELETE when binding becomes conflict
   ]);
 });
 
-test('overlapping active POST responses do not deactivate an already active desired binding', async (t) => {
+test('reactivation POST waits for an in-flight compensation DELETE on the same binding', async (t) => {
+  const first = seedDeliveredOrder({ accounts: ['https://order.subhub.vn/serialized-reactivation'] });
+  const second = seedDeliveredOrder({ accounts: ['https://order.subhub.vn/serialized-reactivation'] });
+  const originalFetch = global.fetch;
+  const originalUrl = config.TWOFA_INTERNAL_URL;
+  const originalSecret = config.TWOFA_TMA_SHARED_SECRET;
+  const firstPostStarted = createDeferred();
+  const releaseFirstPost = createDeferred();
+  const deleteStarted = createDeferred();
+  const releaseDelete = createDeferred();
+  const methods = [];
+  let postCount = 0;
+  let remoteActive = false;
+  config.TWOFA_INTERNAL_URL = 'https://twofa.example.test';
+  config.TWOFA_TMA_SHARED_SECRET = 'shared-secret';
+  global.fetch = async (_url, options) => {
+    methods.push(options.method);
+    if (options.method === 'POST') {
+      postCount += 1;
+      if (postCount === 1) {
+        firstPostStarted.resolve();
+        await releaseFirstPost.promise;
+      }
+      remoteActive = true;
+      return new Response(
+        JSON.stringify({ success: true, data: { status: 'active' } }),
+        { status: 200 },
+      );
+    }
+    deleteStarted.resolve();
+    await releaseDelete.promise;
+    remoteActive = false;
+    return new Response(
+      JSON.stringify({ success: true, data: { status: 'inactive' } }),
+      { status: 200 },
+    );
+  };
+  t.after(() => {
+    releaseFirstPost.resolve();
+    releaseDelete.resolve();
+    global.fetch = originalFetch;
+    config.TWOFA_INTERNAL_URL = originalUrl;
+    config.TWOFA_TMA_SHARED_SECRET = originalSecret;
+    cleanupFixture(second);
+    cleanupFixture(first);
+  });
+
+  const firstReconcile = reconcileDeliveredOrder(first.orderId);
+  await firstPostStarted.promise;
+  await reconcileDeliveredOrder(second.orderId, { register: false });
+  releaseFirstPost.resolve();
+  await deleteStarted.promise;
+
+  db.prepare('UPDATE orders SET delivered_keys_json = ? WHERE id = ?').run('[]', second.orderId);
+  await reconcileDeliveredOrder(second.orderId, { register: false });
+  const reactivation = reconcileDeliveredOrder(first.orderId);
+  await flushPromises();
+
+  assert.deepStrictEqual(methods, ['POST', 'DELETE']);
+  releaseDelete.resolve();
+  await Promise.all([firstReconcile, reactivation]);
+
+  const binding = db.prepare(`
+    SELECT status, synced_at
+    FROM twofa_order_bindings
+    WHERE shop_order_id = ?
+  `).get(first.orderId);
+  assert.deepStrictEqual(methods, ['POST', 'DELETE', 'POST']);
+  assert.strictEqual(binding.status, 'active');
+  assert.ok(binding.synced_at);
+  assert.strictEqual(remoteActive, true);
+});
+
+test('overlapping active sync requests serialize without DELETE and release their queue', async (t) => {
   const fixture = seedDeliveredOrder({ accounts: ['https://order.subhub.vn/concurrent-active'] });
   const originalFetch = global.fetch;
   const originalUrl = config.TWOFA_INTERNAL_URL;
   const originalSecret = config.TWOFA_TMA_SHARED_SECRET;
-  const bothPostsStarted = createDeferred();
-  const releasePosts = createDeferred();
+  const firstPostStarted = createDeferred();
+  const releaseFirstPost = createDeferred();
   const methods = [];
   let postCount = 0;
   config.TWOFA_INTERNAL_URL = 'https://twofa.example.test';
@@ -467,8 +540,10 @@ test('overlapping active POST responses do not deactivate an already active desi
     methods.push(options.method);
     if (options.method === 'POST') {
       postCount += 1;
-      if (postCount === 2) bothPostsStarted.resolve();
-      await releasePosts.promise;
+      if (postCount === 1) {
+        firstPostStarted.resolve();
+        await releaseFirstPost.promise;
+      }
       return new Response(
         JSON.stringify({ success: true, data: { status: 'active' } }),
         { status: 200 },
@@ -480,7 +555,7 @@ test('overlapping active POST responses do not deactivate an already active desi
     );
   };
   t.after(() => {
-    releasePosts.resolve();
+    releaseFirstPost.resolve();
     global.fetch = originalFetch;
     config.TWOFA_INTERNAL_URL = originalUrl;
     config.TWOFA_TMA_SHARED_SECRET = originalSecret;
@@ -488,12 +563,30 @@ test('overlapping active POST responses do not deactivate an already active desi
   });
 
   const firstReconcile = reconcileDeliveredOrder(fixture.orderId);
+  await firstPostStarted.promise;
   const secondReconcile = reconcileDeliveredOrder(fixture.orderId);
-  await bothPostsStarted.promise;
-  releasePosts.resolve();
+  await flushPromises();
+  assert.deepStrictEqual(methods, ['POST']);
+
+  releaseFirstPost.resolve();
   await Promise.all([firstReconcile, secondReconcile]);
 
-  const binding = db.prepare(`
+  let binding = db.prepare(`
+    SELECT status, synced_at
+    FROM twofa_order_bindings
+    WHERE shop_order_id = ?
+  `).get(fixture.orderId);
+  assert.deepStrictEqual(methods, ['POST']);
+  assert.strictEqual(binding.status, 'active');
+  assert.ok(binding.synced_at);
+
+  db.prepare(`
+    UPDATE twofa_order_bindings
+    SET status = 'pending', synced_at = NULL
+    WHERE shop_order_id = ?
+  `).run(fixture.orderId);
+  await reconcileDeliveredOrder(fixture.orderId);
+  binding = db.prepare(`
     SELECT status, synced_at
     FROM twofa_order_bindings
     WHERE shop_order_id = ?

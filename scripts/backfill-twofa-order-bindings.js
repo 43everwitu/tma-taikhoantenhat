@@ -1,4 +1,5 @@
 const fs = require('node:fs');
+const os = require('node:os');
 const path = require('node:path');
 const Database = require('better-sqlite3');
 const {
@@ -7,6 +8,7 @@ const {
 } = require('../src/services/twofaOrderLinkParser');
 
 const DEFAULT_DATABASE_PATH = path.join(__dirname, '..', 'data', 'shop.db');
+const SNAPSHOT_ATTEMPTS = 3;
 
 function getDeliveredOrders(db) {
   return db.prepare(`
@@ -15,6 +17,57 @@ function getDeliveredOrders(db) {
     WHERE status = 'delivered'
     ORDER BY id
   `).all();
+}
+
+function fileFingerprint(filePath) {
+  try {
+    const stat = fs.statSync(filePath, { bigint: true });
+    return [stat.dev, stat.ino, stat.size, stat.mtimeNs].join(':');
+  } catch (error) {
+    if (error.code === 'ENOENT') return null;
+    throw error;
+  }
+}
+
+function copyStableSnapshot(sourcePath, snapshotPath) {
+  const sourceWalPath = `${sourcePath}-wal`;
+  const snapshotWalPath = `${snapshotPath}-wal`;
+  const beforeMain = fileFingerprint(sourcePath);
+  const beforeWal = fileFingerprint(sourceWalPath);
+  if (!beforeMain) throw new Error('snapshot source missing');
+
+  fs.copyFileSync(sourcePath, snapshotPath);
+  if (beforeWal) fs.copyFileSync(sourceWalPath, snapshotWalPath);
+
+  const afterMain = fileFingerprint(sourcePath);
+  const afterWal = fileFingerprint(sourceWalPath);
+  if (beforeMain !== afterMain || beforeWal !== afterWal) {
+    throw new Error('snapshot source changed');
+  }
+}
+
+function getDeliveredOrdersFromSnapshot(databasePath) {
+  for (let attempt = 0; attempt < SNAPSHOT_ATTEMPTS; attempt += 1) {
+    const snapshotDir = fs.mkdtempSync(path.join(os.tmpdir(), 'twofa-backfill-snapshot-'));
+    const snapshotPath = path.join(snapshotDir, 'shop.db');
+    let snapshotDb;
+    try {
+      copyStableSnapshot(databasePath, snapshotPath);
+      snapshotDb = new Database(snapshotPath, { readonly: true, fileMustExist: true });
+      return getDeliveredOrders(snapshotDb);
+    } catch {
+      if (attempt === SNAPSHOT_ATTEMPTS - 1) {
+        throw new Error('Không thể tạo snapshot read-only cho backfill 2FA');
+      }
+    } finally {
+      try {
+        snapshotDb?.close();
+      } finally {
+        fs.rmSync(snapshotDir, { recursive: true, force: true });
+      }
+    }
+  }
+  throw new Error('Không thể tạo snapshot read-only cho backfill 2FA');
 }
 
 function analyzeOrders(orders) {
@@ -71,13 +124,9 @@ async function runBackfill({
 
   let db = injectedDb;
   let reconcile = injectedReconcile;
-  let closeDb = false;
   if (!db) {
     if (apply) {
       db = require('../src/database');
-    } else {
-      db = new Database(databasePath, { readonly: true, fileMustExist: true });
-      closeDb = true;
     }
   }
   if (apply && !reconcile) {
@@ -87,29 +136,27 @@ async function runBackfill({
     ({ reconcileDeliveredOrder: reconcile } = require('../src/services/twofaBindingService'));
   }
 
-  try {
-    const orders = getDeliveredOrders(db);
-    const report = {
-      apply: Boolean(apply),
-      ...analyzeOrders(orders),
-      created: 0,
-      active: 0,
-      conflicts: 0,
-      failed: 0,
-    };
+  const orders = db
+    ? getDeliveredOrders(db)
+    : getDeliveredOrdersFromSnapshot(databasePath);
+  const report = {
+    apply: Boolean(apply),
+    ...analyzeOrders(orders),
+    created: 0,
+    active: 0,
+    conflicts: 0,
+    failed: 0,
+  };
 
-    if (!apply) return report;
-    for (const order of orders) {
-      const result = await reconcile(order.id, { register });
-      report.created += result.created;
-      report.active += result.active;
-      report.conflicts += result.conflicts;
-      report.failed += result.failed;
-    }
-    return report;
-  } finally {
-    if (closeDb) db.close();
+  if (!apply) return report;
+  for (const order of orders) {
+    const result = await reconcile(order.id, { register });
+    report.created += result.created;
+    report.active += result.active;
+    report.conflicts += result.conflicts;
+    report.failed += result.failed;
   }
+  return report;
 }
 
 async function main() {

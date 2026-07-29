@@ -37,6 +37,48 @@ const scriptPath = path.resolve(__dirname, '../../scripts/backfill-twofa-order-b
 const appDatabaseDirectory = path.resolve(__dirname, '../../src/database');
 const bindingServicePath = path.resolve(__dirname, '../../src/services/twofaBindingService.js');
 
+function snapshotDirectory(directory) {
+  return fs.readdirSync(directory).sort().map((name) => {
+    const filePath = path.join(directory, name);
+    return {
+      name,
+      hash: crypto.createHash('sha256').update(fs.readFileSync(filePath)).digest('hex'),
+    };
+  });
+}
+
+function runDryRunChild(databasePath) {
+  const childSource = `
+    const Module = require('node:module');
+    const originalLoad = Module._load;
+    Module._load = function(request, parent, isMain) {
+      const resolved = Module._resolveFilename(request, parent, isMain);
+      if (
+        resolved === ${JSON.stringify(bindingServicePath)}
+        || resolved.startsWith(${JSON.stringify(`${appDatabaseDirectory}${path.sep}`)})
+      ) {
+        throw new Error('EARLY_DATABASE_LOAD:' + resolved);
+      }
+      return originalLoad.apply(this, arguments);
+    };
+    const { runBackfill } = require(${JSON.stringify(scriptPath)});
+    runBackfill({
+      apply: false,
+      register: false,
+      databasePath: ${JSON.stringify(databasePath)}
+    }).then(report => {
+      process.stdout.write(JSON.stringify(report));
+    }).catch(error => {
+      console.error(error.stack);
+      process.exitCode = 1;
+    });
+  `;
+  return spawnSync(process.execPath, ['-e', childSource], {
+    cwd: path.resolve(__dirname, '../..'),
+    encoding: 'utf8',
+  });
+}
+
 const suffix = `${Date.now()}-${Math.floor(Math.random() * 1e9)}`;
 const uniqueUurl = `backfill-unique-${suffix}`;
 const sharedUurl = `backfill-shared-${suffix}`;
@@ -151,10 +193,11 @@ test('apply is idempotent, skips non-delivered orders and leaves duplicate UURL 
   assert.ok(rows.every(row => row.shop_order_id !== ignoredOrderId));
 });
 
-test('production dry-run opens an unmigrated database read-only without loading app database modules', (t) => {
+test('production dry-run does not create sidecars beside a WAL-mode source database', (t) => {
   const tempDir = fs.mkdtempSync(path.join(os.tmpdir(), 'twofa-backfill-readonly-'));
   const tempDbPath = path.join(tempDir, 'shop.db');
   const tempDb = new Database(tempDbPath);
+  tempDb.pragma('journal_mode = WAL');
   tempDb.exec(`
     CREATE TABLE orders (
       id INTEGER PRIMARY KEY,
@@ -166,52 +209,50 @@ test('production dry-run opens an unmigrated database read-only without loading 
     INSERT INTO orders (id, status, delivered_keys_json)
     VALUES (1, 'delivered', ?)
   `).run(JSON.stringify([`https://order.subhub.vn/readonly-${suffix}`]));
+  tempDb.pragma('wal_checkpoint(TRUNCATE)');
   tempDb.close();
-  const beforeHash = crypto.createHash('sha256').update(fs.readFileSync(tempDbPath)).digest('hex');
+  const before = snapshotDirectory(tempDir);
+  assert.deepStrictEqual(before.map(entry => entry.name), ['shop.db']);
   t.after(() => fs.rmSync(tempDir, { recursive: true, force: true }));
 
-  const childSource = `
-    const Module = require('node:module');
-    const originalLoad = Module._load;
-    Module._load = function(request, parent, isMain) {
-      const resolved = Module._resolveFilename(request, parent, isMain);
-      if (
-        resolved === ${JSON.stringify(bindingServicePath)}
-        || resolved.startsWith(${JSON.stringify(`${appDatabaseDirectory}${path.sep}`)})
-      ) {
-        throw new Error('EARLY_DATABASE_LOAD:' + resolved);
-      }
-      return originalLoad.apply(this, arguments);
-    };
-    const { runBackfill } = require(${JSON.stringify(scriptPath)});
-    runBackfill({
-      apply: false,
-      register: false,
-      databasePath: ${JSON.stringify(tempDbPath)}
-    }).then(report => {
-      process.stdout.write(JSON.stringify(report));
-    }).catch(error => {
-      console.error(error.stack);
-      process.exitCode = 1;
-    });
-  `;
-  const child = spawnSync(process.execPath, ['-e', childSource], {
-    cwd: path.resolve(__dirname, '../..'),
-    encoding: 'utf8',
-  });
+  const child = runDryRunChild(tempDbPath);
 
   assert.strictEqual(child.status, 0, child.stderr);
   assert.strictEqual(JSON.parse(child.stdout).deliveredOrders, 1);
-  const afterHash = crypto.createHash('sha256').update(fs.readFileSync(tempDbPath)).digest('hex');
-  assert.strictEqual(afterHash, beforeHash);
-  assert.strictEqual(fs.existsSync(`${tempDbPath}-wal`), false);
-  assert.strictEqual(fs.existsSync(`${tempDbPath}-shm`), false);
-  const verifyDb = new Database(tempDbPath, { readonly: true, fileMustExist: true });
-  assert.deepStrictEqual(
-    verifyDb.prepare("SELECT name FROM sqlite_master WHERE type = 'table' ORDER BY name").all(),
-    [{ name: 'orders' }],
-  );
-  verifyDb.close();
+  assert.deepStrictEqual(snapshotDirectory(tempDir), before);
+});
+
+test('production dry-run snapshot includes delivered rows not checkpointed from WAL', (t) => {
+  const tempDir = fs.mkdtempSync(path.join(os.tmpdir(), 'twofa-backfill-wal-'));
+  const tempDbPath = path.join(tempDir, 'shop.db');
+  const writerDb = new Database(tempDbPath);
+  writerDb.pragma('journal_mode = WAL');
+  writerDb.exec(`
+    CREATE TABLE orders (
+      id INTEGER PRIMARY KEY,
+      status TEXT NOT NULL,
+      delivered_keys_json TEXT
+    )
+  `);
+  writerDb.pragma('wal_checkpoint(TRUNCATE)');
+  writerDb.pragma('wal_autocheckpoint = 0');
+  writerDb.prepare(`
+    INSERT INTO orders (id, status, delivered_keys_json)
+    VALUES (1, 'delivered', ?)
+  `).run(JSON.stringify([`https://order.subhub.vn/wal-${suffix}`]));
+  const before = snapshotDirectory(tempDir);
+  assert.ok(before.some(entry => entry.name === 'shop.db-wal'));
+  t.after(() => {
+    writerDb.close();
+    fs.rmSync(tempDir, { recursive: true, force: true });
+  });
+
+  const child = runDryRunChild(tempDbPath);
+
+  assert.strictEqual(child.status, 0, child.stderr);
+  assert.strictEqual(JSON.parse(child.stdout).deliveredOrders, 1);
+  assert.strictEqual(JSON.parse(child.stdout).validLinks, 1);
+  assert.deepStrictEqual(snapshotDirectory(tempDir), before);
 });
 
 test('apply validates backup before loading app database modules', () => {

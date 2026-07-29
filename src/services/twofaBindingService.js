@@ -52,6 +52,12 @@ function getBindingsForUurls(uurls, statuses) {
   `).all(...uurls, ...statuses);
 }
 
+function getBindingById(bindingId) {
+  return db.prepare(`
+    SELECT * FROM twofa_order_bindings WHERE binding_id = ?
+  `).get(bindingId);
+}
+
 function upsertCandidates(order, links) {
   const existing = db.prepare(`
     SELECT uurl FROM twofa_order_bindings WHERE shop_order_id = ?
@@ -249,7 +255,7 @@ async function deactivateRemoteBinding(binding) {
   }
 }
 
-async function syncBinding(binding) {
+async function syncCurrentBinding(binding) {
   if (['inactive', 'conflict'].includes(binding.status) && binding.synced_at) {
     return deactivateRemoteBinding(binding);
   }
@@ -279,6 +285,26 @@ async function syncBinding(binding) {
   }
 }
 
+const bindingSyncQueues = new Map();
+
+function enqueueBindingSync(bindingId) {
+  const previous = bindingSyncQueues.get(bindingId) || Promise.resolve();
+  const operation = previous
+    .catch(() => {})
+    .then(() => {
+      const binding = getBindingById(bindingId);
+      if (!binding) return { active: 0, failed: 0 };
+      return syncCurrentBinding(binding);
+    });
+  const tracked = operation.finally(() => {
+    if (bindingSyncQueues.get(bindingId) === tracked) {
+      bindingSyncQueues.delete(bindingId);
+    }
+  });
+  bindingSyncQueues.set(bindingId, tracked);
+  return tracked;
+}
+
 async function reconcileDeliveredOrder(orderId, options = {}) {
   const result = { created: 0, active: 0, conflicts: 0, failed: 0 };
   const order = getDeliveredOrder(orderId);
@@ -300,12 +326,12 @@ async function reconcileDeliveredOrder(orderId, options = {}) {
   const deactivate = getBindingsForUurls(affectedUurls, ['inactive', 'conflict'])
     .filter(binding => binding.synced_at);
   for (const binding of deactivate) {
-    const synced = await syncBinding(binding);
+    const synced = await enqueueBindingSync(binding.binding_id);
     result.failed += synced.failed;
   }
   const register = getBindingsForOrder(order.id, ['pending', 'sync_failed']);
   for (const binding of register) {
-    const synced = await syncBinding(binding);
+    const synced = await enqueueBindingSync(binding.binding_id);
     result.active += synced.active;
     result.failed += synced.failed;
     result.conflicts += synced.conflicts || 0;
@@ -350,7 +376,7 @@ async function retryPendingBindings(limit = 50) {
     try {
       const synced = reconcileForTest
         ? await reconcileForTest(binding.shop_order_id)
-        : await syncBinding(binding);
+        : await enqueueBindingSync(binding.binding_id);
       result.active += synced.active || 0;
       result.failed += synced.failed || 0;
     } catch {
