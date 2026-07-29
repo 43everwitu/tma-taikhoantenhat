@@ -133,6 +133,9 @@ async function start() {
   require('./services/orderChannelService').init(bot);
   require('./services/keyExpiryReminderService').start(bot);
   console.log('⏰ Key expiry reminder armed (daily 09:00 ICT)');
+  app.locals.stopTwofaSync = require('./services/twofaBindingService').startRetryWorker({
+    intervalMs: config.TWOFA_SYNC_INTERVAL_MS,
+  });
 
   // Initialize notification service
   const { NotificationService } = require('./services/notificationService');

@@ -9,6 +9,7 @@ const { requirePermission } = require('../../middleware/auth');
 const { deliverOrder } = require('../../../services/orderFulfillmentService');
 const { getKeyLifecycleForOrder } = require('../../../services/orderExpiryService');
 const telegramApiClient = require('../../../services/telegramApiClient');
+const { scheduleTwofaBindingSync } = require('../../../services/twofaBindingService');
 
 const router = Router();
 
@@ -593,6 +594,7 @@ router.post('/:id/manual-deliver', validate(z.object({
     for (const acc of req.validated.accounts) insertSoldStock.run(order.product_id, order.variant_id ?? null, acc, durationDays, order.user_id);
   });
   tx();
+  scheduleTwofaBindingSync(orderId);
 
   auditService.log(req.admin.adminId, 'order.manual_deliver', 'order', orderId, { accountCount: req.validated.accounts.length, durationDays }, req.ip);
 
@@ -630,6 +632,7 @@ router.patch('/:id/keys', validate(z.object({
   const order = orderService.getById(orderId);
   if (!order) return res.status(404).json({ success: false, error: { code: 'NOT_FOUND' } });
   db.prepare(`UPDATE orders SET delivered_keys_json = ? WHERE id = ?`).run(JSON.stringify(req.validated.accounts), orderId);
+  scheduleTwofaBindingSync(orderId);
   auditService.log(req.admin.adminId, 'order.keys_edit', 'order', orderId, { count: req.validated.accounts.length }, req.ip);
   res.json({ success: true, data: { orderId } });
 });

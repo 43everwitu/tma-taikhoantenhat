@@ -342,6 +342,21 @@ function setReconcileForTest(fn) {
   reconcileForTest = fn;
 }
 
+function scheduleTwofaBindingSync(orderId) {
+  Promise.resolve()
+    .then(() => (
+      reconcileForTest
+        ? reconcileForTest(orderId)
+        : reconcileDeliveredOrder(orderId)
+    ))
+    .catch((error) => {
+      console.error('[twofa-binding] sync failed', {
+        orderId: Number(orderId),
+        error: redactIntegrationError(error),
+      });
+    });
+}
+
 async function retryPendingBindings(limit = 50) {
   const cappedLimit = Math.min(50, Math.max(1, Number(limit) || 50));
   const bindings = db.prepare(`
@@ -384,5 +399,6 @@ module.exports = {
   retryPendingBindings,
   startRetryWorker,
   setReconcileForTest,
+  scheduleTwofaBindingSync,
   redactIntegrationError,
 };

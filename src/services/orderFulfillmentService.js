@@ -3,6 +3,7 @@ const productService = require('./productService');
 const { sendDelivery } = require('./notificationService');
 const { richifyText } = require('../utils/messages');
 const { postDeliveryKeyboard } = require('../utils/keyboard');
+const { scheduleTwofaBindingSync } = require('./twofaBindingService');
 
 async function deliverOrder(bot, orderId) {
     const result = orderService.confirmAndDeliver(orderId);
@@ -29,6 +30,7 @@ async function deliverOrder(bot, orderId) {
         postDeliveryKeyboard: postDeliveryKeyboard(),
     });
     await orderChannelService.postOrderCard({ order, product, variant, keys: result.accounts });
+    scheduleTwofaBindingSync(orderId);
 
     return result;
 }
