@@ -2,49 +2,10 @@ const crypto = require('node:crypto');
 const db = require('../database');
 const config = require('../config');
 const { signPayload } = require('./twofaIntegrationAuth');
-
-const ALLOWED_ORDER_HOSTS = new Set([
-  'order.taikhoantenhat.com',
-  'order.godstudy.me',
-  'order.subhub.vn',
-]);
-
-function extractTwofaOrderLinks(values) {
-  const links = [];
-  const seenUurls = new Set();
-
-  for (const value of values || []) {
-    if (typeof value !== 'string') continue;
-    for (const match of value.matchAll(/https:\/\/[^\s<>"']+/g)) {
-      let parsed;
-      try {
-        parsed = new URL(match[0]);
-      } catch {
-        continue;
-      }
-      if (parsed.protocol !== 'https:' || parsed.port || !ALLOWED_ORDER_HOSTS.has(parsed.hostname)) {
-        continue;
-      }
-      if (!/^\/[^/]+$/.test(parsed.pathname)) continue;
-
-      let uurl;
-      try {
-        uurl = decodeURIComponent(parsed.pathname.slice(1));
-      } catch {
-        continue;
-      }
-      if (!uurl || uurl.includes('/') || seenUurls.has(uurl)) continue;
-
-      seenUurls.add(uurl);
-      links.push({
-        uurl,
-        host: parsed.hostname,
-        orderUrl: `${parsed.origin}${parsed.pathname}`,
-      });
-    }
-  }
-  return links;
-}
+const {
+  extractTwofaOrderLinks,
+  parseDeliveredKeys,
+} = require('./twofaOrderLinkParser');
 
 function maskTelegramRecipient({ username, telegramId }) {
   const normalizedUsername = String(username || '').replace(/^@/, '').trim();
@@ -61,15 +22,6 @@ function redactIntegrationError() {
 function createBindingId(orderId, uurl) {
   const digest = crypto.createHash('sha256').update(`${orderId}:${uurl}`).digest('hex');
   return `tma-${orderId}-${digest.slice(0, 24)}`;
-}
-
-function parseDeliveredKeys(value) {
-  try {
-    const keys = JSON.parse(value || '[]');
-    return Array.isArray(keys) ? keys.filter(key => typeof key === 'string') : [];
-  } catch {
-    return [];
-  }
 }
 
 function getDeliveredOrder(orderId) {
@@ -230,12 +182,27 @@ async function deactivateBinding(binding) {
   );
 }
 
-function markActive(bindingId) {
-  db.prepare(`
+function markActiveIfDesired(bindingId) {
+  const result = db.prepare(`
     UPDATE twofa_order_bindings
     SET status = 'active', last_error = NULL, synced_at = CURRENT_TIMESTAMP, updated_at = CURRENT_TIMESTAMP
+    WHERE binding_id = ? AND status IN ('pending', 'sync_failed')
+  `).run(bindingId);
+  return result.changes === 1;
+}
+
+function markRemoteActive(bindingId) {
+  db.prepare(`
+    UPDATE twofa_order_bindings
+    SET synced_at = CURRENT_TIMESTAMP, last_error = NULL, updated_at = CURRENT_TIMESTAMP
     WHERE binding_id = ?
   `).run(bindingId);
+}
+
+function getBindingStatus(bindingId) {
+  return db.prepare(`
+    SELECT status FROM twofa_order_bindings WHERE binding_id = ?
+  `).get(bindingId)?.status;
 }
 
 function markConflict(bindingId) {
@@ -270,25 +237,35 @@ function clearRemoteMarker(bindingId) {
   `).run(bindingId);
 }
 
+async function deactivateRemoteBinding(binding) {
+  try {
+    const status = await deactivateBinding(binding);
+    if (status === 'invalid') throw new Error('2FA từ chối deactivate binding');
+    clearRemoteMarker(binding.binding_id);
+    return { active: 0, failed: 0 };
+  } catch {
+    markDeactivateFailure(binding.binding_id);
+    return { active: 0, failed: 1 };
+  }
+}
+
 async function syncBinding(binding) {
   if (['inactive', 'conflict'].includes(binding.status) && binding.synced_at) {
-    try {
-      const status = await deactivateBinding(binding);
-      if (status === 'invalid') throw new Error('2FA từ chối deactivate binding');
-      clearRemoteMarker(binding.binding_id);
-      return { active: 0, failed: 0 };
-    } catch {
-      markDeactivateFailure(binding.binding_id);
-      return { active: 0, failed: 1 };
-    }
+    return deactivateRemoteBinding(binding);
   }
 
   if (!['pending', 'sync_failed'].includes(binding.status)) return { active: 0, failed: 0 };
   try {
     const status = await registerBinding(binding);
     if (status === 'active') {
-      markActive(binding.binding_id);
-      return { active: 1, failed: 0 };
+      if (markActiveIfDesired(binding.binding_id)) {
+        return { active: 1, failed: 0 };
+      }
+      if (getBindingStatus(binding.binding_id) === 'active') {
+        return { active: 0, failed: 0 };
+      }
+      markRemoteActive(binding.binding_id);
+      return deactivateRemoteBinding(binding);
     }
     if (status === 'conflict') {
       markConflict(binding.binding_id);
@@ -385,11 +362,25 @@ async function retryPendingBindings(limit = 50) {
 
 function startRetryWorker({ intervalMs } = {}) {
   if (!config.TWOFA_INTERNAL_URL || !config.TWOFA_TMA_SHARED_SECRET) return () => {};
-  const timer = setInterval(() => {
-    retryPendingBindings().catch(() => {});
-  }, intervalMs || config.TWOFA_SYNC_INTERVAL_MS);
+  let stopped = false;
+  let inFlight = false;
+  const runTick = () => {
+    if (stopped || inFlight) return;
+    inFlight = true;
+    Promise.resolve()
+      .then(() => retryPendingBindings())
+      .catch(() => {})
+      .finally(() => {
+        inFlight = false;
+      });
+  };
+  const timer = setInterval(runTick, intervalMs || config.TWOFA_SYNC_INTERVAL_MS);
   timer.unref?.();
-  return () => clearInterval(timer);
+  return () => {
+    if (stopped) return;
+    stopped = true;
+    clearInterval(timer);
+  };
 }
 
 module.exports = {

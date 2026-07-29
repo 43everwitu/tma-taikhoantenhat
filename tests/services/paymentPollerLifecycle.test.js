@@ -195,6 +195,7 @@ async function withPaymentPollerFakes(t, fakes, fn) {
     orderChannelService: require.resolve('../../src/services/orderChannelService'),
     variantService: require.resolve('../../src/services/variantService'),
     productService: require.resolve('../../src/services/productService'),
+    twofaBindingService: require.resolve('../../src/services/twofaBindingService'),
     database: require.resolve('../../src/database'),
   };
   const previous = new Map();
@@ -991,6 +992,58 @@ test('full memo-less order match persists matched audit metadata', async (t) => 
       assert.strictEqual(markedOrderId, 100908);
     },
   );
+});
+
+test('successful payment delivery schedules 2FA sync before customer notification', async (t) => {
+  const holder = makeDecisionDb();
+  const selected = memoLessOrder({
+    product_id: 42,
+    product_name: 'Fixture',
+    quantity: 1,
+  });
+  const events = [];
+  const orderService = {
+    markPaymentMatched: () => {},
+    confirmAndDeliver: () => {
+      events.push('commit');
+      return {
+        success: true,
+        backorder: false,
+        order: {
+          ...selected,
+          variant_id: null,
+        },
+        accounts: ['fixture-key'],
+      };
+    },
+  };
+  const twofaBindingService = {
+    scheduleTwofaBindingSync: orderId => events.push(`sync:${orderId}`),
+  };
+
+  await withPaymentPollerFakes(
+    t,
+    { orderService, twofaBindingService },
+    async (PaymentPoller) => {
+      const poller = new PaymentPoller(holder, makeBot());
+      poller._notifyCustomerDelivered = async () => {
+        events.push('notify');
+        throw new Error('customer notification failed');
+      };
+
+      await assert.rejects(
+        poller._processOrderMatch(
+          memoLessTx(),
+          'PNS100908',
+          selected,
+          { matchReason: 'amount_time_unique' },
+        ),
+        /customer notification failed/,
+      );
+    },
+  );
+
+  assert.deepStrictEqual(events, ['commit', 'sync:100908', 'notify']);
 });
 
 test('full payment stays retryable when confirmAndDeliver throws', async (t) => {

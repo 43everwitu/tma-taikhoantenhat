@@ -16,6 +16,20 @@ const db = require('../../src/database');
 const { signPayload } = require('../../src/services/twofaIntegrationAuth');
 const migration = require('../../src/database/migrations/062_twofa_order_bindings');
 
+function createDeferred() {
+  let resolve;
+  let reject;
+  const promise = new Promise((resolvePromise, rejectPromise) => {
+    resolve = resolvePromise;
+    reject = rejectPromise;
+  });
+  return { promise, resolve, reject };
+}
+
+function flushPromises() {
+  return new Promise(resolve => setImmediate(resolve));
+}
+
 function seedDeliveredOrder({ accounts, username = 'fixtureuser' }) {
   const suffix = `${Date.now()}-${Math.floor(Math.random() * 1e9)}`;
   const userId = 8_800_000_000 + Math.floor(Math.random() * 1_000_000);
@@ -385,6 +399,110 @@ test('reconcile conflict mới deactivate ngay binding active của order khác'
   ]);
 });
 
+test('POST active response compensates with DELETE when binding becomes conflict in flight', async (t) => {
+  const first = seedDeliveredOrder({ accounts: ['https://order.subhub.vn/concurrent-conflict'] });
+  const second = seedDeliveredOrder({ accounts: ['https://order.subhub.vn/concurrent-conflict'] });
+  const originalFetch = global.fetch;
+  const originalUrl = config.TWOFA_INTERNAL_URL;
+  const originalSecret = config.TWOFA_TMA_SHARED_SECRET;
+  const postStarted = createDeferred();
+  const postResponse = createDeferred();
+  const methods = [];
+  config.TWOFA_INTERNAL_URL = 'https://twofa.example.test';
+  config.TWOFA_TMA_SHARED_SECRET = 'shared-secret';
+  global.fetch = async (_url, options) => {
+    methods.push(options.method);
+    if (options.method === 'POST') {
+      postStarted.resolve();
+      return postResponse.promise;
+    }
+    return new Response(
+      JSON.stringify({ success: true, data: { status: 'inactive' } }),
+      { status: 200 },
+    );
+  };
+  t.after(() => {
+    global.fetch = originalFetch;
+    config.TWOFA_INTERNAL_URL = originalUrl;
+    config.TWOFA_TMA_SHARED_SECRET = originalSecret;
+    cleanupFixture(second);
+    cleanupFixture(first);
+  });
+
+  const firstReconcile = reconcileDeliveredOrder(first.orderId);
+  await postStarted.promise;
+  await reconcileDeliveredOrder(second.orderId, { register: false });
+  postResponse.resolve(new Response(
+    JSON.stringify({ success: true, data: { status: 'active' } }),
+    { status: 200 },
+  ));
+  const result = await firstReconcile;
+
+  const bindings = db.prepare(`
+    SELECT shop_order_id, status, synced_at
+    FROM twofa_order_bindings
+    WHERE uurl = 'concurrent-conflict'
+    ORDER BY shop_order_id
+  `).all();
+  assert.strictEqual(result.active, 0);
+  assert.deepStrictEqual(methods, ['POST', 'DELETE']);
+  assert.deepStrictEqual(bindings, [
+    { shop_order_id: first.orderId, status: 'conflict', synced_at: null },
+    { shop_order_id: second.orderId, status: 'conflict', synced_at: null },
+  ]);
+});
+
+test('overlapping active POST responses do not deactivate an already active desired binding', async (t) => {
+  const fixture = seedDeliveredOrder({ accounts: ['https://order.subhub.vn/concurrent-active'] });
+  const originalFetch = global.fetch;
+  const originalUrl = config.TWOFA_INTERNAL_URL;
+  const originalSecret = config.TWOFA_TMA_SHARED_SECRET;
+  const bothPostsStarted = createDeferred();
+  const releasePosts = createDeferred();
+  const methods = [];
+  let postCount = 0;
+  config.TWOFA_INTERNAL_URL = 'https://twofa.example.test';
+  config.TWOFA_TMA_SHARED_SECRET = 'shared-secret';
+  global.fetch = async (_url, options) => {
+    methods.push(options.method);
+    if (options.method === 'POST') {
+      postCount += 1;
+      if (postCount === 2) bothPostsStarted.resolve();
+      await releasePosts.promise;
+      return new Response(
+        JSON.stringify({ success: true, data: { status: 'active' } }),
+        { status: 200 },
+      );
+    }
+    return new Response(
+      JSON.stringify({ success: true, data: { status: 'inactive' } }),
+      { status: 200 },
+    );
+  };
+  t.after(() => {
+    releasePosts.resolve();
+    global.fetch = originalFetch;
+    config.TWOFA_INTERNAL_URL = originalUrl;
+    config.TWOFA_TMA_SHARED_SECRET = originalSecret;
+    cleanupFixture(fixture);
+  });
+
+  const firstReconcile = reconcileDeliveredOrder(fixture.orderId);
+  const secondReconcile = reconcileDeliveredOrder(fixture.orderId);
+  await bothPostsStarted.promise;
+  releasePosts.resolve();
+  await Promise.all([firstReconcile, secondReconcile]);
+
+  const binding = db.prepare(`
+    SELECT status, synced_at
+    FROM twofa_order_bindings
+    WHERE shop_order_id = ?
+  `).get(fixture.orderId);
+  assert.deepStrictEqual(methods, ['POST', 'POST']);
+  assert.strictEqual(binding.status, 'active');
+  assert.ok(binding.synced_at);
+});
+
 test('reconcile phục hồi binding conflict còn lại khi duplicate được gỡ', async (t) => {
   const first = seedDeliveredOrder({ accounts: ['https://order.subhub.vn/recovery-uurl'] });
   const second = seedDeliveredOrder({ accounts: ['https://order.subhub.vn/recovery-uurl'] });
@@ -481,4 +599,110 @@ test('startRetryWorker không tạo timer khi thiếu cấu hình 2FA', (t) => {
 
   assert.strictEqual(timerCount, 0);
   assert.doesNotThrow(stop);
+});
+
+test('startRetryWorker does not overlap ticks while a batch is in flight', async (t) => {
+  const fixture = seedDeliveredOrder({ accounts: [] });
+  const originalUrl = config.TWOFA_INTERNAL_URL;
+  const originalSecret = config.TWOFA_TMA_SHARED_SECRET;
+  const originalSetInterval = global.setInterval;
+  const originalClearInterval = global.clearInterval;
+  const gate = createDeferred();
+  let timerCallback;
+  let calls = 0;
+  config.TWOFA_INTERNAL_URL = 'https://twofa.example.test';
+  config.TWOFA_TMA_SHARED_SECRET = 'shared-secret';
+  db.prepare(`
+    INSERT INTO twofa_order_bindings (
+      binding_id, shop_order_id, telegram_user_id, uurl, order_host, order_url, recipient_label
+    ) VALUES (?, ?, ?, ?, 'order.subhub.vn', ?, 'Telegram ID ••••6789')
+  `).run(
+    `worker-overlap-${fixture.orderId}`,
+    fixture.orderId,
+    fixture.userId,
+    `worker-overlap-${fixture.orderId}`,
+    `https://order.subhub.vn/worker-overlap-${fixture.orderId}`,
+  );
+  global.setInterval = (callback) => {
+    timerCallback = callback;
+    return { unref() {} };
+  };
+  global.clearInterval = () => {};
+  setReconcileForTest(async () => {
+    calls += 1;
+    await gate.promise;
+    return { active: 0, failed: 0 };
+  });
+  const stop = startRetryWorker({ intervalMs: 1 });
+  t.after(() => {
+    gate.resolve();
+    stop();
+    setReconcileForTest(null);
+    global.setInterval = originalSetInterval;
+    global.clearInterval = originalClearInterval;
+    config.TWOFA_INTERNAL_URL = originalUrl;
+    config.TWOFA_TMA_SHARED_SECRET = originalSecret;
+    cleanupFixture(fixture);
+  });
+
+  timerCallback();
+  await flushPromises();
+  timerCallback();
+  await flushPromises();
+
+  assert.strictEqual(calls, 1);
+  gate.resolve();
+  await flushPromises();
+});
+
+test('startRetryWorker stop clears timer and prevents a captured callback from starting work', async (t) => {
+  const fixture = seedDeliveredOrder({ accounts: [] });
+  const originalUrl = config.TWOFA_INTERNAL_URL;
+  const originalSecret = config.TWOFA_TMA_SHARED_SECRET;
+  const originalSetInterval = global.setInterval;
+  const originalClearInterval = global.clearInterval;
+  const timer = { unref() {} };
+  let timerCallback;
+  let clearedTimer;
+  let calls = 0;
+  config.TWOFA_INTERNAL_URL = 'https://twofa.example.test';
+  config.TWOFA_TMA_SHARED_SECRET = 'shared-secret';
+  db.prepare(`
+    INSERT INTO twofa_order_bindings (
+      binding_id, shop_order_id, telegram_user_id, uurl, order_host, order_url, recipient_label
+    ) VALUES (?, ?, ?, ?, 'order.subhub.vn', ?, 'Telegram ID ••••6789')
+  `).run(
+    `worker-stop-${fixture.orderId}`,
+    fixture.orderId,
+    fixture.userId,
+    `worker-stop-${fixture.orderId}`,
+    `https://order.subhub.vn/worker-stop-${fixture.orderId}`,
+  );
+  global.setInterval = (callback) => {
+    timerCallback = callback;
+    return timer;
+  };
+  global.clearInterval = value => {
+    clearedTimer = value;
+  };
+  setReconcileForTest(async () => {
+    calls += 1;
+    return { active: 0, failed: 0 };
+  });
+  t.after(() => {
+    setReconcileForTest(null);
+    global.setInterval = originalSetInterval;
+    global.clearInterval = originalClearInterval;
+    config.TWOFA_INTERNAL_URL = originalUrl;
+    config.TWOFA_TMA_SHARED_SECRET = originalSecret;
+    cleanupFixture(fixture);
+  });
+
+  const stop = startRetryWorker({ intervalMs: 1 });
+  stop();
+  timerCallback();
+  await flushPromises();
+
+  assert.strictEqual(clearedTimer, timer);
+  assert.strictEqual(calls, 0);
 });

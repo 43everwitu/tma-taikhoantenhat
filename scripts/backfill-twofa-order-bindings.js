@@ -1,27 +1,20 @@
 const fs = require('node:fs');
-
-const db = require('../src/database');
+const path = require('node:path');
+const Database = require('better-sqlite3');
 const {
   extractTwofaOrderLinks,
-  reconcileDeliveredOrder,
-} = require('../src/services/twofaBindingService');
+  parseDeliveredKeys,
+} = require('../src/services/twofaOrderLinkParser');
 
-function getDeliveredOrders() {
+const DEFAULT_DATABASE_PATH = path.join(__dirname, '..', 'data', 'shop.db');
+
+function getDeliveredOrders(db) {
   return db.prepare(`
     SELECT id, delivered_keys_json
     FROM orders
     WHERE status = 'delivered'
     ORDER BY id
   `).all();
-}
-
-function parseDeliveredKeys(value) {
-  try {
-    const keys = JSON.parse(value || '[]');
-    return Array.isArray(keys) ? keys : [];
-  } catch {
-    return [];
-  }
 }
 
 function analyzeOrders(orders) {
@@ -67,29 +60,56 @@ function requireExistingBackup() {
   }
 }
 
-async function runBackfill({ apply = false, register = false } = {}) {
-  const orders = getDeliveredOrders();
-  const report = {
-    apply: Boolean(apply),
-    ...analyzeOrders(orders),
-    created: 0,
-    active: 0,
-    conflicts: 0,
-    failed: 0,
-  };
+async function runBackfill({
+  apply = false,
+  register = false,
+  db: injectedDb,
+  reconcile: injectedReconcile,
+  databasePath = DEFAULT_DATABASE_PATH,
+} = {}) {
+  if (apply) requireExistingBackup();
 
-  if (!apply) return report;
-  requireExistingBackup();
-
-  for (const order of orders) {
-    const result = await reconcileDeliveredOrder(order.id, { register });
-    report.created += result.created;
-    report.active += result.active;
-    report.conflicts += result.conflicts;
-    report.failed += result.failed;
+  let db = injectedDb;
+  let reconcile = injectedReconcile;
+  let closeDb = false;
+  if (!db) {
+    if (apply) {
+      db = require('../src/database');
+    } else {
+      db = new Database(databasePath, { readonly: true, fileMustExist: true });
+      closeDb = true;
+    }
+  }
+  if (apply && !reconcile) {
+    if (injectedDb) {
+      throw new Error('Apply với database injection cần reconcile injection');
+    }
+    ({ reconcileDeliveredOrder: reconcile } = require('../src/services/twofaBindingService'));
   }
 
-  return report;
+  try {
+    const orders = getDeliveredOrders(db);
+    const report = {
+      apply: Boolean(apply),
+      ...analyzeOrders(orders),
+      created: 0,
+      active: 0,
+      conflicts: 0,
+      failed: 0,
+    };
+
+    if (!apply) return report;
+    for (const order of orders) {
+      const result = await reconcile(order.id, { register });
+      report.created += result.created;
+      report.active += result.active;
+      report.conflicts += result.conflicts;
+      report.failed += result.failed;
+    }
+    return report;
+  } finally {
+    if (closeDb) db.close();
+  }
 }
 
 async function main() {

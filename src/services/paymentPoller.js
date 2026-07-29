@@ -11,6 +11,7 @@ const {
   parseSqliteUtc,
 } = require('./paymentTransactionMatcher');
 const { getBackorderPaidMessage } = require('../utils/backorderWaitMessage');
+const { scheduleTwofaBindingSync } = require('./twofaBindingService');
 
 // Three disjoint regexes — order first (most common), then topup variants.
 // Tolerance: case-insensitive (some banks uppercase descriptions, some don't),
@@ -741,6 +742,9 @@ class PaymentPoller {
       1,
       { allowPaidBackorder: wasRecovered },
     );
+    if (result.success && !result.backorder) {
+      scheduleTwofaBindingSync(order.id);
+    }
 
     if (result.success && result.backorder) {
       this._recordMatchedTransaction(tx, order, paymentCode, matchReason);

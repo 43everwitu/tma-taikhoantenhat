@@ -172,6 +172,35 @@ test('automatic fulfillment schedules binding sync after delivery commit', async
   assert.deepStrictEqual(JSON.parse(calls[0].order.delivered_keys_json), [fixture.stockData]);
 });
 
+test('automatic fulfillment schedules binding sync before delivery notification throws', async (t) => {
+  const fixture = seedOrder({ withStock: true });
+  const notificationService = require('../../src/services/notificationService');
+  const fulfillmentPath = require.resolve('../../src/services/orderFulfillmentService');
+  const originalSendDelivery = notificationService.sendDelivery;
+  const calls = [];
+  notificationService.sendDelivery = async () => {
+    throw new Error('notification write failed');
+  };
+  delete require.cache[fulfillmentPath];
+  const freshFulfillmentService = require('../../src/services/orderFulfillmentService');
+  twofaBindingService.setReconcileForTest(async orderId => calls.push(orderId));
+  t.after(() => {
+    notificationService.sendDelivery = originalSendDelivery;
+    delete require.cache[fulfillmentPath];
+    require('../../src/services/orderFulfillmentService');
+    twofaBindingService.setReconcileForTest(null);
+    cleanupFixture(fixture);
+  });
+
+  await assert.rejects(
+    freshFulfillmentService.deliverOrder({ telegram: {} }, fixture.orderId),
+    /notification write failed/,
+  );
+  await flushPromises();
+
+  assert.deepStrictEqual(calls, [fixture.orderId]);
+});
+
 test('manual delivery and delivered-key update schedule binding sync', async (t) => {
   const fixture = seedOrder();
   const calls = [];

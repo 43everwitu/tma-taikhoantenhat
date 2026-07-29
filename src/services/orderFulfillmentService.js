@@ -10,6 +10,7 @@ async function deliverOrder(bot, orderId) {
     if (!result.success) return result;
 
     const order = result.order;
+    if (!result.backorder) scheduleTwofaBindingSync(orderId);
     const product = productService.getById(order.product_id);
     const variantService = require('./variantService');
     const db = require('../database');
@@ -30,7 +31,6 @@ async function deliverOrder(bot, orderId) {
         postDeliveryKeyboard: postDeliveryKeyboard(),
     });
     await orderChannelService.postOrderCard({ order, product, variant, keys: result.accounts });
-    scheduleTwofaBindingSync(orderId);
 
     return result;
 }
