@@ -1,3 +1,4 @@
+const crypto = require('node:crypto');
 const db = require('../database');
 const messageTemplateService = require('./messageTemplateService');
 const telegramApiClient = require('./telegramApiClient');
@@ -46,13 +47,18 @@ function formatVietnamTime(date) {
   return `${byType.day}/${byType.month}/${byType.year} ${byType.hour}:${byType.minute}`;
 }
 
+function createClaimToken() {
+  return crypto.randomUUID();
+}
+
 function claimEvent({ eventId, bindingId }) {
+  const claimToken = createClaimToken();
   const inserted = db.prepare(`
     INSERT OR IGNORE INTO twofa_notification_events (
-      event_id, binding_id, status, attempt_count, updated_at
-    ) VALUES (?, ?, 'processing', 0, CURRENT_TIMESTAMP)
-  `).run(eventId, bindingId);
-  if (inserted.changes === 1) return { duplicate: false, claimed: true };
+      event_id, binding_id, status, attempt_count, claim_token, updated_at
+    ) VALUES (?, ?, 'processing', 0, ?, CURRENT_TIMESTAMP)
+  `).run(eventId, bindingId, claimToken);
+  if (inserted.changes === 1) return { duplicate: false, claimed: true, claimToken };
 
   const row = db.prepare(`
     SELECT event_id, binding_id, status, updated_at
@@ -64,24 +70,31 @@ function claimEvent({ eventId, bindingId }) {
   }
   if (row.status === 'sent') return { duplicate: true, sent: true };
   if (row.status === 'failed') {
-    db.prepare(`
+    const retried = db.prepare(`
       UPDATE twofa_notification_events
-      SET binding_id = ?, status = 'processing', updated_at = CURRENT_TIMESTAMP
-      WHERE event_id = ?
-    `).run(bindingId, eventId);
-    return { duplicate: true, claimed: true };
+      SET binding_id = ?, status = 'processing', claim_token = ?, last_error = NULL, updated_at = CURRENT_TIMESTAMP
+      WHERE event_id = ? AND status = 'failed'
+    `).run(bindingId, claimToken, eventId);
+    if (retried.changes === 1) return { duplicate: true, claimed: true, claimToken };
+    throw createHttpError('EVENT_PROCESSING', 409, 'Event đang được xử lý');
   }
 
   const reclaimed = db.prepare(`
     UPDATE twofa_notification_events
-    SET binding_id = ?, status = 'processing', updated_at = CURRENT_TIMESTAMP
+    SET binding_id = ?, status = 'processing', claim_token = ?, updated_at = CURRENT_TIMESTAMP
     WHERE event_id = ?
       AND status = 'processing'
       AND updated_at <= datetime('now', ?)
-  `).run(bindingId, eventId, `-${STALE_PROCESSING_MINUTES} minutes`);
-  if (reclaimed.changes === 1) return { duplicate: true, claimed: true };
+  `).run(bindingId, claimToken, eventId, `-${STALE_PROCESSING_MINUTES} minutes`);
+  if (reclaimed.changes === 1) return { duplicate: true, claimed: true, claimToken };
 
   throw createHttpError('EVENT_PROCESSING', 409, 'Event đang được xử lý');
+}
+
+function getEvent(eventId) {
+  return db.prepare(`
+    SELECT status FROM twofa_notification_events WHERE event_id = ?
+  `).get(eventId);
 }
 
 function getActiveBinding(bindingId) {
@@ -100,24 +113,26 @@ function getActiveBinding(bindingId) {
   `).get(bindingId);
 }
 
-function markSent(eventId) {
-  db.prepare(`
+function markSent(eventId, claimToken) {
+  const result = db.prepare(`
     UPDATE twofa_notification_events
-    SET status = 'sent', sent_at = CURRENT_TIMESTAMP, updated_at = CURRENT_TIMESTAMP
-    WHERE event_id = ?
-  `).run(eventId);
+    SET status = 'sent', sent_at = CURRENT_TIMESTAMP, last_error = NULL, updated_at = CURRENT_TIMESTAMP
+    WHERE event_id = ? AND status = 'processing' AND claim_token = ?
+  `).run(eventId, claimToken);
+  return result.changes === 1;
 }
 
-function markFailed(eventId) {
-  db.prepare(`
+function markFailed(eventId, claimToken) {
+  const result = db.prepare(`
     UPDATE twofa_notification_events
     SET
       status = 'failed',
       attempt_count = attempt_count + 1,
       last_error = ?,
       updated_at = CURRENT_TIMESTAMP
-    WHERE event_id = ?
-  `).run(SAFE_ERROR, eventId);
+    WHERE event_id = ? AND status = 'processing' AND claim_token = ?
+  `).run(SAFE_ERROR, eventId, claimToken);
+  return result.changes === 1;
 }
 
 async function processAccountUpdatedEvent(payload) {
@@ -143,10 +158,18 @@ async function processAccountUpdatedEvent(payload) {
       disable_web_page_preview: true,
     });
 
-    markSent(event.eventId);
+    if (!markSent(event.eventId, claim.claimToken)) {
+      const current = getEvent(event.eventId);
+      if (current?.status === 'sent') return { duplicate: true, sent: true };
+      throw createHttpError('EVENT_CLAIM_LOST', 409, 'Event đã được worker khác xử lý');
+    }
     return { duplicate: claim.duplicate, sent: true };
   } catch (err) {
-    markFailed(event.eventId);
+    if (!markFailed(event.eventId, claim.claimToken)) {
+      const current = getEvent(event.eventId);
+      if (current?.status === 'sent') return { duplicate: true, sent: true };
+      throw createHttpError('EVENT_CLAIM_LOST', 409, 'Event đã được worker khác xử lý');
+    }
     if (err && err.status) throw err;
     throw createHttpError('DELIVERY_FAILED', 503, SAFE_ERROR);
   }

@@ -13,11 +13,15 @@ const { signPayload } = require('../../src/services/twofaIntegrationAuth');
 function makeApp() {
   const app = express();
   app.set('trust proxy', 1);
-  app.use(express.json({
+  const jsonParser = express.json({
     verify(req, _res, buf) {
       req.rawBody = Buffer.from(buf);
     },
-  }));
+  });
+  app.use((req, res, next) => {
+    if (req.path.startsWith('/api/v1/integrations/')) return next();
+    return jsonParser(req, res, next);
+  });
   app.use('/api/v1', require('../../src/api/server').createApiRouter());
   app.use((err, _req, res, _next) => {
     res.status(err.status || 500).json({ success: false, error: { code: err.code || 'TEST_ERROR', message: err.message } });
@@ -25,7 +29,7 @@ function makeApp() {
   return app;
 }
 
-async function postRaw(app, body, headers = {}) {
+async function postRaw(app, body, headers = {}, path = '/api/v1/integrations/twofa/account-updated') {
   return new Promise((resolve, reject) => {
     const req = new Readable({
       read() {
@@ -34,7 +38,7 @@ async function postRaw(app, body, headers = {}) {
       },
     });
     req.method = 'POST';
-    req.url = '/api/v1/integrations/twofa/account-updated';
+    req.url = path;
     req.headers = {
       'content-type': 'application/json',
       'content-length': String(body.length),
@@ -67,9 +71,16 @@ async function postRaw(app, body, headers = {}) {
       }
       end(callback);
       const text = Buffer.concat(chunks).toString();
+      let json = null;
+      try {
+        json = text ? JSON.parse(text) : null;
+      } catch {
+        json = null;
+      }
       resolve({
         status: res.statusCode,
-        json: text ? JSON.parse(text) : null,
+        json,
+        text,
       });
     };
     app.handle(req, res, reject);
@@ -81,6 +92,13 @@ function signedHeaders(body) {
   return {
     'x-tktn-timestamp': timestamp,
     'x-tktn-signature': signPayload(config.TWOFA_TMA_SHARED_SECRET, timestamp, body),
+  };
+}
+
+function signedHeadersAt(body, timestamp) {
+  return {
+    'x-tktn-timestamp': String(timestamp),
+    'x-tktn-signature': signPayload(config.TWOFA_TMA_SHARED_SECRET, String(timestamp), body),
   };
 }
 
@@ -155,6 +173,8 @@ function mockTelegram(t) {
 
 test.before(() => {
   config.TWOFA_TMA_SHARED_SECRET = 'test-shared-secret';
+  twofaTemplateMigration.up(db);
+  messageTemplateService.invalidate();
 });
 
 test('bot.2fa_order_updated is core and renders approved copy', () => {
@@ -238,6 +258,62 @@ test('webhook rejects invalid signature before binding lookup', async () => {
   assert.strictEqual(response.status, 401);
 });
 
+test('webhook rejects malformed JSON with invalid signature before parsing JSON', async () => {
+  const response = await postRaw(makeApp(), Buffer.from('{"eventId":'), {
+    'x-tktn-timestamp': String(Math.floor(Date.now() / 1000)),
+    'x-tktn-signature': 'v1=bad',
+  });
+
+  assert.strictEqual(response.status, 401);
+  assert.strictEqual(response.json.error.code, 'INVALID_SIGNATURE');
+});
+
+test('webhook returns invalid JSON only after a valid raw-body signature', async () => {
+  const body = Buffer.from('{"eventId":');
+  const response = await postRaw(makeApp(), body, signedHeaders(body));
+
+  assert.strictEqual(response.status, 400);
+  assert.strictEqual(response.json.error.code, 'INVALID_JSON');
+});
+
+test('webhook rejects timestamps outside the signature window', async () => {
+  const body = Buffer.from('{}');
+  const response = await postRaw(makeApp(), body, signedHeadersAt(body, Math.floor(Date.now() / 1000) - 301));
+
+  assert.strictEqual(response.status, 401);
+  assert.strictEqual(response.json.error.code, 'INVALID_SIGNATURE');
+});
+
+test('webhook rejects invalid payload before inserting notification event', async () => {
+  const body = Buffer.from(JSON.stringify({
+    eventId: 'evt-invalid-payload',
+    bindingId: 'missing-date',
+  }));
+  const response = await postRaw(makeApp(), body, signedHeaders(body));
+  const row = db.prepare('SELECT event_id FROM twofa_notification_events WHERE event_id = ?')
+    .get('evt-invalid-payload');
+
+  assert.strictEqual(response.status, 400);
+  assert.strictEqual(response.json.error.code, 'INVALID_PAYLOAD');
+  assert.strictEqual(row, undefined);
+});
+
+test('integration webhook has a dedicated 120 per minute IP rate limit', async () => {
+  const app = makeApp();
+  const body = Buffer.from('{}');
+  const headers = {
+    'x-tktn-timestamp': String(Math.floor(Date.now() / 1000)),
+    'x-tktn-signature': 'v1=bad',
+  };
+  let response;
+
+  for (let i = 0; i < 121; i += 1) {
+    response = await postRaw(app, body, headers);
+  }
+
+  assert.strictEqual(response.status, 429);
+});
+
 test('webhook escapes rendered variables in Telegram HTML', async (t) => {
   const fixture = seedActiveBinding();
   const calls = mockTelegram(t);
@@ -316,6 +392,54 @@ test('processing webhook returns 409 until stale event is reclaimed', async (t) 
   assert.strictEqual(locked.status, 409);
   assert.strictEqual(reclaimed.status, 200, JSON.stringify(reclaimed.json));
   assert.strictEqual(calls.length, 1);
+});
+
+test('stale claimant cannot downgrade a newer successful reclaim', async (t) => {
+  const fixture = seedActiveBinding();
+  const calls = [];
+  let firstSendReject;
+  let firstSendStarted;
+  const firstSendStartedPromise = new Promise(resolve => { firstSendStarted = resolve; });
+  telegramApiClient.setTelegramRequestForTest(async (_method, payload) => {
+    calls.push({ payload });
+    if (calls.length === 1) {
+      firstSendStarted();
+      return new Promise((_resolve, reject) => { firstSendReject = reject; });
+    }
+    return { message_id: 2 };
+  });
+  t.after(() => {
+    telegramApiClient.setTelegramRequestForTest();
+    cleanupFixture(fixture);
+  });
+  const body = Buffer.from(JSON.stringify({
+    eventId: 'evt-stale-guard',
+    bindingId: fixture.bindingId,
+    changedAt: '2026-07-29T12:30:00Z',
+  }));
+  const app = makeApp();
+
+  const first = postRaw(app, body, signedHeaders(body));
+  await firstSendStartedPromise;
+  db.prepare(`
+    UPDATE twofa_notification_events
+    SET updated_at = datetime('now', '-11 minutes')
+    WHERE event_id = 'evt-stale-guard'
+  `).run();
+  const second = await postRaw(makeApp(), body, signedHeaders(body));
+  firstSendReject(new Error('telegram unavailable user@example.com password=secret'));
+  const stale = await first;
+  const row = db.prepare(`
+    SELECT status, attempt_count, last_error
+    FROM twofa_notification_events
+    WHERE event_id = 'evt-stale-guard'
+  `).get();
+
+  assert.strictEqual(second.status, 200, JSON.stringify(second.json));
+  assert.strictEqual(stale.status, 200, JSON.stringify(stale.json));
+  assert.strictEqual(row.status, 'sent');
+  assert.strictEqual(row.attempt_count, 0);
+  assert.strictEqual(row.last_error, null);
 });
 
 test('webhook only sends for active bindings', async (t) => {

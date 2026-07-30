@@ -45,11 +45,16 @@ app.use((req, res, next) => {
   next();
 });
 
-app.use(express.json({
+const jsonParser = express.json({
   verify(req, _res, buf) {
     req.rawBody = Buffer.from(buf);
   },
-}));
+});
+
+app.use((req, res, next) => {
+  if (req.path.startsWith('/api/v1/integrations/')) return next();
+  return jsonParser(req, res, next);
+});
 
 // Health check
 app.get('/health', (req, res) => {
