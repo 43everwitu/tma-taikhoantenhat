@@ -223,7 +223,15 @@ async function processAccountUpdatedEvent(payload) {
       return resultBeforeDeliveryClaimLoss(event.eventId, claim.duplicate);
     }
   } catch {
-    return uncertainResult(claim.duplicate);
+    try {
+      if (markFailed(event.eventId, claim.claimToken, 'processing')) {
+        throw createHttpError('DELIVERY_FAILED', 503, SAFE_ERROR);
+      }
+      return resultBeforeDeliveryClaimLoss(event.eventId, claim.duplicate);
+    } catch (markError) {
+      if (markError?.code === 'DELIVERY_FAILED') throw markError;
+      throw createHttpError('DELIVERY_FAILED', 503, SAFE_ERROR);
+    }
   }
 
   try {

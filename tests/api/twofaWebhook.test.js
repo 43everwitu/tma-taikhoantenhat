@@ -376,6 +376,37 @@ test('webhook persists delivery reservation before calling Telegram', async (t) 
   assert.match(stateDuringSend.claim_token, /^[0-9a-f-]{36}$/);
 });
 
+test('reserve failure stays retryable and does not report uncertain success', async (t) => {
+  const fixture = seedActiveBinding();
+  const calls = mockTelegram(t);
+  t.after(() => {
+    db.exec('DROP TRIGGER IF EXISTS fail_twofa_reservation');
+    cleanupFixture(fixture);
+  });
+  db.exec(`
+    CREATE TEMP TRIGGER fail_twofa_reservation
+    BEFORE UPDATE OF status ON twofa_notification_events
+    WHEN NEW.event_id = 'evt-reserve-failure' AND NEW.status = 'delivery_reserved'
+    BEGIN
+      SELECT RAISE(ABORT, 'reserve failed');
+    END;
+  `);
+  const body = Buffer.from(JSON.stringify({
+    eventId: 'evt-reserve-failure',
+    bindingId: fixture.bindingId,
+    changedAt: '2026-07-29T12:30:00Z',
+  }));
+
+  const response = await postRaw(makeApp(), body, signedHeaders(body));
+  const row = db.prepare(`
+    SELECT status, attempt_count FROM twofa_notification_events WHERE event_id = ?
+  `).get('evt-reserve-failure');
+
+  assert.strictEqual(response.status, 503, JSON.stringify(response.json));
+  assert.strictEqual(calls.length, 0);
+  assert.deepStrictEqual(row, { status: 'failed', attempt_count: 1 });
+});
+
 test('webhook refuses a binding whose stored Telegram owner no longer matches the order buyer', async (t) => {
   const fixture = seedActiveBinding();
   const nextUserId = fixture.telegramId + 9_000_000;
