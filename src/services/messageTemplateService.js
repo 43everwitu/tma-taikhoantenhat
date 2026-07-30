@@ -37,6 +37,7 @@ const CORE_TEMPLATE_KEYS = new Set([
   'payment_success',
   'topup_success',
   'bot.backorder_wait',
+  'bot.2fa_order_updated',
   'admin.payment_short',
   'admin.backorder_paid',
   'admin.no_stock',

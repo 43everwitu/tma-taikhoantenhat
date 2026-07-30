@@ -8,6 +8,8 @@ import { Save, RotateCcw, Eye } from '@/lib/icons'
 const VARIABLE_HINTS: Record<string, string> = {
   orderCode: 'Mã đơn',
   productName: 'Tên sản phẩm',
+  changedAt: 'Thời điểm cập nhật tài khoản',
+  orderUrl: 'Link trang đơn hàng',
   quantity: 'Số lượng',
   keysBlock: 'Nội dung key (plain text, URL tự link)',
   usageBlock: 'Block hướng dẫn sản phẩm (HTML)',
@@ -44,6 +46,12 @@ const PREVIEW_SAMPLES: Record<string, Record<string, string>> = {
   'bot.backorder_wait': {
     orderCode: '100226',
     waitMsg: 'Shop sẽ xử lý thủ công trong khoảng 30-60 phút, hoặc theo thời gian ghi trên sản phẩm. Nếu ngoài giờ, shop sẽ xử lý vào 9h30 sáng mai.',
+  },
+  'bot.2fa_order_updated': {
+    productName: 'ChatGPT Plus',
+    orderCode: '100226',
+    changedAt: '29/07/2026 19:30',
+    orderUrl: 'https://order.taikhoantenhat.com/example',
   },
 }
 

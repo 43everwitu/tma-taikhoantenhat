@@ -45,7 +45,11 @@ app.use((req, res, next) => {
   next();
 });
 
-app.use(express.json());
+app.use(express.json({
+  verify(req, _res, buf) {
+    req.rawBody = Buffer.from(buf);
+  },
+}));
 
 // Health check
 app.get('/health', (req, res) => {

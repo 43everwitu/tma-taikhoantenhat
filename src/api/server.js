@@ -80,8 +80,12 @@ function createApiRouter() {
   const isDev = process.env.NODE_ENV !== 'production';
   const publicLimiter = rateLimit({ windowMs: 60000, max: 200, standardHeaders: true, skip: () => isDev });
   const authLimiter = rateLimit({ windowMs: 60000, max: 20, standardHeaders: true });
+  const integrationLimiter = rateLimit({ windowMs: 60000, max: 120, standardHeaders: true });
   const customerLimiter = rateLimit({ windowMs: 60000, max: 60, standardHeaders: true, skip: () => isDev });
   const adminLimiter = rateLimit({ windowMs: 60000, max: 600, standardHeaders: true, skip: () => isDev });
+
+  // Integration routes tự xác thực bằng HMAC, không dùng customer/admin auth.
+  router.use('/integrations', integrationLimiter, require('./routes/integrations'));
 
   // Auth routes
   router.use('/auth', authLimiter, require('./routes/auth'));
@@ -107,6 +111,12 @@ function createApiRouter() {
 
   router.use((err, req, res, next) => {
     if (res.headersSent) return next(err);
+    if (err && err.type === 'entity.parse.failed') {
+      return res.status(400).json({
+        success: false,
+        error: { code: 'INVALID_JSON', message: 'JSON không hợp lệ' },
+      });
+    }
     const { status, body } = normalizeApiError(err);
     if (status >= 500) console.error('[api]', err);
     return res.status(status).json(body);
