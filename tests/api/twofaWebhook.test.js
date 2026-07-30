@@ -148,6 +148,15 @@ function seedActiveBinding() {
   };
 }
 
+function seedUser(telegramId) {
+  db.prepare('INSERT INTO users (telegram_id, username, full_name) VALUES (?, ?, ?)').run(
+    telegramId,
+    `buyer${telegramId}`,
+    `Buyer ${telegramId}`,
+  );
+  return telegramId;
+}
+
 function setBindingStatus(bindingId, status) {
   db.prepare(`
     UPDATE twofa_order_bindings
@@ -163,6 +172,9 @@ function cleanupFixture(fixture) {
   db.prepare('DELETE FROM products WHERE id = ?').run(fixture.productId);
   db.prepare('DELETE FROM categories WHERE id = ?').run(fixture.categoryId);
   db.prepare('DELETE FROM users WHERE telegram_id = ?').run(fixture.telegramId);
+  if (fixture.extraUserId) {
+    db.prepare('DELETE FROM users WHERE telegram_id = ?').run(fixture.extraUserId);
+  }
 }
 
 function mockTelegram(t) {
@@ -274,6 +286,48 @@ test('migration 064 upgrades a legacy database where 063 was already applied', (
   }
 });
 
+test('fresh migration runner reaches the 2FA webhook migrations', () => {
+  const freshDb = new Database(':memory:');
+  freshDb.pragma('foreign_keys = ON');
+  try {
+    runMigrations(freshDb);
+
+    const template = freshDb.prepare(`
+      SELECT key FROM message_templates WHERE key = 'bot.2fa_order_updated'
+    `).get();
+    const columns = freshDb.prepare('PRAGMA table_info(twofa_notification_events)').all()
+      .map((row) => row.name);
+    const indexes = freshDb.prepare("PRAGMA index_list('twofa_notification_events')").all()
+      .map((row) => row.name);
+    const applied = freshDb.prepare(`
+      SELECT name FROM migrations
+      WHERE name IN (
+        '012_message_templates.js',
+        '025_admin_group_templates.js',
+        '026_template_prune_tone.js',
+        '064_twofa_notification_claim_token.js'
+      )
+      ORDER BY name
+    `).all().map((row) => row.name);
+    const pruned = freshDb.prepare(`
+      SELECT key FROM message_templates
+      WHERE key IN ('bot.order_expired_short', 'bot.order_cancelled_short')
+    `).all();
+    assert.ok(template);
+    assert.ok(columns.includes('claim_token'));
+    assert.ok(indexes.includes('idx_twofa_events_processing_claim'));
+    assert.deepStrictEqual(applied, [
+      '012_message_templates.js',
+      '025_admin_group_templates.js',
+      '026_template_prune_tone.js',
+      '064_twofa_notification_claim_token.js',
+    ]);
+    assert.deepStrictEqual(pruned, []);
+  } finally {
+    freshDb.close();
+  }
+});
+
 test('signed webhook sends exactly one Telegram message to binding owner', async (t) => {
   const fixture = seedActiveBinding();
   const calls = mockTelegram(t);
@@ -292,6 +346,54 @@ test('signed webhook sends exactly one Telegram message to binding owner', async
   assert.strictEqual(calls.length, 1);
   assert.strictEqual(calls[0].payload.chat_id, fixture.telegramId);
   assert.match(calls[0].payload.text, new RegExp(String(fixture.orderId)));
+});
+
+test('webhook persists delivery reservation before calling Telegram', async (t) => {
+  const fixture = seedActiveBinding();
+  let stateDuringSend;
+  telegramApiClient.setTelegramRequestForTest(async () => {
+    stateDuringSend = db.prepare(`
+      SELECT status, claim_token
+      FROM twofa_notification_events
+      WHERE event_id = 'evt-reserved-before-send'
+    `).get();
+    return { message_id: 1 };
+  });
+  t.after(() => {
+    telegramApiClient.setTelegramRequestForTest();
+    cleanupFixture(fixture);
+  });
+  const body = Buffer.from(JSON.stringify({
+    eventId: 'evt-reserved-before-send',
+    bindingId: fixture.bindingId,
+    changedAt: '2026-07-29T12:30:00Z',
+  }));
+
+  const response = await postRaw(makeApp(), body, signedHeaders(body));
+
+  assert.strictEqual(response.status, 200, JSON.stringify(response.json));
+  assert.strictEqual(stateDuringSend.status, 'delivery_reserved');
+  assert.match(stateDuringSend.claim_token, /^[0-9a-f-]{36}$/);
+});
+
+test('webhook refuses a binding whose stored Telegram owner no longer matches the order buyer', async (t) => {
+  const fixture = seedActiveBinding();
+  const nextUserId = fixture.telegramId + 9_000_000;
+  seedUser(nextUserId);
+  fixture.extraUserId = nextUserId;
+  const calls = mockTelegram(t);
+  t.after(() => cleanupFixture(fixture));
+  db.prepare('UPDATE orders SET user_id = ? WHERE id = ?').run(nextUserId, fixture.orderId);
+  const body = Buffer.from(JSON.stringify({
+    eventId: 'evt-owner-mismatch',
+    bindingId: fixture.bindingId,
+    changedAt: '2026-07-29T12:30:00Z',
+  }));
+
+  const response = await postRaw(makeApp(), body, signedHeaders(body));
+
+  assert.strictEqual(response.status, 404);
+  assert.strictEqual(calls.length, 0);
 });
 
 test('webhook rejects invalid signature before binding lookup', async () => {
@@ -386,7 +488,11 @@ test('failed webhook delivery can retry and then mark event sent', async (t) => 
   const calls = [];
   telegramApiClient.setTelegramRequestForTest(async (_method, payload) => {
     calls.push({ payload });
-    if (calls.length === 1) throw new Error('telegram unavailable user@example.com password=secret');
+    if (calls.length === 1) {
+      const error = new Error('Telegram sendMessage rejected');
+      error.isTelegramApiError = true;
+      throw error;
+    }
     return { message_id: calls.length };
   });
   t.after(() => {
@@ -410,6 +516,43 @@ test('failed webhook delivery can retry and then mark event sent', async (t) => 
   assert.strictEqual(row.status, 'sent');
   assert.strictEqual(row.attempt_count, 1);
   assert.doesNotMatch(row.last_error || '', /user@example\.com|password=secret/);
+});
+
+test('unknown Telegram delivery failure becomes uncertain and never retries', async (t) => {
+  const fixture = seedActiveBinding();
+  let calls = 0;
+  telegramApiClient.setTelegramRequestForTest(async () => {
+    calls += 1;
+    throw new Error('socket reset after request write');
+  });
+  t.after(() => {
+    telegramApiClient.setTelegramRequestForTest();
+    cleanupFixture(fixture);
+  });
+  const body = Buffer.from(JSON.stringify({
+    eventId: 'evt-network-uncertain',
+    bindingId: fixture.bindingId,
+    changedAt: '2026-07-29T12:30:00Z',
+  }));
+
+  const first = await postRaw(makeApp(), body, signedHeaders(body));
+  const retry = await postRaw(makeApp(), body, signedHeaders(body));
+  const row = db.prepare(`
+    SELECT status, attempt_count, last_error
+    FROM twofa_notification_events
+    WHERE event_id = 'evt-network-uncertain'
+  `).get();
+
+  assert.strictEqual(first.status, 200, JSON.stringify(first.json));
+  assert.deepStrictEqual(first.json.data, { duplicate: false, sent: false, uncertain: true });
+  assert.strictEqual(retry.status, 200, JSON.stringify(retry.json));
+  assert.deepStrictEqual(retry.json.data, { duplicate: true, sent: false, uncertain: true });
+  assert.strictEqual(calls, 1);
+  assert.deepStrictEqual(row, {
+    status: 'delivery_uncertain',
+    attempt_count: 0,
+    last_error: 'Lỗi gửi thông báo cập nhật 2FA',
+  });
 });
 
 test('processing webhook returns 409 until stale event is reclaimed', async (t) => {
@@ -436,10 +579,74 @@ test('processing webhook returns 409 until stale event is reclaimed', async (t) 
 
   assert.strictEqual(locked.status, 409);
   assert.strictEqual(reclaimed.status, 200, JSON.stringify(reclaimed.json));
-  assert.strictEqual(calls.length, 1);
+  assert.deepStrictEqual(reclaimed.json.data, { duplicate: true, sent: false, uncertain: true });
+  assert.strictEqual(calls.length, 0);
 });
 
-test('stale claimant cannot downgrade a newer successful reclaim', async (t) => {
+test('stale delivery reservation becomes uncertain and is not sent again', async (t) => {
+  const fixture = seedActiveBinding();
+  const calls = mockTelegram(t);
+  t.after(() => cleanupFixture(fixture));
+  db.prepare(`
+    INSERT INTO twofa_notification_events (event_id, binding_id, status, claim_token, updated_at)
+    VALUES ('evt-reserved-stale', ?, 'delivery_reserved', 'old-claim', datetime('now', '-11 minutes'))
+  `).run(fixture.bindingId);
+  const body = Buffer.from(JSON.stringify({
+    eventId: 'evt-reserved-stale',
+    bindingId: fixture.bindingId,
+    changedAt: '2026-07-29T12:30:00Z',
+  }));
+
+  const response = await postRaw(makeApp(), body, signedHeaders(body));
+  const row = db.prepare('SELECT status FROM twofa_notification_events WHERE event_id = ?')
+    .get('evt-reserved-stale');
+
+  assert.strictEqual(response.status, 200, JSON.stringify(response.json));
+  assert.deepStrictEqual(response.json.data, { duplicate: true, sent: false, uncertain: true });
+  assert.strictEqual(row.status, 'delivery_uncertain');
+  assert.strictEqual(calls.length, 0);
+});
+
+test('markSent failure after Telegram send moves event to uncertain and prevents resend', async (t) => {
+  const fixture = seedActiveBinding();
+  const calls = mockTelegram(t);
+  t.after(() => {
+    db.exec('DROP TRIGGER IF EXISTS fail_twofa_mark_sent');
+    cleanupFixture(fixture);
+  });
+  db.exec(`
+    CREATE TEMP TRIGGER fail_twofa_mark_sent
+    BEFORE UPDATE OF status ON twofa_notification_events
+    WHEN NEW.event_id = 'evt-mark-sent-failure' AND NEW.status = 'sent'
+    BEGIN
+      SELECT RAISE(ABORT, 'mark sent failed');
+    END;
+  `);
+  const body = Buffer.from(JSON.stringify({
+    eventId: 'evt-mark-sent-failure',
+    bindingId: fixture.bindingId,
+    changedAt: '2026-07-29T12:30:00Z',
+  }));
+
+  const first = await postRaw(makeApp(), body, signedHeaders(body));
+  db.prepare(`
+    UPDATE twofa_notification_events
+    SET updated_at = datetime('now', '-11 minutes')
+    WHERE event_id = 'evt-mark-sent-failure'
+  `).run();
+  const retry = await postRaw(makeApp(), body, signedHeaders(body));
+  const row = db.prepare('SELECT status, attempt_count FROM twofa_notification_events WHERE event_id = ?')
+    .get('evt-mark-sent-failure');
+
+  assert.strictEqual(first.status, 200, JSON.stringify(first.json));
+  assert.deepStrictEqual(first.json.data, { duplicate: false, sent: false, uncertain: true });
+  assert.strictEqual(retry.status, 200, JSON.stringify(retry.json));
+  assert.deepStrictEqual(retry.json.data, { duplicate: true, sent: false, uncertain: true });
+  assert.strictEqual(calls.length, 1);
+  assert.deepStrictEqual(row, { status: 'delivery_uncertain', attempt_count: 0 });
+});
+
+test('stale reserved claimant becomes uncertain without a second Telegram send', async (t) => {
   const fixture = seedActiveBinding();
   const calls = [];
   let firstSendReject;
@@ -482,9 +689,12 @@ test('stale claimant cannot downgrade a newer successful reclaim', async (t) => 
 
   assert.strictEqual(second.status, 200, JSON.stringify(second.json));
   assert.strictEqual(stale.status, 200, JSON.stringify(stale.json));
-  assert.strictEqual(row.status, 'sent');
+  assert.deepStrictEqual(second.json.data, { duplicate: true, sent: false, uncertain: true });
+  assert.deepStrictEqual(stale.json.data, { duplicate: false, sent: false, uncertain: true });
+  assert.strictEqual(calls.length, 1);
+  assert.strictEqual(row.status, 'delivery_uncertain');
   assert.strictEqual(row.attempt_count, 0);
-  assert.strictEqual(row.last_error, null);
+  assert.strictEqual(row.last_error, 'Lỗi gửi thông báo cập nhật 2FA');
 });
 
 test('webhook only sends for active bindings', async (t) => {

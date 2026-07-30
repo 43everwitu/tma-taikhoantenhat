@@ -156,7 +156,7 @@ async function sendSignedRequest(method, pathname, rawBody = Buffer.alloc(0)) {
       'X-TKTN-Signature': signPayload(config.TWOFA_TMA_SHARED_SECRET, timestamp, body),
     },
     body,
-    signal: AbortSignal.timeout(10_000),
+    signal: AbortSignal.timeout(config.TWOFA_WEBHOOK_TIMEOUT_SECONDS * 1000),
   });
 
   let envelope;
@@ -247,7 +247,10 @@ async function deactivateRemoteBinding(binding) {
   try {
     const status = await deactivateBinding(binding);
     if (status === 'invalid') throw new Error('2FA từ chối deactivate binding');
-    clearRemoteMarker(binding.binding_id);
+    db.transaction(() => {
+      clearRemoteMarker(binding.binding_id);
+      reconcileConflictStates(new Set([binding.uurl]));
+    })();
     return { active: 0, failed: 0 };
   } catch {
     markDeactivateFailure(binding.binding_id);

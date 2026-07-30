@@ -69,6 +69,9 @@ function claimEvent({ eventId, bindingId }) {
     throw createHttpError('EVENT_CLAIM_FAILED', 503, 'Không thể nhận event');
   }
   if (row.status === 'sent') return { duplicate: true, sent: true };
+  if (row.status === 'delivery_uncertain') {
+    return { duplicate: true, sent: false, uncertain: true };
+  }
   if (row.status === 'failed') {
     const retried = db.prepare(`
       UPDATE twofa_notification_events
@@ -79,14 +82,14 @@ function claimEvent({ eventId, bindingId }) {
     throw createHttpError('EVENT_PROCESSING', 409, 'Event đang được xử lý');
   }
 
-  const reclaimed = db.prepare(`
+  const uncertain = db.prepare(`
     UPDATE twofa_notification_events
-    SET binding_id = ?, status = 'processing', claim_token = ?, updated_at = CURRENT_TIMESTAMP
+    SET status = 'delivery_uncertain', last_error = ?, claim_token = NULL, updated_at = CURRENT_TIMESTAMP
     WHERE event_id = ?
-      AND status = 'processing'
+      AND status IN ('processing', 'delivery_reserved')
       AND updated_at <= datetime('now', ?)
-  `).run(bindingId, claimToken, eventId, `-${STALE_PROCESSING_MINUTES} minutes`);
-  if (reclaimed.changes === 1) return { duplicate: true, claimed: true, claimToken };
+  `).run(SAFE_ERROR, eventId, `-${STALE_PROCESSING_MINUTES} minutes`);
+  if (uncertain.changes === 1) return { duplicate: true, sent: false, uncertain: true };
 
   throw createHttpError('EVENT_PROCESSING', 409, 'Event đang được xử lý');
 }
@@ -101,7 +104,7 @@ function getActiveBinding(bindingId) {
   return db.prepare(`
     SELECT
       b.binding_id,
-      b.telegram_user_id,
+      o.user_id AS telegram_user_id,
       b.order_url,
       o.id AS order_id,
       p.name AS product_name
@@ -109,20 +112,29 @@ function getActiveBinding(bindingId) {
     JOIN orders o ON o.id = b.shop_order_id
     JOIN products p ON p.id = o.product_id
     JOIN users u ON u.telegram_id = o.user_id
-    WHERE b.binding_id = ? AND b.status = 'active'
+    WHERE b.binding_id = ? AND b.status = 'active' AND b.telegram_user_id = o.user_id
   `).get(bindingId);
+}
+
+function reserveDelivery(eventId, claimToken) {
+  const result = db.prepare(`
+    UPDATE twofa_notification_events
+    SET status = 'delivery_reserved', updated_at = CURRENT_TIMESTAMP
+    WHERE event_id = ? AND status = 'processing' AND claim_token = ?
+  `).run(eventId, claimToken);
+  return result.changes === 1;
 }
 
 function markSent(eventId, claimToken) {
   const result = db.prepare(`
     UPDATE twofa_notification_events
     SET status = 'sent', sent_at = CURRENT_TIMESTAMP, last_error = NULL, updated_at = CURRENT_TIMESTAMP
-    WHERE event_id = ? AND status = 'processing' AND claim_token = ?
+    WHERE event_id = ? AND status = 'delivery_reserved' AND claim_token = ?
   `).run(eventId, claimToken);
   return result.changes === 1;
 }
 
-function markFailed(eventId, claimToken) {
+function markFailed(eventId, claimToken, expectedStatus) {
   const result = db.prepare(`
     UPDATE twofa_notification_events
     SET
@@ -130,49 +142,117 @@ function markFailed(eventId, claimToken) {
       attempt_count = attempt_count + 1,
       last_error = ?,
       updated_at = CURRENT_TIMESTAMP
-    WHERE event_id = ? AND status = 'processing' AND claim_token = ?
+    WHERE event_id = ? AND status = ? AND claim_token = ?
+  `).run(SAFE_ERROR, eventId, expectedStatus, claimToken);
+  return result.changes === 1;
+}
+
+function markUncertain(eventId, claimToken) {
+  const result = db.prepare(`
+    UPDATE twofa_notification_events
+    SET status = 'delivery_uncertain', last_error = ?, updated_at = CURRENT_TIMESTAMP
+    WHERE event_id = ? AND status = 'delivery_reserved' AND claim_token = ?
   `).run(SAFE_ERROR, eventId, claimToken);
   return result.changes === 1;
+}
+
+function uncertainResult(duplicate) {
+  return { duplicate: Boolean(duplicate), sent: false, uncertain: true };
+}
+
+function resultBeforeDeliveryClaimLoss(eventId, duplicate = true) {
+  const current = getEvent(eventId);
+  if (current?.status === 'sent') return { duplicate: true, sent: true };
+  if (['delivery_reserved', 'delivery_uncertain'].includes(current?.status)) {
+    return uncertainResult(duplicate);
+  }
+  throw createHttpError('EVENT_CLAIM_LOST', 409, 'Event đã được worker khác xử lý');
+}
+
+function settleUncertain(eventId, claimToken, duplicate) {
+  try {
+    markUncertain(eventId, claimToken);
+  } catch {
+    // Không trả lỗi retryable khi Telegram có thể đã nhận message.
+  }
+  try {
+    if (getEvent(eventId)?.status === 'sent') {
+      return { duplicate: true, sent: true };
+    }
+  } catch {
+    // DB không đọc được cũng là kết quả delivery không chắc chắn.
+  }
+  return uncertainResult(duplicate);
 }
 
 async function processAccountUpdatedEvent(payload) {
   const event = validatePayload(payload);
   const claim = claimEvent(event);
   if (claim.sent) return { duplicate: true, sent: true };
+  if (claim.uncertain) return uncertainResult(true);
 
+  let binding;
+  let text;
   try {
-    const binding = getActiveBinding(event.bindingId);
+    binding = getActiveBinding(event.bindingId);
     if (!binding) {
       throw createHttpError('BINDING_NOT_ACTIVE', 404, 'Binding không hoạt động');
     }
 
-    const text = messageTemplateService.render('bot.2fa_order_updated', {
+    text = messageTemplateService.render('bot.2fa_order_updated', {
       productName: binding.product_name,
       orderCode: String(binding.order_id),
       changedAt: formatVietnamTime(event.changedAt),
       orderUrl: binding.order_url,
     });
+  } catch (err) {
+    try {
+      if (!markFailed(event.eventId, claim.claimToken, 'processing')) {
+        return resultBeforeDeliveryClaimLoss(event.eventId, claim.duplicate);
+      }
+    } catch {
+      if (err?.status) throw err;
+      throw createHttpError('DELIVERY_FAILED', 503, SAFE_ERROR);
+    }
+    if (err?.status) throw err;
+    throw createHttpError('DELIVERY_FAILED', 503, SAFE_ERROR);
+  }
 
+  try {
+    if (!reserveDelivery(event.eventId, claim.claimToken)) {
+      return resultBeforeDeliveryClaimLoss(event.eventId, claim.duplicate);
+    }
+  } catch {
+    return uncertainResult(claim.duplicate);
+  }
+
+  try {
     await telegramApiClient.sendMessage(binding.telegram_user_id, text, {
       parse_mode: 'HTML',
       disable_web_page_preview: true,
     });
-
-    if (!markSent(event.eventId, claim.claimToken)) {
-      const current = getEvent(event.eventId);
-      if (current?.status === 'sent') return { duplicate: true, sent: true };
-      throw createHttpError('EVENT_CLAIM_LOST', 409, 'Event đã được worker khác xử lý');
-    }
-    return { duplicate: claim.duplicate, sent: true };
   } catch (err) {
-    if (!markFailed(event.eventId, claim.claimToken)) {
-      const current = getEvent(event.eventId);
-      if (current?.status === 'sent') return { duplicate: true, sent: true };
-      throw createHttpError('EVENT_CLAIM_LOST', 409, 'Event đã được worker khác xử lý');
+    if (err?.isTelegramApiError === true) {
+      try {
+        if (markFailed(event.eventId, claim.claimToken, 'delivery_reserved')) {
+          throw createHttpError('DELIVERY_FAILED', 503, SAFE_ERROR);
+        }
+      } catch (markError) {
+        if (markError?.code === 'DELIVERY_FAILED') throw markError;
+        return settleUncertain(event.eventId, claim.claimToken, claim.duplicate);
+      }
     }
-    if (err && err.status) throw err;
-    throw createHttpError('DELIVERY_FAILED', 503, SAFE_ERROR);
+    return settleUncertain(event.eventId, claim.claimToken, claim.duplicate);
   }
+
+  try {
+    if (markSent(event.eventId, claim.claimToken)) {
+      return { duplicate: claim.duplicate, sent: true };
+    }
+  } catch {
+    return settleUncertain(event.eventId, claim.claimToken, claim.duplicate);
+  }
+  return settleUncertain(event.eventId, claim.claimToken, claim.duplicate);
 }
 
 module.exports = {

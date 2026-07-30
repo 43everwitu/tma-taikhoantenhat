@@ -32,7 +32,9 @@ function telegramJsonRequest(method, payload) {
         }
 
         if (!data.ok) {
-          reject(new Error(data.description || `Telegram ${method} failed (${res.statusCode})`));
+          const error = new Error(data.description || `Telegram ${method} failed (${res.statusCode})`);
+          error.isTelegramApiError = true;
+          reject(error);
           return;
         }
         resolve(data.result);

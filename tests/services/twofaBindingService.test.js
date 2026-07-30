@@ -230,6 +230,44 @@ test('reconcile đăng ký raw JSON đã ký mà không gọi network thật', a
   });
 });
 
+test('reconcile uses configured 2FA webhook timeout', async (t) => {
+  const fixture = seedDeliveredOrder({ accounts: ['https://order.subhub.vn/configured-timeout'] });
+  const originalFetch = global.fetch;
+  const originalTimeout = AbortSignal.timeout;
+  const originalUrl = config.TWOFA_INTERNAL_URL;
+  const originalSecret = config.TWOFA_TMA_SHARED_SECRET;
+  const originalTimeoutSeconds = config.TWOFA_WEBHOOK_TIMEOUT_SECONDS;
+  const signal = new AbortController().signal;
+  let timeoutMs;
+  config.TWOFA_INTERNAL_URL = 'https://twofa.example.test';
+  config.TWOFA_TMA_SHARED_SECRET = 'shared-secret';
+  config.TWOFA_WEBHOOK_TIMEOUT_SECONDS = 7;
+  AbortSignal.timeout = (value) => {
+    timeoutMs = value;
+    return signal;
+  };
+  global.fetch = async (_url, options) => {
+    assert.strictEqual(options.signal, signal);
+    return new Response(
+      JSON.stringify({ success: true, data: { status: 'active' } }),
+      { status: 200 },
+    );
+  };
+  t.after(() => {
+    global.fetch = originalFetch;
+    AbortSignal.timeout = originalTimeout;
+    config.TWOFA_INTERNAL_URL = originalUrl;
+    config.TWOFA_TMA_SHARED_SECRET = originalSecret;
+    if (originalTimeoutSeconds === undefined) delete config.TWOFA_WEBHOOK_TIMEOUT_SECONDS;
+    else config.TWOFA_WEBHOOK_TIMEOUT_SECONDS = originalTimeoutSeconds;
+    cleanupFixture(fixture);
+  });
+
+  await reconcileDeliveredOrder(fixture.orderId);
+
+  assert.strictEqual(timeoutMs, 7_000);
+});
+
 test('reconcile đọc semantic conflict từ HTTP 409 envelope', async (t) => {
   const fixture = seedDeliveredOrder({ accounts: ['https://order.subhub.vn/http-conflict'] });
   const originalFetch = global.fetch;
@@ -637,6 +675,74 @@ test('reconcile phục hồi binding conflict còn lại khi duplicate được 
     db.prepare('SELECT status FROM twofa_order_bindings WHERE shop_order_id = ?').get(second.orderId).status,
     'active',
   );
+});
+
+test('successful DELETE after conflict failure makes the surviving binding retryable', async (t) => {
+  const first = seedDeliveredOrder({ accounts: ['https://order.subhub.vn/delete-recovery'] });
+  const second = seedDeliveredOrder({ accounts: ['https://order.subhub.vn/delete-recovery'] });
+  const originalFetch = global.fetch;
+  const originalUrl = config.TWOFA_INTERNAL_URL;
+  const originalSecret = config.TWOFA_TMA_SHARED_SECRET;
+  config.TWOFA_INTERNAL_URL = 'https://twofa.example.test';
+  config.TWOFA_TMA_SHARED_SECRET = 'shared-secret';
+  global.fetch = async () => new Response(
+    JSON.stringify({ success: true, data: { status: 'active' } }),
+    { status: 200 },
+  );
+  t.after(() => {
+    global.fetch = originalFetch;
+    config.TWOFA_INTERNAL_URL = originalUrl;
+    config.TWOFA_TMA_SHARED_SECRET = originalSecret;
+    cleanupFixture(second);
+    cleanupFixture(first);
+  });
+
+  await reconcileDeliveredOrder(first.orderId);
+  await reconcileDeliveredOrder(second.orderId, { register: false });
+  db.prepare('UPDATE orders SET delivered_keys_json = ? WHERE id = ?').run('[]', first.orderId);
+  await reconcileDeliveredOrder(first.orderId, { register: false });
+
+  let deleteAttempts = 0;
+  let postAttempts = 0;
+  global.fetch = async (_url, options) => {
+    if (options.method === 'DELETE') {
+      deleteAttempts += 1;
+      if (deleteAttempts === 1) throw new Error('temporary delete failure');
+      return new Response(
+        JSON.stringify({ success: true, data: { status: 'inactive' } }),
+        { status: 200 },
+      );
+    }
+    postAttempts += 1;
+    const status = postAttempts === 1 ? 'conflict' : 'active';
+    return new Response(
+      JSON.stringify({ success: status === 'active', data: { status } }),
+      { status: status === 'active' ? 200 : 409 },
+    );
+  };
+
+  const failed = await reconcileDeliveredOrder(second.orderId);
+  assert.strictEqual(failed.failed, 1);
+  assert.strictEqual(
+    db.prepare('SELECT status FROM twofa_order_bindings WHERE shop_order_id = ?').get(second.orderId).status,
+    'conflict',
+  );
+
+  const deleted = await retryPendingBindings(1);
+  assert.deepStrictEqual(deleted, { attempted: 1, active: 0, failed: 0 });
+  assert.strictEqual(
+    db.prepare('SELECT status FROM twofa_order_bindings WHERE shop_order_id = ?').get(second.orderId).status,
+    'pending',
+  );
+
+  const recovered = await retryPendingBindings(1);
+  assert.deepStrictEqual(recovered, { attempted: 1, active: 1, failed: 0 });
+  assert.strictEqual(
+    db.prepare('SELECT status FROM twofa_order_bindings WHERE shop_order_id = ?').get(second.orderId).status,
+    'active',
+  );
+  assert.strictEqual(deleteAttempts, 2);
+  assert.strictEqual(postAttempts, 2);
 });
 
 test('retryPendingBindings cap cứng 50 binding mỗi tick', async (t) => {

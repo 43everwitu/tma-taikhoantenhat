@@ -89,6 +89,18 @@
     "variables": ["orderCode", "waitMsg"],
     "body": "💳 Đã nhận thanh toán đơn #{{orderCode}}.\n{{waitMsg}}"
   },
+  "bot.order_expired_short": {
+    "channel": "bot",
+    "label": "Bot — đơn hết hạn (ngắn)",
+    "variables": ["orderCode"],
+    "body": "Đơn #{{orderCode}} đã hết hạn."
+  },
+  "bot.order_cancelled_short": {
+    "channel": "bot",
+    "label": "Bot — đơn bị hủy (ngắn)",
+    "variables": ["orderCode"],
+    "body": "Đơn #{{orderCode}} đã bị hủy."
+  },
   "bot.stock_replenished": {
     "channel": "bot",
     "label": "Bot — báo có hàng lại (gửi tất cả user)",
