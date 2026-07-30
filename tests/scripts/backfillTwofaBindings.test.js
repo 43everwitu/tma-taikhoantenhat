@@ -308,6 +308,36 @@ test('apply rejects using the target database itself as backup', async (t) => {
   );
 });
 
+test('apply rejects a valid SQLite backup from a different target database', async (t) => {
+  const tempDir = fs.mkdtempSync(path.join(os.tmpdir(), 'twofa-backfill-foreign-backup-'));
+  const targetPath = path.join(tempDir, 'target.db');
+  const backupPath = path.join(tempDir, 'foreign.db');
+  createValidBackup(targetPath);
+  createValidBackup(backupPath);
+  const foreignDb = new Database(backupPath);
+  foreignDb.prepare('INSERT INTO orders (id, status, delivered_keys_json) VALUES (1, ?, ?)')
+    .run('delivered', '[]');
+  foreignDb.close();
+  const originalBackup = process.env.TWOFA_BACKFILL_BACKUP;
+  process.env.TWOFA_BACKFILL_BACKUP = backupPath;
+  t.after(() => {
+    if (originalBackup === undefined) delete process.env.TWOFA_BACKFILL_BACKUP;
+    else process.env.TWOFA_BACKFILL_BACKUP = originalBackup;
+    fs.rmSync(tempDir, { recursive: true, force: true });
+  });
+
+  await assert.rejects(
+    runBackfill({
+      apply: true,
+      register: false,
+      db: memoryDb,
+      reconcile: reconcileDeliveredOrder,
+      databasePath: targetPath,
+    }),
+    /fingerprint database target/,
+  );
+});
+
 test('apply is idempotent, skips non-delivered orders and leaves duplicate UURL as conflict', async (t) => {
   const tempDir = fs.mkdtempSync(path.join(os.tmpdir(), 'twofa-backfill-'));
   const backupPath = path.join(tempDir, 'shop.db.backup');

@@ -1,6 +1,7 @@
 const fs = require('node:fs');
 const os = require('node:os');
 const path = require('node:path');
+const crypto = require('node:crypto');
 const Database = require('better-sqlite3');
 const {
   extractTwofaOrderLinks,
@@ -29,6 +30,27 @@ function getExistingBindings(db) {
     SELECT shop_order_id, uurl, status, synced_at
     FROM twofa_order_bindings
   `).all();
+}
+
+function getOrdersFingerprint(db) {
+  const columns = db.prepare('PRAGMA table_info(orders)').all();
+  const schema = JSON.stringify(columns.map(column => ({
+    name: column.name,
+    type: column.type,
+    notnull: column.notnull,
+    defaultValue: column.dflt_value,
+    primaryKey: column.pk,
+  })));
+  const digest = crypto.createHash('sha256');
+  let rowCount = 0;
+  let maxId = null;
+  for (const row of db.prepare('SELECT * FROM orders ORDER BY id').iterate()) {
+    digest.update(JSON.stringify(row));
+    digest.update('\n');
+    rowCount += 1;
+    maxId = row.id;
+  }
+  return { schema, rowCount, maxId, digest: digest.digest('hex') };
 }
 
 function fileFingerprint(filePath) {
@@ -160,7 +182,7 @@ function analyzeOrders(orders, existingBindings = []) {
   };
 }
 
-function requireExistingBackup(targetPath = DEFAULT_DATABASE_PATH) {
+function requireExistingBackup(targetPath = DEFAULT_DATABASE_PATH, compareTarget = true) {
   const backupPath = process.env.TWOFA_BACKFILL_BACKUP;
   if (!backupPath) {
     throw new Error('TWOFA_BACKFILL_BACKUP phải trỏ tới file backup tồn tại');
@@ -197,6 +219,18 @@ function requireExistingBackup(targetPath = DEFAULT_DATABASE_PATH) {
       SELECT 1 FROM sqlite_master WHERE type = 'table' AND name = 'orders'
     `).get();
     if (!hasOrders) throw new Error('backup thiếu bảng orders');
+    if (compareTarget && fs.existsSync(targetPath)) {
+      const targetDb = new Database(targetPath, { readonly: true, fileMustExist: true });
+      try {
+        const backupFingerprint = getOrdersFingerprint(backupDb);
+        const targetFingerprint = getOrdersFingerprint(targetDb);
+        if (JSON.stringify(backupFingerprint) !== JSON.stringify(targetFingerprint)) {
+          throw new Error('backup không khớp fingerprint database target');
+        }
+      } finally {
+        targetDb.close();
+      }
+    }
   } catch (error) {
     throw new Error(`TWOFA_BACKFILL_BACKUP SQLite không hợp lệ: ${error.message}`);
   } finally {
@@ -211,7 +245,7 @@ async function runBackfill({
   reconcile: injectedReconcile,
   databasePath = DEFAULT_DATABASE_PATH,
 } = {}) {
-  if (apply) requireExistingBackup(databasePath);
+  if (apply) requireExistingBackup(databasePath, !injectedDb || databasePath !== DEFAULT_DATABASE_PATH);
 
   let db = injectedDb;
   let reconcile = injectedReconcile;
