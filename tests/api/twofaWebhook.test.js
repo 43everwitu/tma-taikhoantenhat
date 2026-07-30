@@ -1,10 +1,14 @@
 const assert = require('node:assert/strict');
 const test = require('node:test');
 const express = require('express');
+const fs = require('node:fs');
+const path = require('node:path');
 const { PassThrough, Readable, Writable } = require('node:stream');
+const Database = require('better-sqlite3');
 
 const db = require('../../src/database');
 const config = require('../../src/config');
+const { runMigrations } = require('../../src/database/migrations/runner');
 const messageTemplateService = require('../../src/services/messageTemplateService');
 const telegramApiClient = require('../../src/services/telegramApiClient');
 const twofaTemplateMigration = require('../../src/database/migrations/063_twofa_update_template');
@@ -227,6 +231,47 @@ test('bot.2fa_order_updated migration preserves admin body and reset restores co
     }),
     /Thông tin tài khoản đã được cập nhật/,
   );
+});
+
+test('migration 064 upgrades a legacy database where 063 was already applied', () => {
+  const legacyDb = new Database(':memory:');
+  try {
+    legacyDb.exec(`
+      CREATE TABLE migrations (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        name TEXT NOT NULL UNIQUE,
+        applied_at DATETIME DEFAULT CURRENT_TIMESTAMP
+      );
+      CREATE TABLE twofa_notification_events (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        event_id TEXT NOT NULL UNIQUE,
+        binding_id TEXT NOT NULL,
+        status TEXT NOT NULL DEFAULT 'processing',
+        attempt_count INTEGER NOT NULL DEFAULT 0,
+        last_error TEXT,
+        received_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+        sent_at DATETIME,
+        updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP
+      );
+    `);
+    const migrationsDir = path.resolve(__dirname, '../../src/database/migrations');
+    const applied = fs.readdirSync(migrationsDir)
+      .filter((file) => /^\d{3}_.+\.js$/.test(file) && file <= '063_twofa_update_template.js')
+      .sort();
+    const insertApplied = legacyDb.prepare('INSERT INTO migrations (name) VALUES (?)');
+    for (const file of applied) insertApplied.run(file);
+
+    runMigrations(legacyDb);
+
+    const columns = legacyDb.prepare('PRAGMA table_info(twofa_notification_events)').all()
+      .map((row) => row.name);
+    const indexes = legacyDb.prepare("PRAGMA index_list('twofa_notification_events')").all()
+      .map((row) => row.name);
+    assert.ok(columns.includes('claim_token'));
+    assert.ok(indexes.includes('idx_twofa_events_processing_claim'));
+  } finally {
+    legacyDb.close();
+  }
 });
 
 test('signed webhook sends exactly one Telegram message to binding owner', async (t) => {
