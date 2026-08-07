@@ -16,20 +16,20 @@
 - Sản phẩm dùng `is_active=1`, `is_archived=0`, danh mục `Giải trí`.
 - Biến thể dùng `is_backorder=1`, `requires_input=1`, `default_duration_days=365`.
 - Checkout chỉ yêu cầu link hồ sơ dạng `locket.cam/username`; không yêu cầu email, mật khẩu hoặc iCloud.
-- Ảnh đầu ra là `data/uploads/products-inline/nang-cap-locket-gold-chinh-chu-cover-v1.webp`, đúng 900x900.
+- Ảnh đầu ra hiện hành là `data/uploads/products-inline/nang-cap-locket-gold-chinh-chu-cover-v2.webp`, đúng 900x900 và có logo phủ gần toàn bộ chiều ngang tile.
 
 ---
 
 ### Task 1: Tạo ảnh cover Locket Gold
 
 **Files:**
-- Create: `data/uploads/products-inline/nang-cap-locket-gold-chinh-chu-cover-v1.webp`
+- Create: `data/uploads/products-inline/nang-cap-locket-gold-chinh-chu-cover-v2.webp`
 - Temporary: `/tmp/locket-gold-source.jpg`
 - Temporary: `/tmp/create-locket-gold-product.js`
 
 **Interfaces:**
 - Consumes: ảnh Locket Gold nguồn đã tải về `/tmp/locket-gold-source.jpg`.
-- Produces: ảnh WebP 900x900 dùng tại URL `/uploads/products-inline/nang-cap-locket-gold-chinh-chu-cover-v1.webp`.
+- Produces: ảnh WebP 900x900 dùng tại URL `/uploads/products-inline/nang-cap-locket-gold-chinh-chu-cover-v2.webp`.
 
 - [ ] **Step 1: Kiểm tra ảnh nguồn**
 
@@ -50,7 +50,7 @@ Tạo script tạm dùng SVG cho gradient vàng, tiêu đề `Nâng cấp Locket
 Run:
 
 ```bash
-file data/uploads/products-inline/nang-cap-locket-gold-chinh-chu-cover-v1.webp
+file data/uploads/products-inline/nang-cap-locket-gold-chinh-chu-cover-v2.webp
 ```
 
 Expected: `Web/P image` với kích thước `900x900`.
@@ -64,7 +64,7 @@ Mở ảnh bằng `view_image` và xác nhận hình không crop, nội dung kh�
 - Temporary: `/tmp/create-locket-gold-product.js`
 
 **Interfaces:**
-- Consumes: ảnh URL `/uploads/products-inline/nang-cap-locket-gold-chinh-chu-cover-v1.webp`.
+- Consumes: ảnh URL `/uploads/products-inline/nang-cap-locket-gold-chinh-chu-cover-v2.webp`.
 - Produces: product slug `nang-cap-locket-gold-chinh-chu` và một biến thể active.
 
 - [ ] **Step 1: Kiểm tra dữ liệu test trước khi ghi DB**
@@ -103,7 +103,7 @@ Expected: cùng một product ID và variant ID ở cả hai lần, không tạo
 
 **Files:**
 - Verify: `data/shop.db`
-- Verify: `data/uploads/products-inline/nang-cap-locket-gold-chinh-chu-cover-v1.webp`
+- Verify: `data/uploads/products-inline/nang-cap-locket-gold-chinh-chu-cover-v2.webp`
 
 **Interfaces:**
 - Consumes: dữ liệu Task 1 và Task 2.
@@ -116,7 +116,7 @@ Truy vấn phải xác nhận:
 ```text
 product.price = 179000
 product.category = Giải trí
-product.image_url = /uploads/products-inline/nang-cap-locket-gold-chinh-chu-cover-v1.webp
+product.image_url = /uploads/products-inline/nang-cap-locket-gold-chinh-chu-cover-v2.webp
 product.is_active = 1
 product.is_archived = 0
 variant.price = 179000
@@ -157,7 +157,7 @@ Expected: mọi target count vẫn bằng `0`; không chạy `--apply` khi khôn
 Run:
 
 ```bash
-git status --short -- data/shop.db data/uploads/products-inline/nang-cap-locket-gold-chinh-chu-cover-v1.webp
+git status --short -- data/shop.db data/uploads/products-inline/nang-cap-locket-gold-chinh-chu-cover-v2.webp
 ```
 
 Expected: DB và ảnh không được stage. Không commit runtime artifact.

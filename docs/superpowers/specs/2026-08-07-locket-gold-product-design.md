@@ -51,11 +51,11 @@ Hướng dẫn sử dụng phải ghi rõ:
 ## Ảnh sản phẩm
 
 - Dùng ảnh nguồn do người dùng cung cấp: `https://cdn11.dienmaycholon.vn/filewebdmclnew/public/userupload/files/Knms/dien-thoai-di-dong/nguoi-dung-can-nang-cap-locket-gold-de-quay-video-dai-hon-15-giay.jpg`.
-- Tạo ảnh WebP 900x900 tại `data/uploads/products-inline/nang-cap-locket-gold-chinh-chu-cover-v1.webp`.
+- Tạo ảnh WebP 900x900 tại `data/uploads/products-inline/nang-cap-locket-gold-chinh-chu-cover-v2.webp` để tránh cache ảnh cũ.
 - Nền gradient vàng đậm đến vàng sáng theo nhận diện Locket Gold, có vùng tối bảo đảm tương phản.
 - Tiêu đề lớn `Nâng cấp Locket Gold` ở góc trên trái.
 - Badge góc trên phải: `iOS`.
-- Hình Locket Gold thật, lớn, căn giữa trong app tile rộng và không bị crop.
+- Hình Locket Gold thật phủ gần toàn bộ chiều ngang app tile, căn giữa, giữ đủ chữ và biểu tượng, không bị crop.
 - Dòng phụ: `Nâng cấp chính chủ`.
 - Footer: `179K | 12 tháng`.
 - Watermark nhỏ: `taikhoantenhat.com`.
