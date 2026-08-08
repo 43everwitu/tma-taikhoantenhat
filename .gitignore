@@ -50,3 +50,6 @@ taikho35_taikhoan_wp_lmbr8.sql
 
 # Python venv
 mbbank-api/.venv/
+
+# Isolated worktrees (superpowers:using-git-worktrees)
+.worktrees/
