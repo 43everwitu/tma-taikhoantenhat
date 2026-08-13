@@ -58,10 +58,12 @@ function createRagTestFixture() {
     INSERT INTO products (category_id, name, slug, price, is_active)
     VALUES (?, ?, ?, 50000, 1)
   `).run(category.lastInsertRowid, `Rag test product ${suffix}`, `rag-test-product-${suffix}`);
-  db.prepare(`
-    INSERT INTO stock (product_id, variant_id, data, duration_days, added_at)
-    VALUES (?, NULL, ?, NULL, CURRENT_TIMESTAMP)
-  `).run(product.lastInsertRowid, `test-account-${suffix}`);
+  for (let i = 0; i < 10; i++) {
+    db.prepare(`
+      INSERT INTO stock (product_id, variant_id, data, duration_days, added_at)
+      VALUES (?, NULL, ?, NULL, CURRENT_TIMESTAMP)
+    `).run(product.lastInsertRowid, `test-account-${suffix}-${i}`);
+  }
 
   return {
     userId,
@@ -130,4 +132,35 @@ test('orders/list-by-customer returns recent orders for that customer', async (t
   const body = await res.json();
   assert.ok(Array.isArray(body.data));
   assert.ok(body.data.some((o) => o.productId === fixture.productId));
+});
+
+test('orders/create creates a pending order and returns payment info', async (t) => {
+  const fixture = createRagTestFixture();
+  t.after(fixture.cleanup);
+
+  const app = freshApp();
+  const res = await post(app, '/api/v1/internal/rag/orders/create', {
+    customerId: fixture.userId,
+    productId: fixture.productId,
+    quantity: 1,
+  });
+  assert.strictEqual(res.status, 200);
+  const body = await res.json();
+  assert.strictEqual(body.data.order.status, 'pending');
+  assert.ok(body.data.payment.qrUrl);
+});
+
+test('orders/create surfaces DUPLICATE_PENDING as a 409', async (t) => {
+  const fixture = createRagTestFixture();
+  t.after(fixture.cleanup);
+  orderService.create(fixture.userId, fixture.productId, 1, 50000);
+
+  const res = await post(freshApp(), '/api/v1/internal/rag/orders/create', {
+    customerId: fixture.userId,
+    productId: fixture.productId,
+    quantity: 1,
+  });
+  assert.strictEqual(res.status, 409);
+  const body = await res.json();
+  assert.strictEqual(body.error.code, 'DUPLICATE_PENDING');
 });

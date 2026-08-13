@@ -85,5 +85,22 @@ router.post('/orders/list-by-customer', rawJson, verifyRagAuth, (req, res) => {
   return res.json({ success: true, data: orders.map(shapeOrder) });
 });
 
+const { createOrderPayload } = require('./customer');
+
+router.post('/orders/create', rawJson, verifyRagAuth, (req, res) => {
+  const { customerId, productId, quantity, bankIndex = 0, variantId, inputValue, discountCode } = req.ragBody || {};
+  const id = parseInt(customerId, 10);
+  if (!Number.isInteger(id)) return fail(res, 400, 'INVALID_CUSTOMER_ID', 'customerId không hợp lệ');
+
+  try {
+    const data = createOrderPayload(id, { productId, quantity, bankIndex, variantId, inputValue, discountCode }, { source: 'telegram_rag' });
+    return res.json({ success: true, data });
+  } catch (e) {
+    if (e.message === 'DUPLICATE_PENDING') return fail(res, 409, 'DUPLICATE_PENDING', 'Bạn đã có đơn hàng đang chờ');
+    if (e.body) return res.status(e.status || 400).json(e.body);
+    throw e;
+  }
+});
+
 module.exports = router;
 module.exports._internal = { rawJson, verifyRagAuth, fail };
