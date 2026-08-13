@@ -50,5 +50,40 @@ router.post('/twofa-uurl', rawJson, verifyRagAuth, (req, res) => {
   return res.json({ success: true, data: { uurl: bindings[0].uurl } });
 });
 
+const orderService = require('../../services/orderService');
+
+function shapeOrder(o) {
+  return {
+    id: String(o.id),
+    productId: o.product_id,
+    productName: o.product_name,
+    variantId: o.variant_id,
+    quantity: o.quantity,
+    totalPrice: o.total_price,
+    status: o.status,
+    createdAt: o.created_at,
+  };
+}
+
+router.post('/orders/get', rawJson, verifyRagAuth, (req, res) => {
+  const orderId = req.ragBody && req.ragBody.orderId;
+  const id = parseInt(orderId, 10);
+  if (!Number.isInteger(id)) return fail(res, 400, 'INVALID_ORDER_ID', 'orderId không hợp lệ');
+
+  const order = orderService.getById(id);
+  if (!order) return fail(res, 404, 'NOT_FOUND', 'Đơn hàng không tồn tại');
+
+  return res.json({ success: true, data: shapeOrder(order) });
+});
+
+router.post('/orders/list-by-customer', rawJson, verifyRagAuth, (req, res) => {
+  const customerId = req.ragBody && req.ragBody.customerId;
+  const id = parseInt(customerId, 10);
+  if (!Number.isInteger(id)) return fail(res, 400, 'INVALID_CUSTOMER_ID', 'customerId không hợp lệ');
+
+  const orders = orderService.getRecentByUser(id, 50);
+  return res.json({ success: true, data: orders.map(shapeOrder) });
+});
+
 module.exports = router;
 module.exports._internal = { rawJson, verifyRagAuth, fail };
