@@ -60,4 +60,7 @@ module.exports = {
       1,
       parseInt(process.env.TWOFA_WEBHOOK_TIMEOUT_SECONDS, 10) || 10,
     ),
+
+    // RAG-chat-bot integration (separate secret from TWOFA_TMA_SHARED_SECRET)
+    RAG_INTEGRATION_SECRET: process.env.RAG_INTEGRATION_SECRET || '',
 };

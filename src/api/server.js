@@ -87,6 +87,9 @@ function createApiRouter() {
   // Integration routes tự xác thực bằng HMAC, không dùng customer/admin auth.
   router.use('/integrations', integrationLimiter, require('./routes/integrations'));
 
+  // RAG-chat-bot integration — same self-authenticating HMAC pattern, own secret.
+  router.use('/internal/rag', integrationLimiter, require('./routes/ragIntegration'));
+
   // Auth routes
   router.use('/auth', authLimiter, require('./routes/auth'));
 

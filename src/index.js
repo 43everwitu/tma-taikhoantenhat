@@ -51,8 +51,10 @@ const jsonParser = express.json({
   },
 });
 
+const RAW_BODY_PATH_PREFIXES = ['/api/v1/integrations/', '/api/v1/internal/rag/'];
+
 app.use((req, res, next) => {
-  if (req.path.startsWith('/api/v1/integrations/')) return next();
+  if (RAW_BODY_PATH_PREFIXES.some((prefix) => req.path.startsWith(prefix))) return next();
   return jsonParser(req, res, next);
 });
 
