@@ -52,4 +52,12 @@ module.exports = {
     FEATURE_TOPUPS: process.env.FEATURE_TOPUPS === 'true',
     FEATURE_BROADCAST: process.env.FEATURE_BROADCAST === 'true',
     FEATURE_TELEGRAM_NOTIFY: process.env.FEATURE_TELEGRAM_NOTIFY || 'order_only',
+
+    TWOFA_INTERNAL_URL: process.env.TWOFA_INTERNAL_URL || '',
+    TWOFA_TMA_SHARED_SECRET: process.env.TWOFA_TMA_SHARED_SECRET || '',
+    TWOFA_SYNC_INTERVAL_MS: parseInt(process.env.TWOFA_SYNC_INTERVAL_MS, 10) || 60000,
+    TWOFA_WEBHOOK_TIMEOUT_SECONDS: Math.max(
+      1,
+      parseInt(process.env.TWOFA_WEBHOOK_TIMEOUT_SECONDS, 10) || 10,
+    ),
 };

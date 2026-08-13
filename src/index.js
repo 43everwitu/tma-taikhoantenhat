@@ -45,7 +45,16 @@ app.use((req, res, next) => {
   next();
 });
 
-app.use(express.json());
+const jsonParser = express.json({
+  verify(req, _res, buf) {
+    req.rawBody = Buffer.from(buf);
+  },
+});
+
+app.use((req, res, next) => {
+  if (req.path.startsWith('/api/v1/integrations/')) return next();
+  return jsonParser(req, res, next);
+});
 
 // Health check
 app.get('/health', (req, res) => {
@@ -72,6 +81,7 @@ const bot = createBot();
 // 3. Payment Poller (lazy-loaded, event-driven)
 // ============================================================
 let paymentPoller = null;
+let stopTwofaSync = () => {};
 
 function getPaymentPoller() {
   if (!paymentPoller) {
@@ -133,6 +143,10 @@ async function start() {
   require('./services/orderChannelService').init(bot);
   require('./services/keyExpiryReminderService').start(bot);
   console.log('⏰ Key expiry reminder armed (daily 09:00 ICT)');
+  stopTwofaSync = require('./services/twofaBindingService').startRetryWorker({
+    intervalMs: config.TWOFA_SYNC_INTERVAL_MS,
+  });
+  app.locals.stopTwofaSync = stopTwofaSync;
 
   // Initialize notification service
   const { NotificationService } = require('./services/notificationService');
@@ -185,10 +199,12 @@ process.on('uncaughtException', (err) => {
 
 // Graceful shutdown
 process.once('SIGINT', () => {
+  stopTwofaSync();
   if (paymentPoller) paymentPoller.stop();
   bot.stop('SIGINT');
 });
 process.once('SIGTERM', () => {
+  stopTwofaSync();
   if (paymentPoller) paymentPoller.stop();
   bot.stop('SIGTERM');
 });
