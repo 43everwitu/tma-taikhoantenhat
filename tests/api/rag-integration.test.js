@@ -5,6 +5,7 @@ const http = require('node:http');
 const crypto = require('node:crypto');
 const db = require('../../src/database');
 const orderService = require('../../src/services/orderService');
+const discountService = require('../../src/services/discountService');
 
 function sign(secret, timestamp, rawBody) {
   const payload = Buffer.concat([Buffer.from(`${timestamp}.`), rawBody]);
@@ -165,23 +166,37 @@ test('orders/create surfaces DUPLICATE_PENDING as a 409', async (t) => {
   assert.strictEqual(body.error.code, 'DUPLICATE_PENDING');
 });
 
-test('discounts/preview returns DISCOUNT_INVALID for an unknown code', async () => {
+test('discounts/preview matches discountService.resolveBestForOrder for an unknown code', async () => {
   const app = freshApp();
+  const subtotal = 100000;
+  const expected = discountService.resolveBestForOrder('NOSUCHCODE', subtotal, 891500099);
+
   const res = await post(app, '/api/v1/internal/rag/discounts/preview', {
-    customerId: 891500099, code: 'NOSUCHCODE', subtotal: 100000,
+    customerId: 891500099, code: 'NOSUCHCODE', subtotal,
   });
-  assert.strictEqual(res.status, 400);
-  const body = await res.json();
-  assert.strictEqual(body.error.code, 'DISCOUNT_INVALID');
+
+  if (expected.ok) {
+    assert.strictEqual(res.status, 200);
+    const body = await res.json();
+    assert.strictEqual(body.data.discount, expected.discount);
+    assert.strictEqual(body.data.total, subtotal - expected.discount);
+  } else {
+    assert.strictEqual(res.status, 400);
+    const body = await res.json();
+    assert.strictEqual(body.error.code, 'DISCOUNT_INVALID');
+  }
 });
 
-test('discounts/preview with no code returns zero discount, not an error', async () => {
+test('discounts/preview with no code matches resolveBestForOrder (applies any active global discount)', async () => {
   const app = freshApp();
+  const subtotal = 100000;
+  const expected = discountService.resolveBestForOrder('', subtotal, 891500099);
+
   const res = await post(app, '/api/v1/internal/rag/discounts/preview', {
-    customerId: 891500099, code: '', subtotal: 100000,
+    customerId: 891500099, code: '', subtotal,
   });
   assert.strictEqual(res.status, 200);
   const body = await res.json();
-  assert.strictEqual(body.data.discount, 0);
-  assert.strictEqual(body.data.total, 100000);
+  assert.strictEqual(body.data.discount, expected.discount);
+  assert.strictEqual(body.data.total, subtotal - expected.discount);
 });

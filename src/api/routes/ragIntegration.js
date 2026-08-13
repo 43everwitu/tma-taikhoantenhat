@@ -112,20 +112,12 @@ router.post('/discounts/preview', rawJson, verifyRagAuth, (req, res) => {
     return fail(res, 400, 'INVALID_INPUT', 'customerId hoặc subtotal không hợp lệ');
   }
 
-  // If a code is explicitly provided, validate it strictly
-  if (code && String(code).trim()) {
-    const r = discountService.validateForOrder(code, amount, id);
-    if (!r.ok) return fail(res, 400, 'DISCOUNT_INVALID', r.reason);
-    return res.json({
-      success: true,
-      data: { discount: r.discount, total: amount - r.discount, code: r.code.code, source: r.code.is_global ? 'global' : 'manual' },
-    });
-  }
+  const r = discountService.resolveBestForOrder(code, amount, id);
+  if (!r.ok) return fail(res, 400, 'DISCOUNT_INVALID', r.reason);
 
-  // If no code, return 0 discount (ignore global)
   return res.json({
     success: true,
-    data: { discount: 0, total: amount, code: null, source: null },
+    data: { discount: r.discount, total: amount - r.discount, code: r.code?.code || null, source: r.source },
   });
 });
 
