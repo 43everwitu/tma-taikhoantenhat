@@ -377,7 +377,7 @@ function listNewestProducts(limit, globalDiscount) {
   return shapeProductList(rows, globalDiscount);
 }
 
-function listProductsByIds(ids, globalDiscount) {
+function listProductsByIds(ids, globalDiscount, { includeDetails = false } = {}) {
   if (ids.length === 0) return [];
   const placeholders = ids.map(() => '?').join(',');
   const caseExpr = ids.map((id, i) => `WHEN p.id = ${id} THEN ${i}`).join(' ');
@@ -386,7 +386,7 @@ function listProductsByIds(ids, globalDiscount) {
     WHERE p.id IN (${placeholders}) AND p.is_active = 1 AND COALESCE(p.is_archived, 0) = 0
     ORDER BY CASE ${caseExpr} END
   `).all(...ids);
-  return shapeProductList(rows, globalDiscount);
+  return rows.map((r) => shapePublicProduct(r, globalDiscount, { includeDetails }));
 }
 
 function listAnnouncements() {
@@ -521,7 +521,8 @@ router.get('/products', (req, res) => {
       return res.json({ success: true, data: [] });
     }
     const globalDiscount = discountService.findActiveGlobal();
-    return res.json({ success: true, data: listProductsByIds(ids, globalDiscount) });
+    const includeDetails = req.query.details === '1';
+    return res.json({ success: true, data: listProductsByIds(ids, globalDiscount, { includeDetails }) });
   }
 
   const q = (req.query.q || '').trim();

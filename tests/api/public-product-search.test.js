@@ -191,6 +191,21 @@ test('GET /products/search áp dụng category, price và loại dữ liệu ina
   assert.deepEqual(archived.json.data.suggestions, []);
 });
 
+test('GET /products?ids=&details=1 includes usageInstructions, omitted by default', async (t) => {
+  const app = makeApp();
+  const fixture = createFixture(t);
+  const productId = fixture.ids.content;
+
+  const withDetails = await getJson(app, `/api/v1/products?ids=${productId}&details=1`);
+  assert.equal(withDetails.status, 200);
+  assert.ok('usageInstructions' in withDetails.json.data[0]);
+  assert.equal(withDetails.json.data[0].usageInstructions, '<p>Dùng chế độ trích xuất ma trận tài liệu.</p>');
+
+  const withoutDetails = await getJson(app, `/api/v1/products?ids=${productId}`);
+  assert.equal(withoutDetails.status, 200);
+  assert.equal('usageInstructions' in withoutDetails.json.data[0], false);
+});
+
 test('GET /products/search giới hạn riêng kết quả và gợi ý', async (t) => {
   const fixture = createFixture(t);
 
