@@ -102,5 +102,32 @@ router.post('/orders/create', rawJson, verifyRagAuth, (req, res) => {
   }
 });
 
+const discountService = require('../../services/discountService');
+
+router.post('/discounts/preview', rawJson, verifyRagAuth, (req, res) => {
+  const { customerId, code, subtotal } = req.ragBody || {};
+  const id = parseInt(customerId, 10);
+  const amount = parseInt(subtotal, 10);
+  if (!Number.isInteger(id) || !Number.isInteger(amount) || amount < 0) {
+    return fail(res, 400, 'INVALID_INPUT', 'customerId hoặc subtotal không hợp lệ');
+  }
+
+  // If a code is explicitly provided, validate it strictly
+  if (code && String(code).trim()) {
+    const r = discountService.validateForOrder(code, amount, id);
+    if (!r.ok) return fail(res, 400, 'DISCOUNT_INVALID', r.reason);
+    return res.json({
+      success: true,
+      data: { discount: r.discount, total: amount - r.discount, code: r.code.code, source: r.code.is_global ? 'global' : 'manual' },
+    });
+  }
+
+  // If no code, return 0 discount (ignore global)
+  return res.json({
+    success: true,
+    data: { discount: 0, total: amount, code: null, source: null },
+  });
+});
+
 module.exports = router;
 module.exports._internal = { rawJson, verifyRagAuth, fail };

@@ -164,3 +164,24 @@ test('orders/create surfaces DUPLICATE_PENDING as a 409', async (t) => {
   const body = await res.json();
   assert.strictEqual(body.error.code, 'DUPLICATE_PENDING');
 });
+
+test('discounts/preview returns DISCOUNT_INVALID for an unknown code', async () => {
+  const app = freshApp();
+  const res = await post(app, '/api/v1/internal/rag/discounts/preview', {
+    customerId: 891500099, code: 'NOSUCHCODE', subtotal: 100000,
+  });
+  assert.strictEqual(res.status, 400);
+  const body = await res.json();
+  assert.strictEqual(body.error.code, 'DISCOUNT_INVALID');
+});
+
+test('discounts/preview with no code returns zero discount, not an error', async () => {
+  const app = freshApp();
+  const res = await post(app, '/api/v1/internal/rag/discounts/preview', {
+    customerId: 891500099, code: '', subtotal: 100000,
+  });
+  assert.strictEqual(res.status, 200);
+  const body = await res.json();
+  assert.strictEqual(body.data.discount, 0);
+  assert.strictEqual(body.data.total, 100000);
+});
