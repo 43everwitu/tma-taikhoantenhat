@@ -6,7 +6,9 @@ const paymentService = require('../../services/paymentService');
 const userService = require('../../services/userService');
 const topupService = require('../../services/topupService');
 const discountService = require('../../services/discountService');
+const orderExpiryService = require('../../services/orderExpiryService');
 const { getBackorderWaitMode } = require('../../utils/backorderWaitWindow');
+const { resolveContactOnly } = require('../../utils/contactOnly');
 const { requireCustomer, optionalCustomer } = require('../middleware/auth');
 const { validate } = require('../middleware/validate');
 
@@ -40,9 +42,17 @@ function createOrderPayload(telegramId, payload) {
   if (variantId) {
     variant = db.prepare('SELECT * FROM product_variants WHERE id = ? AND product_id = ? AND is_active = 1').get(variantId, productId);
     if (!variant) throw apiError(404, 'VARIANT_NOT_FOUND', 'Biến thể không tồn tại');
-    if (variant.requires_input && !inputValue) {
-      throw apiError(400, 'INPUT_REQUIRED', `Vui lòng cung cấp ${variant.input_label || 'thông tin'}`);
-    }
+  }
+
+  if (resolveContactOnly(product, variant)) {
+    const message = variant
+      ? 'Biến thể này chỉ nhận liên hệ, không thể đặt hàng trực tiếp'
+      : 'Sản phẩm này chỉ nhận liên hệ, không thể đặt hàng trực tiếp';
+    throw apiError(400, 'CONTACT_ONLY', message);
+  }
+
+  if (variant?.requires_input && !inputValue) {
+    throw apiError(400, 'INPUT_REQUIRED', `Vui lòng cung cấp ${variant.input_label || 'thông tin'}`);
   }
 
   if (!(variant && variant.is_backorder)) {
@@ -266,10 +276,12 @@ router.get('/orders/:id/status', (req, res) => {
     accountName: bank.ACCOUNT_NAME,
     expiresAt: order.expires_at,
     productName: product ? product.name : '',
+    variantName: order.variant_name || null,
     quantity: order.quantity,
     isBackorder,
     backorderWaitMode,
     accounts,
+    keyLifecycle: orderExpiryService.getKeyLifecycleForOrder(order),
     usageInstructions: order.status === 'delivered' && product ? (product.usage_instructions || null) : undefined,
   }});
 });
@@ -277,7 +289,7 @@ router.get('/orders/:id/status', (req, res) => {
 // GET /orders/my — Customer order history
 router.get('/orders/my', requireCustomer, (req, res) => {
   const orders = orderService.getRecentByUser(req.customer.telegramId, 20);
-  res.json({ success: true, data: orders });
+  res.json({ success: true, data: orderExpiryService.decorateOrdersWithLifecycle(orders) });
 });
 
 // GET /orders/:id — Order detail
@@ -317,8 +329,23 @@ router.get('/notifications/my', requireCustomer, (req, res) => {
 
 // PATCH /notifications/:id/read
 router.patch('/notifications/:id/read', requireCustomer, (req, res) => {
-  db.prepare('UPDATE notifications SET is_read = 1 WHERE id = ? AND user_id = ?').run(parseInt(req.params.id), req.customer.telegramId);
-  res.json({ success: true });
+  const rawNotificationId = String(req.params.id || '');
+  if (!/^\d+$/.test(rawNotificationId)) {
+    return res.status(400).json({
+      success: false,
+      error: { code: 'INVALID_NOTIFICATION_ID', message: 'Notification không hợp lệ' },
+    });
+  }
+  const notificationId = Number.parseInt(rawNotificationId, 10);
+  if (!Number.isSafeInteger(notificationId) || notificationId <= 0) {
+    return res.status(400).json({
+      success: false,
+      error: { code: 'INVALID_NOTIFICATION_ID', message: 'Notification không hợp lệ' },
+    });
+  }
+
+  db.prepare('UPDATE notifications SET is_read = 1 WHERE id = ? AND user_id = ?').run(notificationId, req.customer.telegramId);
+  res.json({ success: true, data: { id: notificationId, isRead: true } });
 });
 
 module.exports = router;
