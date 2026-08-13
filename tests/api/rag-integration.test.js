@@ -152,6 +152,36 @@ test('orders/create creates a pending order and returns payment info', async (t)
   assert.ok(body.data.payment.qrUrl);
 });
 
+test('orders/create rejects a negative quantity without reserving stock', async (t) => {
+  const fixture = createRagTestFixture();
+  t.after(fixture.cleanup);
+
+  const res = await post(freshApp(), '/api/v1/internal/rag/orders/create', {
+    customerId: fixture.userId,
+    productId: fixture.productId,
+    quantity: -1,
+  });
+  assert.strictEqual(res.status, 400);
+  const body = await res.json();
+  assert.strictEqual(body.error.code, 'INVALID_INPUT');
+  assert.strictEqual(orderService.getRecentByUser(fixture.userId, 10).length, 0);
+});
+
+test('orders/create rejects a zero quantity', async (t) => {
+  const fixture = createRagTestFixture();
+  t.after(fixture.cleanup);
+
+  const res = await post(freshApp(), '/api/v1/internal/rag/orders/create', {
+    customerId: fixture.userId,
+    productId: fixture.productId,
+    quantity: 0,
+  });
+  assert.strictEqual(res.status, 400);
+  const body = await res.json();
+  assert.strictEqual(body.error.code, 'INVALID_INPUT');
+  assert.strictEqual(orderService.getRecentByUser(fixture.userId, 10).length, 0);
+});
+
 test('orders/create surfaces DUPLICATE_PENDING as a 409', async (t) => {
   const fixture = createRagTestFixture();
   t.after(fixture.cleanup);

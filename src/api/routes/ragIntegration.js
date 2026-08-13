@@ -91,9 +91,19 @@ router.post('/orders/create', rawJson, verifyRagAuth, (req, res) => {
   const { customerId, productId, quantity, bankIndex = 0, variantId, inputValue, discountCode } = req.ragBody || {};
   const id = parseInt(customerId, 10);
   if (!Number.isInteger(id)) return fail(res, 400, 'INVALID_CUSTOMER_ID', 'customerId không hợp lệ');
+  if (!Number.isInteger(productId) || productId <= 0) {
+    return fail(res, 400, 'INVALID_INPUT', 'productId không hợp lệ');
+  }
+  if (!Number.isInteger(quantity) || quantity < 1 || quantity > 10) {
+    return fail(res, 400, 'INVALID_INPUT', 'quantity không hợp lệ');
+  }
+  if (!Number.isInteger(bankIndex) || bankIndex < 0 || bankIndex > 1) {
+    return fail(res, 400, 'INVALID_INPUT', 'bankIndex không hợp lệ');
+  }
 
   try {
     const data = createOrderPayload(id, { productId, quantity, bankIndex, variantId, inputValue, discountCode }, { source: 'telegram_rag' });
+    req.app.locals.getPaymentPoller?.()?.ensureRunning();
     return res.json({ success: true, data });
   } catch (e) {
     if (e.message === 'DUPLICATE_PENDING') return fail(res, 409, 'DUPLICATE_PENDING', 'Bạn đã có đơn hàng đang chờ');
