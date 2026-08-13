@@ -37,6 +37,7 @@ module.exports = {
 
     // Auth
     JWT_SECRET: process.env.JWT_SECRET || '',
+    ADMIN_TOKEN_EXPIRY: process.env.ADMIN_TOKEN_EXPIRY || '30d',
     ADMIN_INITIAL_PASSWORD: process.env.ADMIN_INITIAL_PASSWORD || '',
 
     // Encryption (AES-256-GCM, 32 bytes / 64 hex chars)
