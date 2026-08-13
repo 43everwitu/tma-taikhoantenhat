@@ -32,7 +32,7 @@ function apiError(status, code, message) {
   return err;
 }
 
-function createOrderPayload(telegramId, payload) {
+function createOrderPayload(telegramId, payload, { source = 'web' } = {}) {
   const { productId, quantity, bankIndex, variantId, inputValue, discountCode } = payload;
 
   const product = db.prepare('SELECT * FROM products WHERE id = ? AND is_active = 1').get(productId);
@@ -84,7 +84,7 @@ function createOrderPayload(telegramId, payload) {
   const order = orderService.create(
     telegramId, productId, quantity, totalPrice,
     {
-      source: 'web',
+      source,
       bankName: paymentService.getBank(bankIndex).NAME,
       variantId: variantId ?? null,
       inputValue: inputValue ?? null,
@@ -349,3 +349,4 @@ router.patch('/notifications/:id/read', requireCustomer, (req, res) => {
 });
 
 module.exports = router;
+module.exports.createOrderPayload = createOrderPayload;
