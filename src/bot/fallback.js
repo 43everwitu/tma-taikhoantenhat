@@ -1,20 +1,50 @@
+const config = require('../config');
+
 const NUDGE_TEXT =
   'Mọi tính năng đã chuyển vào Mini App.\nBấm nút bên dưới để mở cửa hàng.';
+const { openShopButton } = require('../utils/miniAppButton');
 
-async function handleFallback(ctx) {
-  const username = ctx.botInfo?.username;
-  const url = username ? `https://t.me/${username}?startapp` : process.env.MINIAPP_URL;
+async function nudgeToMiniApp(ctx) {
   await ctx.reply(NUDGE_TEXT, {
     reply_markup: {
-      inline_keyboard: [[{ text: 'Mở cửa hàng', url }]],
+      inline_keyboard: [[openShopButton('Mở cửa hàng', { botUsername: ctx.botInfo?.username })]],
     },
   });
 }
 
+async function forwardToRagBot(ctx) {
+  // This handler (bot.on('text', ...)) only ever fires for genuine inbound
+  // customer messages — Telegraf does not deliver the bot's own outgoing
+  // sendMessage calls back through this listener — so is_staff_reply is
+  // always false here. Staff-reply/echo detection for RAG-chat-bot's Gate
+  // is a separate mechanism, not implemented by this forwarder.
+  const body = JSON.stringify({
+    update_id: ctx.update.update_id,
+    message: { ...ctx.update.message, is_staff_reply: false },
+  });
+  try {
+    const res = await fetch(config.RAG_BOT_INBOUND_URL, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body,
+      signal: AbortSignal.timeout(config.RAG_BOT_FORWARD_TIMEOUT_SECONDS * 1000),
+    });
+    if (!res.ok) throw new Error(`RAG bot responded ${res.status}`);
+  } catch (err) {
+    console.error('[rag-forward] failed, falling back to Mini App nudge:', err.message);
+    await nudgeToMiniApp(ctx);
+  }
+}
+
+async function handleFallback(ctx) {
+  if (config.RAG_BOT_FORWARD_ENABLED) {
+    return forwardToRagBot(ctx);
+  }
+  return nudgeToMiniApp(ctx);
+}
+
 module.exports = (bot) => {
-  // Match any text/command that wasn't already handled by /start.
   bot.on('text', handleFallback);
-  // Stale callback queries from old inline buttons — answer + nudge.
   bot.on('callback_query', async (ctx) => {
     try { await ctx.answerCbQuery(); } catch {}
     await handleFallback(ctx);

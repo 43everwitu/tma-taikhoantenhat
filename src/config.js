@@ -64,4 +64,13 @@ module.exports = {
 
     // RAG-chat-bot integration (separate secret from TWOFA_TMA_SHARED_SECRET)
     RAG_INTEGRATION_SECRET: process.env.RAG_INTEGRATION_SECRET || '',
+
+    // Forward inbound Telegram text to RAG-chat-bot until an operator
+    // explicitly opts in for this deployment.
+    RAG_BOT_FORWARD_ENABLED: process.env.RAG_BOT_FORWARD_ENABLED === 'true',
+    RAG_BOT_INBOUND_URL: process.env.RAG_BOT_INBOUND_URL || 'http://localhost:3100/telegram/inbound',
+    RAG_BOT_FORWARD_TIMEOUT_SECONDS: Math.max(
+      1,
+      parseInt(process.env.RAG_BOT_FORWARD_TIMEOUT_SECONDS, 10) || 10,
+    ),
 };
