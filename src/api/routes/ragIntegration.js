@@ -121,5 +121,37 @@ router.post('/discounts/preview', rawJson, verifyRagAuth, (req, res) => {
   });
 });
 
+const userService = require('../../services/userService');
+
+router.post('/admin/orders/cancel', rawJson, verifyRagAuth, (req, res) => {
+  const orderId = req.ragBody && req.ragBody.orderId;
+  const id = parseInt(orderId, 10);
+  if (!Number.isInteger(id)) return fail(res, 400, 'INVALID_ORDER_ID', 'orderId không hợp lệ');
+
+  const order = orderService.getById(id);
+  if (!order) return fail(res, 404, 'NOT_FOUND', 'Đơn hàng không tồn tại');
+
+  const cancelled = orderService.cancel(id);
+  if (!cancelled) return fail(res, 409, 'INVALID_STATE', 'Đơn không thể hủy');
+
+  return res.json({ success: true, data: { orderId: id, status: 'cancelled' } });
+});
+
+router.post('/admin/customers/balance', rawJson, verifyRagAuth, (req, res) => {
+  const { customerId, delta, reason } = req.ragBody || {};
+  const id = parseInt(customerId, 10);
+  const amount = Number(delta);
+  if (!Number.isInteger(id) || !Number.isFinite(amount)) {
+    return fail(res, 400, 'INVALID_INPUT', 'customerId hoặc delta không hợp lệ');
+  }
+
+  const user = userService.get(id);
+  if (!user) return fail(res, 404, 'NOT_FOUND', 'Khách hàng không tồn tại');
+
+  userService.addBalance(id, amount);
+  const newBalance = userService.get(id).balance;
+  return res.json({ success: true, data: { customerId: id, delta: amount, reason: reason || null, newBalance } });
+});
+
 module.exports = router;
 module.exports._internal = { rawJson, verifyRagAuth, fail };

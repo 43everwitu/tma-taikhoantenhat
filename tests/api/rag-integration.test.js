@@ -6,6 +6,7 @@ const crypto = require('node:crypto');
 const db = require('../../src/database');
 const orderService = require('../../src/services/orderService');
 const discountService = require('../../src/services/discountService');
+const userService = require('../../src/services/userService');
 
 function sign(secret, timestamp, rawBody) {
   const payload = Buffer.concat([Buffer.from(`${timestamp}.`), rawBody]);
@@ -199,4 +200,37 @@ test('discounts/preview with no code matches resolveBestForOrder (applies any ac
   const body = await res.json();
   assert.strictEqual(body.data.discount, expected.discount);
   assert.strictEqual(body.data.total, subtotal - expected.discount);
+});
+
+test('admin/orders/cancel cancels a pending order', async (t) => {
+  const fixture = createRagTestFixture();
+  t.after(fixture.cleanup);
+  const order = orderService.create(fixture.userId, fixture.productId, 1, 50000);
+
+  const res = await post(freshApp(), '/api/v1/internal/rag/admin/orders/cancel', { orderId: String(order.id) });
+  assert.strictEqual(res.status, 200);
+  assert.strictEqual(orderService.getById(order.id).status, 'cancelled');
+});
+
+test('admin/orders/cancel returns 409 for an order that cannot be cancelled', async (t) => {
+  const fixture = createRagTestFixture();
+  t.after(fixture.cleanup);
+  const order = orderService.create(fixture.userId, fixture.productId, 1, 50000);
+  orderService.cancel(order.id);
+
+  const res = await post(freshApp(), '/api/v1/internal/rag/admin/orders/cancel', { orderId: String(order.id) });
+  assert.strictEqual(res.status, 409);
+});
+
+test('admin/customers/balance adjusts a customer wallet balance', async (t) => {
+  const fixture = createRagTestFixture();
+  t.after(fixture.cleanup);
+  const before = userService.get(fixture.userId).balance;
+
+  const res = await post(freshApp(), '/api/v1/internal/rag/admin/customers/balance', {
+    customerId: fixture.userId, delta: 50000, reason: 'goodwill refund',
+  });
+  assert.strictEqual(res.status, 200);
+  const body = await res.json();
+  assert.strictEqual(body.data.newBalance, before + 50000);
 });
