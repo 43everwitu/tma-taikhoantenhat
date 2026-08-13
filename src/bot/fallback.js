@@ -1,4 +1,5 @@
 const config = require('../config');
+const { signPayload } = require('../services/twofaIntegrationAuth');
 
 const NUDGE_TEXT =
   'Mọi tính năng đã chuyển vào Mini App.\nBấm nút bên dưới để mở cửa hàng.';
@@ -18,15 +19,20 @@ async function forwardToRagBot(ctx) {
   // sendMessage calls back through this listener — so is_staff_reply is
   // always false here. Staff-reply/echo detection for RAG-chat-bot's Gate
   // is a separate mechanism, not implemented by this forwarder.
-  const body = JSON.stringify({
+  const rawBody = Buffer.from(JSON.stringify({
     update_id: ctx.update.update_id,
     message: { ...ctx.update.message, is_staff_reply: false },
-  });
+  }));
+  const timestamp = String(Math.floor(Date.now() / 1000));
   try {
     const res = await fetch(config.RAG_BOT_INBOUND_URL, {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body,
+      headers: {
+        'Content-Type': 'application/json',
+        'x-tktn-timestamp': timestamp,
+        'x-tktn-signature': signPayload(config.RAG_INTEGRATION_SECRET, timestamp, rawBody),
+      },
+      body: rawBody,
       signal: AbortSignal.timeout(config.RAG_BOT_FORWARD_TIMEOUT_SECONDS * 1000),
     });
     if (!res.ok) throw new Error(`RAG bot responded ${res.status}`);
