@@ -92,6 +92,7 @@ Ports: api `:3000`, web `:3001`, mbbank `:8000`.
 - Announcements: public `/announcements` and `/home` normalize titles/bodies via `normalizeAnnouncementText()` (strip links/emojis) before `AnnouncementCarousel` renders the compact rail.
 - **WP migration** (`scripts/migrate-wp.js`): full migration is default; pass-2 `--inline-images` downloads body images from local backup → sharp pipeline; pass-3 `--normalize-tables` strips wpautop empty `<p>` and wraps orphan `<tr>` runs.
 - **Product variants** (`v0.6-variants-api`): `product_variants` table linked to `products`. `stock.variant_id` / `orders.variant_id` nullable (NULL = legacy product-level). `orders.input_value` is AES-GCM encrypted via `src/utils/secrets.js`. `variantService` owns CRUD + per-variant `countAvailableStock`. Public `/products/:slug` returns `variants[]`. Order reservation branches by `variant_id`.
+- **Backorder stock display**: public product detail must return the real available stock count for every variant, including `is_backorder=1`. TMA displays `Còn N` whenever `stock > 0`; it displays `∞` only when stock is zero and the variant still allows backorder. Never use a fake stock sentinel such as `9999`.
 
 ## Encryption
 

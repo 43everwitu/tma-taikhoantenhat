@@ -48,6 +48,7 @@ Hướng dẫn này áp dụng cho repo `/home/peanut/tma-taikhoantenhat`. Luôn
 - Next/Image với `fill` cần parent inline `style={{ position: 'relative' }}`.
 - Next 16/Turbopack: Telegram script load bằng plain async `<script>` trong `<head>`, không dùng `<Script beforeInteractive>`.
 - Giá trị `.env` có ký tự `#` phải quote, vì `dotenv` cắt phần sau `#`.
+- Biến thể backorder vẫn phải trả và hiển thị tồn kho thật: nếu `stock > 0` thì TMA hiện `Còn N`; chỉ hiện `∞` khi stock bằng 0 và biến thể vẫn cho đặt trước. Không dùng sentinel giả như `9999`.
 
 ## Những File Đã Sửa / Đang Liên Quan
 

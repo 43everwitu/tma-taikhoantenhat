@@ -2,6 +2,7 @@
 
 import { useEffect, useRef, useState } from 'react'
 import { formatPrice } from '@/lib/utils'
+import { getProductStockMode } from '@/lib/productStockDisplay'
 import { Icon } from './Icon'
 
 export interface VariantInputField {
@@ -46,14 +47,14 @@ interface Props {
 }
 
 function stockLabel(v: Variant) {
-  if (v.isBackorder) return '∞'
-  if (v.stock <= 0) return 'Hết'
-  return `Còn ${v.stock}`
+  const mode = getProductStockMode(v)
+  if (mode === 'stock') return `Còn ${v.stock}`
+  if (mode === 'backorder') return '∞'
+  return 'Hết'
 }
 
 function stockTone(v: Variant): 'in' | 'out' {
-  if (v.isBackorder) return 'in'
-  return v.stock <= 0 ? 'out' : 'in'
+  return getProductStockMode(v) === 'out' ? 'out' : 'in'
 }
 
 export function VariantPicker({ variants, selectedId, onSelect, inputValues, onInputChange }: Props) {

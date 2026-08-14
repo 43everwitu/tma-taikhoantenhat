@@ -618,7 +618,7 @@ router.get('/products/:slug', async (req, res) => {
       description: v.description || '',
       price: v.price,
       sortOrder: v.sort_order,
-      stock: v.is_backorder ? 9999 : (variantStockCounts.get(v.id) || 0),
+      stock: variantStockCounts.get(v.id) || 0,
       isBackorder: !!v.is_backorder,
       requiresInput: !!v.requires_input,
       inputLabel: v.input_label || null,

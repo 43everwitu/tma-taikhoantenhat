@@ -13,6 +13,7 @@ import { VariantPicker, variantFieldKey, type Variant } from '../../components/V
 import { ProductRail } from '../../components/ProductRail'
 import type { ProductSummary } from '../../components/ProductCard'
 import { formatPrice } from '@/lib/utils'
+import { findDefaultPurchasableVariant, getProductStockMode } from '@/lib/productStockDisplay'
 import { t } from '@/i18n/vi'
 
 interface ProductBase {
@@ -57,15 +58,17 @@ export default function ProductDetailPage() {
   if (!p) return <MiniAppShell><p>Không tìm thấy sản phẩm.</p></MiniAppShell>
 
   const variants = p?.variants ?? []
-  const defaultVariantId = variants.length > 0
-    ? (variants.find((v) => v.stock > 0)?.id ?? variants[0].id)
-    : null
+  const defaultVariantId = findDefaultPurchasableVariant(variants)?.id ?? null
   const selected = variants.find((v) => v.id === selectedVariantId) ?? variants.find((v) => v.id === defaultVariantId) ?? null
   const effectiveImage = (selected?.imageUrl && selected.imageUrl.length > 0) ? selected.imageUrl : p.imageUrl
   const effectivePrice = selected?.price ?? p?.price ?? 0
   const effectiveSalePrice = selected?.salePrice ?? p?.salePrice ?? null
   const hasDiscount = typeof effectiveSalePrice === 'number' && effectiveSalePrice < effectivePrice
   const effectiveStock = variants.length > 0 ? (selected?.stock ?? 0) : (p?.stock ?? 0)
+  const stockMode = getProductStockMode({
+    stock: effectiveStock,
+    isBackorder: selected?.isBackorder,
+  })
   const requiresInput = !!selected?.requiresInput
   const fields = selected?.inputFields && selected.inputFields.length > 0
     ? selected.inputFields
@@ -144,11 +147,11 @@ export default function ProductDetailPage() {
                 <p className="text-sm opacity-50 line-through">{formatPrice(effectivePrice)}</p>
               )}
               <p className="text-xs mt-1">
-                {selected?.isBackorder
-                  ? <span style={{ color: '#16a34a' }}>● Có sẵn (đặt trước)</span>
-                  : effectiveStock > 0
+                {stockMode === 'stock'
                     ? <span style={{ color: '#16a34a' }}>● {t.product.inStock.replace('{n}', String(effectiveStock))}</span>
-                    : <span style={{ color: '#dc2626' }}>● {t.product.outOfStock}</span>}
+                    : stockMode === 'backorder'
+                      ? <span style={{ color: '#16a34a' }}>● ∞</span>
+                      : <span style={{ color: '#dc2626' }}>● {t.product.outOfStock}</span>}
               </p>
             </div>
             {!disabled && (

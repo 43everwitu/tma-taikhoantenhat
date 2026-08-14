@@ -7,6 +7,7 @@ import { useCart } from '@/lib/cart'
 import { VariantPicker, variantFieldKey, type Variant } from './VariantPicker'
 import { Icon } from './Icon'
 import { formatPrice } from '@/lib/utils'
+import { findDefaultPurchasableVariant, getProductStockMode } from '@/lib/productStockDisplay'
 
 interface ProductFull {
   id: string; slug: string; name: string; emoji: string; imageUrl?: string
@@ -41,7 +42,7 @@ export function VariantQuickBuy({ slug, onClose }: Props) {
   }
 
   const variants = p.variants ?? []
-  const defaultVariant = variants.find((v) => v.stock > 0) ?? variants[0] ?? null
+  const defaultVariant = findDefaultPurchasableVariant(variants)
   const selected = variants.find((v) => v.id === selectedVariantId) ?? defaultVariant
   const effectivePrice = selected?.price ?? p.price
   const effectiveSalePrice = selected?.salePrice ?? p.salePrice ?? null
@@ -53,6 +54,10 @@ export function VariantQuickBuy({ slug, onClose }: Props) {
   const hasRange = (p.variants?.length ?? 0) > 1 && baseMin !== baseMax
   const rangeHasDiscount = hasRange && (saleMin < baseMin || saleMax < baseMax)
   const effectiveStock = variants.length > 0 ? (selected?.stock ?? 0) : p.stock
+  const stockMode = getProductStockMode({
+    stock: effectiveStock,
+    isBackorder: selected?.isBackorder,
+  })
   const requiresInput = !!selected?.requiresInput
   const fields = selected?.inputFields && selected.inputFields.length > 0
     ? selected.inputFields
@@ -60,7 +65,7 @@ export function VariantQuickBuy({ slug, onClose }: Props) {
         ? [{ label: selected!.inputLabel || 'Thông tin', placeholder: '', type: 'text' as const, required: true }]
         : [])
   const inputValid = !requiresInput || fields.every((f, idx) => !f.required || (inputValues[variantFieldKey(f, idx)] ?? '').trim().length >= 1)
-  const disabled = effectiveStock <= 0 || p.contactOnly || !inputValid || busy
+  const disabled = (!selected?.isBackorder && effectiveStock <= 0) || p.contactOnly || !inputValid || busy
 
   const product = p
   function addAndClose() {
@@ -121,7 +126,11 @@ export function VariantQuickBuy({ slug, onClose }: Props) {
             <span className="text-lg font-bold">{formatPrice(hasDiscount ? effectiveSalePrice! : effectivePrice)}</span>
             {hasDiscount && <span className="ml-2 text-xs opacity-50 line-through">{formatPrice(effectivePrice)}</span>}
           </span>
-          <span className="text-xs opacity-60">{effectiveStock > 0 ? `Còn ${effectiveStock}` : 'Hết hàng'}</span>
+          <span className="text-xs opacity-60">
+            {stockMode === 'stock'
+              ? `Còn ${effectiveStock}`
+              : stockMode === 'backorder' ? '∞' : 'Hết hàng'}
+          </span>
         </div>
 
         <button

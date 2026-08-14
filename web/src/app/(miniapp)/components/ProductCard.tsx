@@ -8,6 +8,7 @@ import { Icon } from './Icon'
 import { MiniAppProductImage } from './MiniAppProductImage'
 import { getProductDisplayPrice } from '@/lib/productPriceDisplay'
 import { resolveContactUrl } from '@/lib/contactUrl'
+import { getProductStockMode } from '@/lib/productStockDisplay'
 import { t } from '@/i18n/vi'
 
 const VariantQuickBuy = dynamic(
@@ -46,14 +47,21 @@ export function ProductCard({
   showMatchLabel?: boolean
 }) {
   const [quickOpen, setQuickOpen] = useState(false)
-  const inStock = p.stock > 0 || !!p.hasBackorder
   const isContactOnly = !!p.contactOnly
+  const stockMode = getProductStockMode({
+    stock: p.stock,
+    isBackorder: p.hasBackorder,
+    contactOnly: isContactOnly,
+  })
+  const inStock = stockMode === 'stock' || stockMode === 'backorder'
   const displayPrice = getProductDisplayPrice(p)
-  const stockLabel = isContactOnly
+  const stockLabel = stockMode === 'contact'
     ? t.product.contactOnly
-    : inStock
-      ? (p.hasBackorder && p.stock <= 0 ? '∞' : `Còn ${p.stock}`)
-      : t.product.outOfStock
+    : stockMode === 'stock'
+      ? `Còn ${p.stock}`
+      : stockMode === 'backorder'
+        ? '∞'
+        : t.product.outOfStock
 
   function openContact(e: MouseEvent<HTMLButtonElement>) {
     e.preventDefault()
