@@ -51,13 +51,16 @@ router.get('/', (req, res) => {
   }
 
   const variantIdParam = req.query.variantId;
+  let variantFilterApplied = false;
   if (variantIdParam !== undefined && String(variantIdParam) !== '') {
     const n = parseInt(variantIdParam, 10);
     if (n === 0) {
       where.push('s.variant_id IS NULL');
+      variantFilterApplied = true;
     } else if (n > 0) {
       where.push('s.variant_id = ?');
       params.push(n);
+      variantFilterApplied = true;
     }
   }
 
@@ -66,6 +69,11 @@ router.get('/', (req, res) => {
   } else if (sold === 'false') {
     where.push('s.is_sold = 0');
   }
+
+  // Priority order (drag-to-reorder) only makes sense once the list is
+  // narrowed to a single product+variant group AND showing unsold stock —
+  // that's the exact grouping the sale-order queries scope by.
+  const priorityMode = Number.isFinite(productId) && productId > 0 && variantFilterApplied && sold === 'false';
 
   const whereSql = where.join(' AND ');
   const rows = db.prepare(`
@@ -79,6 +87,7 @@ router.get('/', (req, res) => {
       s.product_id,
       s.variant_id,
       s.duration_days,
+      s.sort_order,
       p.name AS product_name,
       v.name AS variant_name,
       u.telegram_id AS sold_customer_telegram_id,
@@ -112,7 +121,7 @@ router.get('/', (req, res) => {
       LIMIT 1
     )
     WHERE ${whereSql}
-    ORDER BY s.id DESC
+    ORDER BY ${priorityMode ? 's.sort_order ASC, s.id ASC' : 's.id DESC'}
     LIMIT ? OFFSET ?
   `).all(...params, limit, offset);
   const total = db.prepare(`
@@ -138,6 +147,7 @@ router.get('/', (req, res) => {
         createdAt: r.added_at || null,
         soldAt: r.sold_at || null,
         durationDays: r.duration_days ?? null,
+        sortOrder: priorityMode ? r.sort_order : undefined,
         soldOrder: r.sold_order_id ? {
           id: String(r.sold_order_id),
           paymentCode: r.sold_order_payment_code,
@@ -153,6 +163,7 @@ router.get('/', (req, res) => {
       total,
       page,
       limit,
+      priorityMode,
     },
   });
 });
@@ -230,6 +241,89 @@ router.patch('/_bulk', validate(z.object({
   }, req.ip);
   publishStockChanges(rows, 'bulk_edit');
   res.json({ success: true, data: { updated: result.changes } });
+});
+
+// PATCH /admin/stock/_reorder — drag-to-reorder sell priority within one
+// product+variant group. `ids` are the dragged rows (display order at their
+// new position); `beforeId`/`afterId` are the rows adjacent to the drop slot
+// on the current page, or null at a page edge. New sort_order values are
+// interpolated between the neighbors so only the moved rows change.
+router.patch('/_reorder', validate(z.object({
+  ids: z.array(z.number().int().positive()).min(1).max(200),
+  beforeId: z.number().int().positive().nullable().optional(),
+  afterId: z.number().int().positive().nullable().optional(),
+})), (req, res) => {
+  const ids = [...new Set(req.validated.ids)];
+  const beforeId = req.validated.beforeId ?? null;
+  const afterId = req.validated.afterId ?? null;
+
+  const placeholders = makePlaceholders(ids.length);
+  const movedRows = db.prepare(
+    `SELECT id, product_id, variant_id, is_sold, sort_order FROM stock WHERE id IN (${placeholders})`
+  ).all(...ids);
+  if (movedRows.length !== ids.length || movedRows.some(r => r.is_sold)) {
+    return res.status(409).json({ success: false, error: { code: 'INVALID_STATE', message: 'Key không hợp lệ để sắp xếp' } });
+  }
+  const [{ product_id: productId, variant_id: variantId }] = movedRows;
+  const sameGroup = (r) => r.product_id === productId && r.variant_id === variantId;
+  if (!movedRows.every(sameGroup)) {
+    return res.status(409).json({ success: false, error: { code: 'INVALID_STATE', message: 'Chỉ sắp xếp key cùng sản phẩm/biến thể' } });
+  }
+
+  const idsSet = new Set(ids);
+  if (beforeId !== null && idsSet.has(beforeId)) {
+    return res.status(409).json({ success: false, error: { code: 'INVALID_STATE', message: 'Vị trí thả không hợp lệ' } });
+  }
+  if (afterId !== null && idsSet.has(afterId)) {
+    return res.status(409).json({ success: false, error: { code: 'INVALID_STATE', message: 'Vị trí thả không hợp lệ' } });
+  }
+  let beforeRow = null;
+  if (beforeId !== null) {
+    beforeRow = db.prepare('SELECT id, product_id, variant_id, is_sold, sort_order FROM stock WHERE id = ?').get(beforeId);
+    if (!beforeRow || beforeRow.is_sold || !sameGroup(beforeRow)) {
+      return res.status(409).json({ success: false, error: { code: 'INVALID_STATE', message: 'Vị trí thả không hợp lệ' } });
+    }
+  }
+  let afterRow = null;
+  if (afterId !== null) {
+    afterRow = db.prepare('SELECT id, product_id, variant_id, is_sold, sort_order FROM stock WHERE id = ?').get(afterId);
+    if (!afterRow || afterRow.is_sold || !sameGroup(afterRow)) {
+      return res.status(409).json({ success: false, error: { code: 'INVALID_STATE', message: 'Vị trí thả không hợp lệ' } });
+    }
+  }
+
+  const GAP = 1;
+  const beforeSort = beforeRow ? beforeRow.sort_order : null;
+  const afterSort = afterRow ? afterRow.sort_order : null;
+  const newSortOrders = ids.map((id, i) => {
+    if (beforeSort !== null && afterSort !== null) {
+      const step = (afterSort - beforeSort) / (ids.length + 1);
+      return beforeSort + step * (i + 1);
+    }
+    if (afterSort !== null) {
+      return afterSort - GAP * (ids.length - i);
+    }
+    if (beforeSort !== null) {
+      return beforeSort + GAP * (i + 1);
+    }
+    return i;
+  });
+
+  const update = db.prepare('UPDATE stock SET sort_order = ? WHERE id = ?');
+  const tx = db.transaction(() => {
+    ids.forEach((id, i) => update.run(newSortOrders[i], id));
+  });
+  tx();
+
+  auditService.log(req.admin.adminId, 'stock.reorder', 'stock', null, {
+    product_id: productId,
+    variant_id: variantId,
+    ids,
+    beforeId,
+    afterId,
+  }, req.ip);
+  eventBus.publish({ type: 'stock.change', productId, action: 'reorder', count: ids.length });
+  res.json({ success: true, data: { updated: ids.length } });
 });
 
 router.patch('/items/:itemId', validate(z.object({

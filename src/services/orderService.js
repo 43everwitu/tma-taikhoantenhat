@@ -16,6 +16,7 @@ const reserveStockBatchByVariant = db.prepare(`
   WHERE id IN (
     SELECT id FROM stock
     WHERE product_id = ? AND variant_id = ? AND is_sold = 0 AND reserved_for_order_id IS NULL
+    ORDER BY sort_order ASC, id ASC
     LIMIT ?
   )
 `);
@@ -24,6 +25,7 @@ const reserveStockBatchNoVariant = db.prepare(`
   WHERE id IN (
     SELECT id FROM stock
     WHERE product_id = ? AND variant_id IS NULL AND is_sold = 0 AND reserved_for_order_id IS NULL
+    ORDER BY sort_order ASC, id ASC
     LIMIT ?
   )
 `);
@@ -190,11 +192,13 @@ const orderService = {
     const getFreeStockByVariant = db.prepare(
       `SELECT * FROM stock WHERE product_id = ? AND variant_id = ? AND is_sold = 0
        AND (reserved_for_order_id IS NULL OR reserved_for_order_id = ?)
+       ORDER BY sort_order ASC, id ASC
        LIMIT ?`
     );
     const getFreeStockNoVariant = db.prepare(
       `SELECT * FROM stock WHERE product_id = ? AND variant_id IS NULL AND is_sold = 0
        AND (reserved_for_order_id IS NULL OR reserved_for_order_id = ?)
+       ORDER BY sort_order ASC, id ASC
        LIMIT ?`
     );
     const markStockSold = db.prepare(

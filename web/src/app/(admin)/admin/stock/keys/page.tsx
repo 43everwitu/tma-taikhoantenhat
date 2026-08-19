@@ -5,11 +5,14 @@ import { useEffect, useMemo, useState } from 'react'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { api } from '@/lib/api'
 import { formatDate } from '@/lib/utils'
-import { Copy, Pencil, Search, Trash2 } from '@/lib/icons'
+import { Copy, GripVertical, Pencil, Search, Trash2 } from '@/lib/icons'
 import { ResponsiveTable, Column } from '@/components/ResponsiveTable'
 import { useToast } from '@/components/Toast'
 import { QuickAddKeysModal } from '../QuickAddKeysModal'
 import { ProductVariantFilterCombobox } from './ProductVariantFilterCombobox'
+import { DndContext, closestCenter, KeyboardSensor, PointerSensor, useSensor, useSensors, type DragEndEvent } from '@dnd-kit/core'
+import { SortableContext, sortableKeyboardCoordinates, useSortable, verticalListSortingStrategy } from '@dnd-kit/sortable'
+import { CSS } from '@dnd-kit/utilities'
 
 interface ProductRow {
   id: string
@@ -38,6 +41,7 @@ interface KeyRow {
   createdAt: string | null
   soldAt: string | null
   durationDays: number | null
+  sortOrder?: number
   soldOrder: {
     id: string
     paymentCode: string | null
@@ -56,6 +60,7 @@ interface KeyListResponse {
   total: number
   page: number
   limit: number
+  priorityMode: boolean
 }
 
 interface EditDraft {
@@ -122,6 +127,7 @@ export default function AllStockKeysPage() {
   const rows = useMemo(() => keysQuery.data?.data.items ?? [], [keysQuery.data?.data.items])
   const total = keysQuery.data?.data.total ?? 0
   const totalPages = Math.ceil(total / limit)
+  const priorityMode = keysQuery.data?.data.priorityMode ?? false
   const selectedRows = useMemo(
     () => rows.filter((row) => selectedIds.has(row.id)),
     [rows, selectedIds]
@@ -153,6 +159,59 @@ export default function AllStockKeysPage() {
     qc.invalidateQueries({ queryKey: ['admin', 'products'] })
     qc.invalidateQueries({ queryKey: ['admin', 'variants'] })
     if (bulkProductId) qc.invalidateQueries({ queryKey: ['admin', 'variants', bulkProductId] })
+  }
+
+  const reorderMutation = useMutation({
+    mutationFn: (payload: { ids: number[]; beforeId: number | null; afterId: number | null }) =>
+      api.patch('/admin/stock/_reorder', payload),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ['admin', 'stock'] })
+    },
+    onError: (e) => {
+      t.error(`Lỗi: ${e instanceof Error ? e.message : 'sắp xếp thất bại'}`)
+      qc.invalidateQueries({ queryKey: ['admin', 'stock'] })
+    },
+  })
+
+  const sensors = useSensors(
+    useSensor(PointerSensor, { activationConstraint: { distance: 4 } }),
+    useSensor(KeyboardSensor, { coordinateGetter: sortableKeyboardCoordinates }),
+  )
+
+  function handleDragEnd(e: DragEndEvent) {
+    const { active, over } = e
+    if (!over || active.id === over.id) return
+    const activeId = String(active.id)
+    const overId = String(over.id)
+
+    const allIds = rows.map((row) => row.id)
+    const movedIds = selectedIds.has(activeId) && selectedIds.size > 1
+      ? rows.filter((row) => selectedIds.has(row.id)).map((row) => row.id)
+      : [activeId]
+    const movedSet = new Set(movedIds)
+    if (movedSet.has(overId)) return
+
+    const remaining = allIds.filter((id) => !movedSet.has(id))
+    const overIdx = remaining.indexOf(overId)
+    if (overIdx < 0) return
+
+    const nextOrder = [...remaining.slice(0, overIdx), ...movedIds, ...remaining.slice(overIdx)]
+    qc.setQueryData<{ data: KeyListResponse }>(
+      ['admin', 'stock', 'all', page, debouncedQ, productId, variantId, status],
+      (prev) => {
+        if (!prev) return prev
+        const byId = new Map(rows.map((row) => [row.id, row]))
+        return { ...prev, data: { ...prev.data, items: nextOrder.map((id) => byId.get(id)!) } }
+      }
+    )
+
+    const beforeId = overIdx > 0 ? remaining[overIdx - 1] : null
+    const afterId = remaining[overIdx] ?? null
+    reorderMutation.mutate({
+      ids: movedIds.map(Number),
+      beforeId: beforeId !== null ? Number(beforeId) : null,
+      afterId: afterId !== null ? Number(afterId) : null,
+    })
   }
 
   async function copyKey(content: string) {
@@ -509,28 +568,72 @@ export default function AllStockKeysPage() {
         </div>
       )}
 
-      <ResponsiveTable
-        rows={rows}
-        columns={columns}
-        rowKey={(row) => row.id}
-        loading={keysQuery.isLoading}
-        emptyText="Không tìm thấy key phù hợp"
-        cardActions={renderActions}
-        selectable
-        selectedIds={selectedIds}
-        isRowSelectable={(row) => !row.sold}
-        onToggleRow={(id, checked) => {
-          setSelectedIds((prev) => {
-            const next = new Set(prev)
-            if (checked) next.add(id)
-            else next.delete(id)
-            return next
-          })
-        }}
-        onToggleAll={(checked) => {
-          setSelectedIds(checked ? new Set(rows.filter((row) => !row.sold).map((row) => row.id)) : new Set())
-        }}
-      />
+      {priorityMode ? (
+        <div className="clay-card p-4 space-y-3">
+          <p className="text-xs text-clay-charcoal">
+            Đang xem đúng 1 sản phẩm + biến thể còn hàng — kéo thả để đổi key nào bán trước.
+          </p>
+          {keysQuery.isLoading ? (
+            <div className="space-y-2">
+              {[...Array(5)].map((_, i) => (
+                <div key={i} className="h-14 bg-clay-oat-light rounded animate-pulse" />
+              ))}
+            </div>
+          ) : rows.length === 0 ? (
+            <div className="p-8 text-center text-clay-silver">Không tìm thấy key phù hợp</div>
+          ) : (
+            <DndContext sensors={sensors} collisionDetection={closestCenter} onDragEnd={handleDragEnd}>
+              <SortableContext items={rows.map((row) => row.id)} strategy={verticalListSortingStrategy}>
+                <ul className="space-y-2">
+                  {rows.map((row) => (
+                    <SortableKeyRow
+                      key={row.id}
+                      row={row}
+                      selected={selectedIds.has(row.id)}
+                      onToggle={(checked) => {
+                        setSelectedIds((prev) => {
+                          const next = new Set(prev)
+                          if (checked) next.add(row.id)
+                          else next.delete(row.id)
+                          return next
+                        })
+                      }}
+                      onCopy={() => copyKey(row.content)}
+                      onEdit={() => openEdit(row)}
+                      onDelete={() => {
+                        if (confirm('Xoá key này?')) deleteMutation.mutate(row)
+                      }}
+                    />
+                  ))}
+                </ul>
+              </SortableContext>
+            </DndContext>
+          )}
+        </div>
+      ) : (
+        <ResponsiveTable
+          rows={rows}
+          columns={columns}
+          rowKey={(row) => row.id}
+          loading={keysQuery.isLoading}
+          emptyText="Không tìm thấy key phù hợp"
+          cardActions={renderActions}
+          selectable
+          selectedIds={selectedIds}
+          isRowSelectable={(row) => !row.sold}
+          onToggleRow={(id, checked) => {
+            setSelectedIds((prev) => {
+              const next = new Set(prev)
+              if (checked) next.add(id)
+              else next.delete(id)
+              return next
+            })
+          }}
+          onToggleAll={(checked) => {
+            setSelectedIds(checked ? new Set(rows.filter((row) => !row.sold).map((row) => row.id)) : new Set())
+          }}
+        />
+      )}
 
       {totalPages > 1 && (
         <div className="clay-card flex items-center justify-between px-4 py-3">
@@ -686,5 +789,56 @@ export default function AllStockKeysPage() {
         </div>
       )}
     </div>
+  )
+}
+
+function SortableKeyRow({ row, selected, onToggle, onCopy, onEdit, onDelete }: {
+  row: KeyRow
+  selected: boolean
+  onToggle: (checked: boolean) => void
+  onCopy: () => void
+  onEdit: () => void
+  onDelete: () => void
+}) {
+  const { attributes, listeners, setNodeRef, transform, transition, isDragging } = useSortable({ id: row.id })
+  const style: React.CSSProperties = {
+    transform: CSS.Transform.toString(transform),
+    transition,
+    opacity: isDragging ? 0.6 : 1,
+  }
+  return (
+    <li
+      ref={setNodeRef}
+      style={style}
+      className={`rounded-xl border p-2.5 flex items-start gap-2 ${selected ? 'ring-2 ring-clay-ink/20 bg-clay-oat-light/60' : 'bg-white border-clay-oat-light'}`}
+    >
+      <input
+        type="checkbox"
+        checked={selected}
+        onChange={(e) => onToggle(e.target.checked)}
+        onClick={(e) => e.stopPropagation()}
+        aria-label={`Chọn key ${row.id}`}
+        className="h-4 w-4 mt-2.5"
+      />
+      <button
+        type="button"
+        {...attributes}
+        {...listeners}
+        className="cursor-grab active:cursor-grabbing opacity-50 hover:opacity-100 px-1 mt-1.5 touch-none"
+        aria-label="Kéo để sắp xếp"
+      >
+        <GripVertical size={16} />
+      </button>
+      <code className="block max-h-20 flex-1 overflow-y-auto whitespace-pre-wrap break-words rounded-lg border border-clay-oat-light bg-clay-cream/50 px-2 py-1.5 font-mono text-xs leading-relaxed text-clay-ink select-text">
+        {row.content}
+      </code>
+      <div className="flex flex-col gap-1.5 shrink-0">
+        <button type="button" onClick={onCopy} className="clay-btn px-2 py-1.5 text-xs" title="Copy key" aria-label="Copy key">
+          <Copy size={14} />
+        </button>
+        <button type="button" onClick={onEdit} className="clay-btn text-xs flex items-center gap-1"><Pencil size={14} />Sửa</button>
+        <button type="button" onClick={onDelete} className="clay-btn clay-btn--pomegranate text-xs flex items-center gap-1"><Trash2 size={14} />Xoá</button>
+      </div>
+    </li>
   )
 }

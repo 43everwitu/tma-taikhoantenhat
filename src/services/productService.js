@@ -93,10 +93,12 @@ const productService = {
             INSERT INTO stock (product_id, variant_id, data, duration_days, added_at)
             VALUES (?, ?, ?, ?, CURRENT_TIMESTAMP)
         `);
+        const setSortOrder = db.prepare('UPDATE stock SET sort_order = id WHERE id = ?');
         const insertMany = db.transaction((lines) => {
             for (const line of lines) {
                 if (line.trim()) {
-                    insert.run(productId, variantId, line.trim(), effectiveDuration);
+                    const result = insert.run(productId, variantId, line.trim(), effectiveDuration);
+                    setSortOrder.run(result.lastInsertRowid);
                 }
             }
         });
