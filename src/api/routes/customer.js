@@ -139,7 +139,7 @@ router.get('/me', requireCustomer, (req, res) => {
   }});
 });
 
-// POST /topups — create a wallet topup (QR + memo PNS<username>|PNSU<id>)
+// POST /topups — create a wallet topup (QR + memo TBS<username>|TBSU<id>)
 router.post('/topups', requireCustomer, validate(z.object({
   amount: z.coerce.number().int().positive(),
 })), (req, res) => {

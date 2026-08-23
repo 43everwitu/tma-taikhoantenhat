@@ -11,21 +11,21 @@ const paymentService = {
     return config.BANK;
   },
   /**
-   * Build payment code from order id. Format: PNS<id> (e.g. PNS100123)
+   * Build payment code from order id. Format: TBS<id> (e.g. TBS100123)
    */
   buildPaymentCode(orderId) {
-    return `PNS${orderId}`;
+    return `TBS${orderId}`;
   },
   /**
-   * Build wallet topup memo. PNS<username> when username present (Telegram
+   * Build wallet topup memo. TBS<username> when username present (Telegram
    * usernames are 5–32 chars and must start with a letter, so they never
-   * collide with order ids which are pure digits). Falls back to PNSU<tgid>
+   * collide with order ids which are pure digits). Falls back to TBSU<tgid>
    * to keep matcher unambiguous.
    */
   buildTopupMemo(user) {
     const username = user.username;
-    if (username && username.length >= 5) return `PNS${username}`;
-    return `PNSU${user.telegram_id || user.id}`;
+    if (username && username.length >= 5) return `TBS${username}`;
+    return `TBSU${user.telegram_id || user.id}`;
   },
   generateQRUrl(amount, content, bank = null) {
     const b = bank || config.BANK;

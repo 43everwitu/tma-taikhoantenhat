@@ -16,8 +16,8 @@ const topupService = {
    */
   buildMemo({ telegram_id, username }) {
     return username && username.length >= 5
-      ? `PNS${username}`.toUpperCase()
-      : `PNSU${telegram_id}`;
+      ? `TBS${username}`.toUpperCase()
+      : `TBSU${telegram_id}`;
   },
 
   /**
@@ -90,14 +90,14 @@ const topupService = {
 
   /**
    * Resolve user_id from a memo when there's no topup row at all (e.g. user
-   * reuses their old QR after we cleaned up). Decodes PNSU<digits> directly
-   * and falls back to looking up by username for PNS<username>.
+   * reuses their old QR after we cleaned up). Decodes TBSU<digits> directly
+   * and falls back to looking up by username for TBS<username>.
    */
   resolveUserFromMemo(memo) {
     const upper = memo.toUpperCase();
-    const tgidMatch = upper.match(/^PNSU(\d+)$/);
+    const tgidMatch = upper.match(/^TBSU(\d+)$/);
     if (tgidMatch) return parseInt(tgidMatch[1]);
-    const usernameMatch = upper.match(/^PNS([A-Z0-9_]+)$/);
+    const usernameMatch = upper.match(/^TBS([A-Z0-9_]+)$/);
     if (usernameMatch) {
       const username = usernameMatch[1];
       const u = db.prepare(
