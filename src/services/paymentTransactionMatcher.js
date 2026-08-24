@@ -57,34 +57,54 @@ function parseTransactionInstant(value) {
   return Number.isNaN(date.getTime()) ? null : date;
 }
 
-function isEligibleOrder(order, transactionAt, amount) {
+function isAmountEligibleOrder(order, amount) {
   if (order.deleted_at) return false;
   if (order.payment_method !== 'bank' && order.payment_method !== null) return false;
   if (order.status !== 'pending' && order.status !== 'expired') return false;
 
+  const total = Number(order.total_price);
+  if (!Number.isFinite(total)) return false;
+
+  return Math.abs(amount - total) <= AMOUNT_TOLERANCE;
+}
+
+function isEligibleOrder(order, transactionAt, amount) {
+  if (!isAmountEligibleOrder(order, amount)) return false;
+
   const createdAt = parseSqliteUtc(order.created_at);
   const expiresAt = parseSqliteUtc(order.expires_at);
-  const total = Number(order.total_price);
-  if (!createdAt || !expiresAt || !Number.isFinite(total)) return false;
+  if (!createdAt || !expiresAt) return false;
 
   const recoveryEndsAt = expiresAt.getTime() + RECOVERY_WINDOW_MS;
   return transactionAt.getTime() >= createdAt.getTime()
-    && transactionAt.getTime() <= recoveryEndsAt
-    && Math.abs(amount - total) <= AMOUNT_TOLERANCE;
+    && transactionAt.getTime() <= recoveryEndsAt;
 }
 
 function matchMemoLessTransaction(transaction, orders) {
+  const amount = Number(transaction.amount);
   const transactionAt = parseTransactionInstant(transaction.transactionTime);
   if (!transactionAt) {
+    // No parseable timestamp from the bank — we can't apply the time window,
+    // so fall back to an amount-only check. Without this, a transaction that
+    // doesn't belong to us at all (e.g. another system's payment code) would
+    // still trigger a review alert just because the bank omitted a timestamp.
+    const candidates = orders.filter(order => isAmountEligibleOrder(order, amount));
+    if (candidates.length === 0) {
+      return {
+        kind: 'none',
+        reason: 'no_candidate',
+        candidates: [],
+        candidateOrderIds: [],
+      };
+    }
     return {
       kind: 'review',
       reason: 'missing_transaction_time',
-      candidates: [],
-      candidateOrderIds: [],
+      candidates,
+      candidateOrderIds: candidates.map(order => order.id),
     };
   }
 
-  const amount = Number(transaction.amount);
   const candidates = orders.filter(order => (
     isEligibleOrder(order, transactionAt, amount)
   ));

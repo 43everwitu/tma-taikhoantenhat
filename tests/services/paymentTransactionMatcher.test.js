@@ -98,12 +98,29 @@ test('ambiguous result includes exact and short-payment candidates', () => {
   assert.deepStrictEqual(result.candidateOrderIds, [1, 2]);
 });
 
-test('missing or invalid transaction timestamp requires review', () => {
+test('missing or invalid transaction timestamp requires review when an amount-matching order exists', () => {
   for (const transactionTime of [null, undefined, '', 'invalid']) {
     const result = matchMemoLessTransaction(tx({ transactionTime }), [order()]);
+    assert.strictEqual(result.kind, 'review');
+    assert.strictEqual(result.reason, 'missing_transaction_time');
+    assert.deepStrictEqual(result.candidateOrderIds, [100908]);
+    assert.deepStrictEqual(result.candidates.map(row => row.id), [100908]);
+  }
+});
+
+test('missing transaction timestamp with no amount-matching order is skipped, not sent to review', () => {
+  // Regression: a transaction belonging to an unrelated system (different
+  // payment-code prefix, e.g. another bot sharing the same bank account)
+  // was always flagged for review whenever the bank omitted a timestamp,
+  // even when no local order could possibly match it.
+  for (const transactionTime of [null, undefined, '', 'invalid']) {
+    const result = matchMemoLessTransaction(
+      tx({ transactionTime, amount: 999999 }),
+      [order()],
+    );
     assert.deepStrictEqual(result, {
-      kind: 'review',
-      reason: 'missing_transaction_time',
+      kind: 'none',
+      reason: 'no_candidate',
       candidates: [],
       candidateOrderIds: [],
     });
@@ -116,12 +133,9 @@ test('transaction timestamp without UTC or numeric offset requires review', () =
     '2026-06-21 21:30:12',
   ]) {
     const result = matchMemoLessTransaction(tx({ transactionTime }), [order()]);
-    assert.deepStrictEqual(result, {
-      kind: 'review',
-      reason: 'missing_transaction_time',
-      candidates: [],
-      candidateOrderIds: [],
-    });
+    assert.strictEqual(result.kind, 'review');
+    assert.strictEqual(result.reason, 'missing_transaction_time');
+    assert.deepStrictEqual(result.candidateOrderIds, [100908]);
   }
 });
 
