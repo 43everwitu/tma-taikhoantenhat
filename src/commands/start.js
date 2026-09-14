@@ -29,7 +29,7 @@ async function handleStart(ctx) {
         reply_markup: {
             inline_keyboard: [
                 [
-                    openShopButton('Mở cửa hàng', {
+                    openShopButton('🛒 Mở cửa hàng', {
                         botUsername: ctx.botInfo?.username,
                         payload: ctx.startPayload,
                         preferStartLink: true,

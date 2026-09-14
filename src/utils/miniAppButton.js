@@ -1,28 +1,36 @@
 const ORDER_PAYLOAD = /^order_(\d{1,12})$/;
+const PRODUCT_PAYLOAD = /^product_([a-zA-Z0-9-]{1,200})$/;
 
 function configuredMiniAppUrl() {
   return (process.env.MINIAPP_URL || '').trim();
+}
+
+function payloadPath(payload) {
+  const orderMatch = ORDER_PAYLOAD.exec(payload || '');
+  if (orderMatch) return `/don-hang/${orderMatch[1]}`;
+  const productMatch = PRODUCT_PAYLOAD.exec(payload || '');
+  if (productMatch) return `/san-pham/${productMatch[1]}`;
+  return null;
 }
 
 function buildMiniAppUrl(payload = '') {
   const base = configuredMiniAppUrl();
   if (!base) return '';
 
-  const match = ORDER_PAYLOAD.exec(payload || '');
-  if (!match) return base;
+  const path = payloadPath(payload);
+  if (!path) return base;
 
   try {
     const url = new URL(base);
-    url.pathname = `/don-hang/${match[1]}`;
+    url.pathname = path;
     return url.toString();
   } catch {
-    return base.replace(/\/+$/, '') + `/don-hang/${match[1]}`;
+    return base.replace(/\/+$/, '') + path;
   }
 }
 
 function buildStartLink(botUsername, payload = '') {
-  const match = ORDER_PAYLOAD.exec(payload || '');
-  const param = match ? `order_${match[1]}` : '';
+  const param = payloadPath(payload) ? payload : '';
   if (!botUsername) return configuredMiniAppUrl();
   return `https://t.me/${botUsername}?startapp${param ? `=${param}` : ''}`;
 }
