@@ -2,6 +2,18 @@ const AMOUNT_TOLERANCE = 10_000;
 const RECOVERY_WINDOW_MS = 24 * 60 * 60 * 1000;
 const VIETNAM_TIME_ZONE = 'Asia/Ho_Chi_Minh';
 
+// The bank account is shared with telegram-shop-bot ("autochan"), which
+// reserves the AC<digits> order-code prefix. Its transactions never match
+// this bot's TBS prefix, so without this check they fall into memo-less
+// matching and can trigger a false "cần đối chiếu" review whenever their
+// amount coincidentally lands within AMOUNT_TOLERANCE of one of our own
+// pending/expired orders.
+const FOREIGN_ORDER_CODE_REGEX = /\bAC\d{4,}\b/i;
+
+function isForeignSystemTransaction(description) {
+  return typeof description === 'string' && FOREIGN_ORDER_CODE_REGEX.test(description);
+}
+
 function parseSqliteUtc(value) {
   if (typeof value !== 'string') return null;
 
@@ -177,6 +189,7 @@ module.exports = {
   VIETNAM_TIME_ZONE,
   buildTransactionQuery,
   formatDateInTimeZone,
+  isForeignSystemTransaction,
   matchMemoLessTransaction,
   parseSqliteUtc,
 };

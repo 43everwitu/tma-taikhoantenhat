@@ -6,6 +6,7 @@ const {
   VIETNAM_TIME_ZONE,
   buildTransactionQuery,
   formatDateInTimeZone,
+  isForeignSystemTransaction,
   matchMemoLessTransaction,
   parseSqliteUtc,
 } = require('../../src/services/paymentTransactionMatcher');
@@ -137,6 +138,29 @@ test('transaction timestamp without UTC or numeric offset requires review', () =
     assert.strictEqual(result.reason, 'missing_transaction_time');
     assert.deepStrictEqual(result.candidateOrderIds, [100908]);
   }
+});
+
+test('isForeignSystemTransaction recognizes another bot\'s order-code prefix', () => {
+  // The bank account is shared with telegram-shop-bot ("autochan"), which
+  // reserves the AC<digits> order-code prefix. Real production examples:
+  // "DUONG XUAN BINH QR   AC100129- Ma GD ACSP/ rD803902"
+  // "NGUYEN NGOC THAO UYEN QR   AC100130- Ma GD ACSP/ TQ806294"
+  assert.strictEqual(
+    isForeignSystemTransaction('DUONG XUAN BINH QR   AC100129- Ma GD ACSP/ rD803902'),
+    true,
+  );
+  assert.strictEqual(
+    isForeignSystemTransaction('NGUYEN NGOC THAO UYEN QR   AC100130- Ma GD ACSP/ TQ806294'),
+    true,
+  );
+});
+
+test('isForeignSystemTransaction does not flag tma-shop\'s own traffic', () => {
+  assert.strictEqual(isForeignSystemTransaction('TBS100908 thanh toan don hang'), false);
+  assert.strictEqual(isForeignSystemTransaction('9PAY JSC. TaptapSendVNpayment'), false);
+  assert.strictEqual(isForeignSystemTransaction(''), false);
+  assert.strictEqual(isForeignSystemTransaction(null), false);
+  assert.strictEqual(isForeignSystemTransaction(undefined), false);
 });
 
 test('transaction time boundaries are inclusive through expiry plus 24 hours', () => {
