@@ -5,6 +5,7 @@ const messageTemplateService = require('./messageTemplateService');
 const telegramApiClient = require('./telegramApiClient');
 const userNotificationPreferenceService = require('./userNotificationPreferenceService');
 const userReachabilityService = require('./userReachabilityService');
+const variantStockSubscriptionService = require('./variantStockSubscriptionService');
 const { openShopButton } = require('../utils/miniAppButton');
 const { toTelegramHtml } = require('../utils/richHtml');
 
@@ -157,24 +158,10 @@ class NotificationService {
 
     if (recipients.length === 0) return { sent: 0, failed: 0, total: 0, skipped: 'no_users' };
 
-    const productName = variant ? `${product.name} - ${variant.name}` : product.name;
-    const productPrice = variant?.price ?? product.price;
-    const vars = {
-      productEmoji: product.emoji || '📦',
-      productName,
-      productPrice: this.formatVnd(productPrice),
-      stockCount,
-    };
-    const botBody = messageTemplateService.renderIfEnabled('bot.stock_replenished', vars);
-    const webBody = messageTemplateService.renderIfEnabled('web.stock_replenished', vars);
+    const { botBody, webBody, extra } = this._stockReplenishedMessage(product, variant, stockCount);
     if (!botBody && !webBody) {
       return { sent: 0, failed: 0, total: recipients.length, skipped: 'template_disabled' };
     }
-
-    // "Mở cửa hàng" button → opens the Mini App straight to this product
-    // (t.me deeplink; no BotFather domain registration needed, same pattern
-    // as /start).
-    const extra = this._openShopExtra({ payload: `product_${product.slug}` });
 
     let sent = 0;
     let failed = 0;
@@ -192,6 +179,65 @@ class NotificationService {
     }
 
     return { sent, failed, total: recipients.length };
+  }
+
+  /**
+   * Notify users who tapped "Thông báo khi có hàng" on this variant, then drop
+   * their subscription. A subscription is kept when the Telegram send failed so
+   * a transient error does not lose the request.
+   */
+  async notifySubscribers(variantId) {
+    const variant = db.prepare('SELECT id, product_id, name, price FROM product_variants WHERE id = ?').get(variantId);
+    if (!variant) return { sent: 0, failed: 0, total: 0, skipped: 'variant_not_found' };
+    const product = db.prepare('SELECT * FROM products WHERE id = ?').get(variant.product_id);
+    if (!product) return { sent: 0, failed: 0, total: 0, skipped: 'product_not_found' };
+
+    const subscriberIds = variantStockSubscriptionService.listSubscriberIds(variantId);
+    if (subscriberIds.length === 0) return { sent: 0, failed: 0, total: 0, skipped: 'no_subscribers' };
+
+    const stockCount = db.prepare('SELECT COUNT(*) as c FROM stock WHERE product_id = ? AND variant_id = ? AND is_sold = 0').get(product.id, variant.id).c;
+    const { botBody, webBody, extra } = this._stockReplenishedMessage(product, variant, stockCount);
+    if (!botBody && !webBody) {
+      return { sent: 0, failed: 0, total: subscriberIds.length, skipped: 'template_disabled' };
+    }
+
+    let sent = 0;
+    let failed = 0;
+    for (const userId of subscriberIds) {
+      try {
+        const result = await this.notify(userId, 'stock_alert', 'Sản phẩm có hàng', botBody,
+          { product_id: product.id, variant_id: variant.id }, 'all', webBody, extra);
+        // notify() swallows Telegram errors — only drop the subscription once
+        // the chat message actually went out (in-app only when chat is off).
+        if (botBody ? result.sentTelegram : result.sentWeb) {
+          variantStockSubscriptionService.remove(userId, variantId);
+          sent++;
+        } else {
+          failed++;
+        }
+      } catch {
+        failed++;
+      }
+      if (botBody) await sleep(34);
+    }
+    return { sent, failed, total: subscriberIds.length };
+  }
+
+  _stockReplenishedMessage(product, variant, stockCount) {
+    const vars = {
+      productEmoji: product.emoji || '📦',
+      productName: variant ? `${product.name} - ${variant.name}` : product.name,
+      productPrice: this.formatVnd(variant?.price ?? product.price),
+      stockCount,
+    };
+    return {
+      botBody: messageTemplateService.renderIfEnabled('bot.stock_replenished', vars),
+      webBody: messageTemplateService.renderIfEnabled('web.stock_replenished', vars),
+      // "Mở cửa hàng" button → opens the Mini App straight to this product
+      // (t.me deeplink; no BotFather domain registration needed, same pattern
+      // as /start).
+      extra: this._openShopExtra({ payload: `product_${product.slug}` }),
+    };
   }
 
   /**

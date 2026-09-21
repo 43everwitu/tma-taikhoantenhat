@@ -7,6 +7,7 @@ const userService = require('../../services/userService');
 const topupService = require('../../services/topupService');
 const discountService = require('../../services/discountService');
 const orderExpiryService = require('../../services/orderExpiryService');
+const variantStockSubscriptionService = require('../../services/variantStockSubscriptionService');
 const { getBackorderWaitMode } = require('../../utils/backorderWaitWindow');
 const { resolveContactOnly } = require('../../utils/contactOnly');
 const { requireCustomer, optionalCustomer } = require('../middleware/auth');
@@ -299,6 +300,29 @@ router.get('/orders/:id', requireCustomer, (req, res) => {
     return res.status(404).json({ success: false, error: { code: 'NOT_FOUND', message: 'Đơn hàng không tìm thấy' } });
   }
   res.json({ success: true, data: order });
+});
+
+// GET /products/:id/notify-me — variant ids the customer asked to be told about
+router.get('/products/:id/notify-me', requireCustomer, (req, res) => {
+  const productId = parseInt(req.params.id);
+  const variantIds = variantStockSubscriptionService.listSubscribedVariantIds(req.customer.telegramId, productId);
+  res.json({ success: true, data: { variantIds: variantIds.map(String) } });
+});
+
+// POST /variants/:id/notify-me — "Thông báo khi có hàng"
+router.post('/variants/:id/notify-me', requireCustomer, (req, res) => {
+  const variantId = parseInt(req.params.id);
+  const sub = Number.isInteger(variantId) ? variantStockSubscriptionService.subscribe(req.customer.telegramId, variantId) : null;
+  if (!sub) {
+    return res.status(404).json({ success: false, error: { code: 'NOT_FOUND', message: 'Biến thể không tìm thấy' } });
+  }
+  res.json({ success: true, data: { subscribed: true } });
+});
+
+// DELETE /variants/:id/notify-me
+router.delete('/variants/:id/notify-me', requireCustomer, (req, res) => {
+  variantStockSubscriptionService.unsubscribe(req.customer.telegramId, parseInt(req.params.id));
+  res.json({ success: true, data: { subscribed: false } });
 });
 
 // POST /products/:id/follow

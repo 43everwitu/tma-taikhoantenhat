@@ -34,6 +34,11 @@ export const t = {
     outOfStock: 'Hết hàng',
     contactOnly: 'Liên hệ để mua',
     preorder: 'Đặt trước',
+    notifyMe: 'Thông báo khi có hàng',
+    notifyMeOn: 'Đã đăng ký · Bấm để hủy',
+    notifyMeDone: 'Đã đăng ký. Bot sẽ nhắn khi có hàng.',
+    notifyMeCancelled: 'Đã hủy đăng ký thông báo.',
+    notifyMeFailed: 'Không thể cập nhật đăng ký. Vui lòng thử lại.',
     inputRequired: 'Vui lòng điền đầy đủ thông tin bắt buộc',
   },
   cart: {

@@ -2,6 +2,8 @@ const { Router } = require('express');
 const { z } = require('zod');
 const db = require('../../../database');
 const productService = require('../../../services/productService');
+const variantService = require('../../../services/variantService');
+const variantStockSubscriptionService = require('../../../services/variantStockSubscriptionService');
 const auditService = require('../../../services/auditService');
 const eventBus = require('../../../services/eventBus');
 const { validate } = require('../../middleware/validate');
@@ -495,7 +497,10 @@ router.post('/:productId', validate(z.object({
   const product = db.prepare('SELECT id FROM products WHERE id = ?').get(productId);
   if (!product) return res.status(404).json({ success: false, error: { code: 'NOT_FOUND' } });
 
-  productService.addStock(productId, req.validated.items, req.validated.variantId ?? null, req.validated.durationDays ?? null);
+  const restockVariantId = req.validated.variantId ?? null;
+  const hadStock = restockVariantId != null
+    && variantService.countAvailableStock(db, productId, restockVariantId) > 0;
+  productService.addStock(productId, req.validated.items, restockVariantId, req.validated.durationDays ?? null);
   auditService.log(req.admin.adminId, 'stock.add', 'product', productId, { count: req.validated.items.length, variant_id: req.validated.variantId ?? null }, req.ip);
 
   // Notify followers (opt-in)
@@ -510,6 +515,18 @@ router.post('/:productId', validate(z.object({
       skipped: notifyResult.skipped || null,
       trigger: 'add_stock_checkbox',
     }, req.ip);
+  }
+
+  // Variant went from sold-out to in-stock: tell subscribed customers. When the
+  // admin already broadcast to everyone above, just clear the subscriptions so
+  // nobody gets the same message twice.
+  if (restockVariantId != null && !hadStock && poller
+    && variantService.countAvailableStock(db, productId, restockVariantId) > 0) {
+    if (req.validated.notifyFollowers) {
+      variantStockSubscriptionService.clearForVariant(restockVariantId);
+    } else {
+      poller.notifySubscribers(restockVariantId).catch((err) => console.error('notifySubscribers failed:', err.message));
+    }
   }
 
   const stockCount = db.prepare('SELECT COUNT(*) as c FROM stock WHERE product_id = ? AND is_sold = 0').get(productId).c;
