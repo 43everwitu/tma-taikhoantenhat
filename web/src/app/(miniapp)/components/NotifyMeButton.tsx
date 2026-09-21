@@ -50,7 +50,7 @@ export function NotifyMeButton({ productId, variantId }: Props) {
       type="button"
       onClick={toggle}
       disabled={busy}
-      className={`miniapp-btn ${subscribed ? 'miniapp-btn--ghost' : 'miniapp-btn--primary'} justify-center`}
+      className={`miniapp-btn ${subscribed ? 'miniapp-btn--ghost' : 'miniapp-btn--primary'} col-span-full justify-center`}
     >
       <Icon name="bell" size={18} /> {subscribed ? t.product.notifyMeOn : t.product.notifyMe}
     </button>
