@@ -1,3 +1,16 @@
+// Node 20+ defaults outbound TCP to Happy Eyeballs (autoSelectFamily): race
+// IPv6 and IPv4, use whichever connects first. This host's IPv6 route to
+// api.telegram.org is unreachable, and the dual-stack race sometimes times
+// out reaching Telegram's IPv4 address too (observed: curl connects in
+// ~1.3s, Node's fetch/https with autoSelectFamily times out repeatedly).
+// This is what silently broke bot.launch() on 2026-09-21: its one-shot
+// getMe() call failed, and with no retry (see below), long-polling never
+// started — outbound telegramApiClient sends kept half-working (raw
+// https.request hits the same race, just less reliably), but /start,
+// /hotro and every other command got no response for days. Force IPv4-only
+// so every outbound Telegram call is reliable.
+require('net').setDefaultAutoSelectFamily(false);
+
 const config = require('./config');
 const db = require('./database');
 const express = require('express');
@@ -100,6 +113,20 @@ app.locals.getPaymentPoller = getPaymentPoller;
 app.locals.bot = bot;
 app.set('bot', bot);
 
+// Start Telegram bot — fire-and-forget. `bot.launch()` returns a Promise that
+// only resolves on stop (long-polling), so awaiting it blocks all subsequent
+// setup. A failed launch attempt (e.g. a transient network error reaching
+// Telegram) used to be permanent — no retry — leaving the process up with
+// the Express API healthy but every bot command silently unanswered until
+// the next manual restart. Retry with backoff instead.
+function launchBot(attempt = 1) {
+  bot.launch().catch((err) => {
+    console.error(`⚠️ Bot launch error (attempt ${attempt}):`, err.message || err);
+    const delayMs = Math.min(30_000, 2 ** attempt * 1000);
+    setTimeout(() => launchBot(attempt + 1), delayMs);
+  });
+}
+
 // ============================================================
 // Start everything
 // ============================================================
@@ -110,13 +137,7 @@ async function start() {
     console.log(`🌐 API Server running on port ${port}`);
   });
 
-  // Start Telegram bot — fire-and-forget. `bot.launch()` returns a Promise that
-  // only resolves on stop (long-polling), so awaiting it blocks all subsequent
-  // setup. Catch retry conflicts (409 from old long-poll session under
-  // node --watch) without crashing the process.
-  bot.launch().catch((err) => {
-    console.error('⚠️ Bot launch error:', err.message || err);
-  });
+  launchBot();
   console.log(`🤖 ${config.SHOP_NAME} Bot đã khởi động!`);
   console.log(`👤 Admin ID: ${config.ADMIN_ID}`);
   console.log(`🏦 Bank: ${config.BANK.NAME} - ${config.BANK.ACCOUNT}`);
