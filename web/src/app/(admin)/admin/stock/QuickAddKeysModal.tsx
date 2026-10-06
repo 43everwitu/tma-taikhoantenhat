@@ -145,7 +145,7 @@ export function QuickAddKeysModal({ products, initialProductId, onClose }: Quick
             onChange={(e) => setNotifyFollowers(e.target.checked)}
             className="h-4 w-4"
           />
-          <span className="text-xs text-clay-charcoal">Gửi thông báo tới followers sau khi thêm</span>
+          <span className="text-xs text-clay-charcoal">Gửi thông báo Telegram tới tất cả khách sau khi thêm</span>
         </label>
 
         {hasVariants && (

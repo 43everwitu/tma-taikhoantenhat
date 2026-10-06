@@ -5,7 +5,7 @@ import { usePathname, useRouter } from 'next/navigation'
 import { useEffect } from 'react'
 import { useQuery } from '@tanstack/react-query'
 import { api, clearAdminToken } from '@/lib/api'
-import { BarChart3, Receipt, Package, Boxes, Megaphone, Settings, LogOut, Users, Wallet, X, MessageSquare, ShieldCheck, Ticket, KeyRound, ClipboardList, Clock } from '@/lib/icons'
+import { BarChart3, Receipt, Package, Boxes, Megaphone, Settings, LogOut, Users, Wallet, X, MessageSquare, ShieldCheck, Ticket, KeyRound, ClipboardList, Clock, Eye } from '@/lib/icons'
 import { MascotBadge } from '@/components/MascotBadge'
 import { t } from '@/i18n/vi'
 
@@ -15,6 +15,7 @@ const NAV = [
   { href: '/admin/renewals', label: 'Gia hạn', icon: Clock, perm: 'orders.read' },
   { href: '/admin/products', label: 'Sản phẩm', icon: Package, perm: 'products.read' },
   { href: '/admin/stock/keys', label: 'Kho', icon: Boxes, perm: 'stock.read', activePrefix: '/admin/stock' },
+  { href: '/admin/demand', label: 'Nhu cầu', icon: Eye, perm: 'stock.read' },
   { href: '/admin/users', label: 'Người dùng', icon: Users, perm: 'users.read' },
   { href: '/admin/admins', label: 'Quản trị', icon: ShieldCheck, perm: 'admins.read' },
   { href: '/admin/topups', label: 'Nạp tiền', icon: Wallet, feature: 'topups' as const, perm: 'topups.read' },

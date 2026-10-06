@@ -9,6 +9,9 @@ export const t = {
   },
   home: {
     announcementsTitle: 'Thông báo',
+    stockAlertsTitle: 'Sản phẩm có hàng',
+    stockAlertView: 'Xem sản phẩm',
+    stockAlertDismiss: 'Ẩn thông báo',
     categoriesTitle: 'Danh mục',
     emptyCategories: 'Chưa có danh mục.',
   },

@@ -98,6 +98,7 @@ const bot = createBot();
 let paymentPoller = null;
 let stopTwofaSync = () => {};
 let stopNfshopFulfillment = () => {};
+let stopNotificationRetention = () => {};
 
 function getPaymentPoller() {
   if (!paymentPoller) {
@@ -183,6 +184,8 @@ async function start() {
   console.log('⏰ Key expiry reminder armed (daily 09:00 ICT)');
   stopNfshopFulfillment = require('./services/nfshopFulfillmentService').start({ bot });
   console.log('🍿 nfshop fulfilment armed (event + 3 min retry sweep)');
+  stopNotificationRetention = require('./services/notificationRetentionService').start();
+  console.log('🧹 Notification retention armed (daily, bulk notifications > 30 days)');
   stopTwofaSync = require('./services/twofaBindingService').startRetryWorker({
     intervalMs: config.TWOFA_SYNC_INTERVAL_MS,
   });
@@ -246,12 +249,14 @@ const { safeBotStop } = require('./utils/safeBotStop');
 process.once('SIGINT', () => {
   stopTwofaSync();
   stopNfshopFulfillment();
+  stopNotificationRetention();
   if (paymentPoller) paymentPoller.stop();
   safeBotStop(bot, 'SIGINT');
 });
 process.once('SIGTERM', () => {
   stopTwofaSync();
   stopNfshopFulfillment();
+  stopNotificationRetention();
   if (paymentPoller) paymentPoller.stop();
   safeBotStop(bot, 'SIGTERM');
 });

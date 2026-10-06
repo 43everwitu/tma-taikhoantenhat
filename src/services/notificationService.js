@@ -26,8 +26,18 @@ function shouldRespectTelegramMarketingPreference(type, options = {}) {
 }
 
 class NotificationService {
-  constructor(bot) {
+  /**
+   * @param {object} [options]
+   * @param {number} [options.pacingMs=34] Delay between Telegram sends in bulk loops
+   *   (Telegram allows ~30 msg/sec). Tests pass 0.
+   */
+  constructor(bot, { pacingMs = 34 } = {}) {
     this.bot = bot;
+    this.pacingMs = pacingMs;
+  }
+
+  _pace() {
+    return this.pacingMs > 0 ? sleep(this.pacingMs) : undefined;
   }
 
   // ============================================================
@@ -127,10 +137,12 @@ class NotificationService {
    * Also resets the low-stock alert marker so a fresh alert can fire when
    * the product hits low stock again (next episode).
    *
-   * The bot (Telegram chat) and the in-app (Mini App) notification render from
-   * separate templates so admins can word them differently:
-   *   - bot.stock_replenished  → Telegram chat message
-   *   - web.stock_replenished  → Mini App notification body
+   * Telegram goes to everyone (users who turned notifications off with
+   * /thongbao are skipped by notify()). The in-app (Mini App home) notification
+   * is created only for followers of this product/variant — an in-app row per
+   * user (~2k per restock) filled the notifications table with unread rows.
+   *   - bot.stock_replenished  → Telegram chat message (everyone)
+   *   - web.stock_replenished  → Mini App notification body (followers only)
    */
   async notifyStockReplenished(productId, variantId = null) {
     db.prepare('UPDATE products SET last_low_stock_alert_at = NULL WHERE id = ?').run(productId);
@@ -163,28 +175,40 @@ class NotificationService {
       return { sent: 0, failed: 0, total: recipients.length, skipped: 'template_disabled' };
     }
 
+    const followerIds = new Set(variantStockSubscriptionService.listFollowerIds({ productId, variantId: variant ? variant.id : null }));
+    const recipientIds = new Set(recipients.map((r) => r.telegram_id));
+    // Followers that cannot be reached on Telegram still get their in-app row.
+    const targetIds = [...recipientIds, ...[...followerIds].filter((id) => !recipientIds.has(id))];
+    const data = { product_id: productId, variant_id: variant ? variant.id : null, product_slug: product.slug };
+
     let sent = 0;
     let failed = 0;
-    for (const { telegram_id } of recipients) {
+    for (const userId of targetIds) {
+      const isFollower = followerIds.has(userId);
+      const reachable = recipientIds.has(userId);
+      if (!isFollower && !botBody) continue;
+      const channel = !reachable ? 'web' : (isFollower ? 'all' : 'telegram');
       try {
-        await this.notify(telegram_id, 'stock_alert', 'Sản phẩm có hàng', botBody,
-          { product_id: productId }, 'all', webBody, extra);
+        await this.notify(userId, 'stock_alert', 'Sản phẩm có hàng', botBody,
+          data, channel, isFollower ? webBody : undefined, extra);
         sent++;
       } catch {
         failed++;
       }
       // Telegram rate limit: ~30 msg/sec — pace individual sends instead of
       // bursting 25 at once then pausing.
-      if (botBody) await sleep(34);
+      if (reachable && botBody) await this._pace();
     }
 
-    return { sent, failed, total: recipients.length };
+    return { sent, failed, total: targetIds.length };
   }
 
   /**
-   * Notify users who tapped "Thông báo khi có hàng" on this variant, then drop
-   * their subscription. A subscription is kept when the Telegram send failed so
-   * a transient error does not lose the request.
+   * Notify users who tapped "Thông báo khi có hàng" on this variant (Telegram +
+   * in-app), then mark their subscription as notified (kept for demand stats).
+   * It stays waiting when the Telegram send failed so a transient error does not
+   * lose the request. A follower who turned Telegram off (/thongbao) still gets
+   * the in-app row and counts as notified.
    */
   async notifySubscribers(variantId) {
     const variant = db.prepare('SELECT id, product_id, name, price FROM product_variants WHERE id = ?').get(variantId);
@@ -206,11 +230,15 @@ class NotificationService {
     for (const userId of subscriberIds) {
       try {
         const result = await this.notify(userId, 'stock_alert', 'Sản phẩm có hàng', botBody,
-          { product_id: product.id, variant_id: variant.id }, 'all', webBody, extra);
-        // notify() swallows Telegram errors — only drop the subscription once
-        // the chat message actually went out (in-app only when chat is off).
-        if (botBody ? result.sentTelegram : result.sentWeb) {
-          variantStockSubscriptionService.remove(userId, variantId);
+          { product_id: product.id, variant_id: variant.id, product_slug: product.slug }, 'all', webBody, extra);
+        // notify() swallows Telegram errors — only mark the subscription notified
+        // once the chat message went out, or the follower opted out of Telegram
+        // and got the in-app row instead (in-app only when the chat template is off).
+        const delivered = botBody
+          ? (result.sentTelegram || (result.skippedByPreference && result.sentWeb))
+          : result.sentWeb;
+        if (delivered) {
+          variantStockSubscriptionService.markNotified(userId, variantId);
           sent++;
         } else {
           failed++;
@@ -218,7 +246,7 @@ class NotificationService {
       } catch {
         failed++;
       }
-      if (botBody) await sleep(34);
+      if (botBody) await this._pace();
     }
     return { sent, failed, total: subscriberIds.length };
   }
@@ -447,14 +475,16 @@ class NotificationService {
    * Broadcast announcement to all users.
    * Respects Telegram rate limit (~25 msg/sec).
    *
-   * @param {string} [webBody] - Separate body for the in-app (Mini App)
-   *   notification. `undefined`/`null` ⇒ reuse `body`. When provided it lets the
-   *   bot chat and the Mini App notification read different wording.
+   * The announcement is stored once in `announcements` (the Mini App home
+   * carousel reads it). No per-user `notifications` row is created: that was one
+   * row per user per broadcast (and per resend) that no screen displayed.
+   *
+   * @param {string} [webBody] - Fallback text for the stored announcement when
+   *   `body` is empty (e.g. a Telegram-disabled template).
    */
   async broadcast(title, body, target = 'all', adminId = null, webBody = undefined, options = {}) {
     const effectiveWeb = (webBody === undefined || webBody === null) ? body : webBody;
     const imageUrl = options.imageUrl ? String(options.imageUrl).trim() : null;
-    const notificationType = options.notificationType || 'announcement';
     const telegramImageUrl = this._telegramImageUrl(imageUrl);
     const telegramBody = body ? toTelegramHtml(body) : '';
 
@@ -499,16 +529,8 @@ class NotificationService {
           }
           // Telegram rate limit: ~30 msg/sec — pace individual sends instead of
           // bursting 25 at once then pausing.
-          await sleep(34);
+          await this._pace();
         }
-      }
-
-      // Web notification
-      if ((target === 'all' || target === 'web') && effectiveWeb) {
-        db.prepare(`
-          INSERT INTO notifications (user_id, type, title, body, channel)
-          VALUES (?, ?, ?, ?, ?)
-        `).run(user.telegram_id, notificationType, title, effectiveWeb, target);
       }
     }
 

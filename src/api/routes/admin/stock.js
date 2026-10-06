@@ -7,6 +7,7 @@ const variantStockSubscriptionService = require('../../../services/variantStockS
 const auditService = require('../../../services/auditService');
 const eventBus = require('../../../services/eventBus');
 const { validate } = require('../../middleware/validate');
+const { requirePermission } = require('../../middleware/auth');
 
 const router = Router();
 
@@ -28,6 +29,19 @@ function publishStockChanges(rows, action) {
     eventBus.publish({ type: 'stock.change', productId, action, count });
   }
 }
+
+// GET /admin/stock/demand?days=30 — customers waiting for "Thông báo khi có hàng",
+// per product/variant. Must stay above the /:productId routes.
+router.get('/demand', requirePermission('stock.read'), (req, res) => {
+  const parsed = parseInt(req.query.days, 10);
+  const days = Number.isFinite(parsed) ? Math.min(Math.max(parsed, 1), 365) : 30;
+  const products = variantStockSubscriptionService.getDemand({ days });
+  const totals = products.reduce((acc, p) => ({
+    waiting: acc.waiting + p.waiting,
+    notifiedRecent: acc.notifiedRecent + p.notifiedRecent,
+  }), { waiting: 0, notifiedRecent: 0 });
+  res.json({ success: true, data: { days, totals: { products: products.length, ...totals }, products } });
+});
 
 // GET /admin/stock?page=1&limit=50&q=&productId=&variantId=&sold=false
 router.get('/', (req, res) => {
@@ -518,12 +532,12 @@ router.post('/:productId', validate(z.object({
   }
 
   // Variant went from sold-out to in-stock: tell subscribed customers. When the
-  // admin already broadcast to everyone above, just clear the subscriptions so
-  // nobody gets the same message twice.
+  // admin already broadcast to everyone above (followers got their in-app row
+  // there), just mark the subscriptions notified so nobody gets it twice.
   if (restockVariantId != null && !hadStock && poller
     && variantService.countAvailableStock(db, productId, restockVariantId) > 0) {
     if (req.validated.notifyFollowers) {
-      variantStockSubscriptionService.clearForVariant(restockVariantId);
+      variantStockSubscriptionService.markNotifiedForVariant(restockVariantId);
     } else {
       poller.notifySubscribers(restockVariantId).catch((err) => console.error('notifySubscribers failed:', err.message));
     }

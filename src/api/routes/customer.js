@@ -8,6 +8,7 @@ const topupService = require('../../services/topupService');
 const discountService = require('../../services/discountService');
 const orderExpiryService = require('../../services/orderExpiryService');
 const variantStockSubscriptionService = require('../../services/variantStockSubscriptionService');
+const notificationInboxService = require('../../services/notificationInboxService');
 const { getBackorderWaitMode } = require('../../utils/backorderWaitWindow');
 const { resolveContactOnly } = require('../../utils/contactOnly');
 const { requireCustomer, optionalCustomer } = require('../middleware/auth');
@@ -343,10 +344,12 @@ router.delete('/products/:id/follow', requireCustomer, (req, res) => {
 });
 
 // GET /notifications/my
+// Optional filters: ?type=renewal_reminder,stock_alert&unread=1
 router.get('/notifications/my', requireCustomer, (req, res) => {
-  const notifications = db.prepare(`
-    SELECT * FROM notifications WHERE user_id = ? ORDER BY created_at DESC LIMIT 50
-  `).all(req.customer.telegramId);
+  const notifications = notificationInboxService.listForUser(
+    req.customer.telegramId,
+    notificationInboxService.parseInboxQuery(req.query),
+  );
 
   res.json({ success: true, data: notifications });
 });

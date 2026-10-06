@@ -15,8 +15,14 @@ import { Icon } from './components/Icon'
 import { DiscountCodeMeta, type DiscountMetaMode } from './components/DiscountCodeMeta'
 import { SocialLinksRow } from './components/SocialLinks'
 import { getRecentlyViewedIds } from '@/lib/recentlyViewed'
-import { getVisibleRenewalNotifications, removeNotificationById } from '@/lib/renewalNotifications'
-import { acknowledgeRenewalNotification } from '@/lib/renewalNotificationActions'
+import {
+  HOME_NOTIFICATIONS_PATH,
+  getStockAlertUrl,
+  getVisibleRenewalNotifications,
+  getVisibleStockAlerts,
+  removeNotificationById,
+} from '@/lib/renewalNotifications'
+import { acknowledgeRenewalNotification, dismissNotification } from '@/lib/renewalNotificationActions'
 import { t } from '@/i18n/vi'
 
 interface Announcement { id: string; title: string; body: string; pinned: boolean; createdAt: string }
@@ -70,10 +76,10 @@ export default function MiniAppHome() {
     enabled: recentIds.length > 0,
   })
   const notifications = useQuery({
-    queryKey: ['notifications', 'renewals'],
+    queryKey: ['notifications', 'home'],
     queryFn: async () => {
       try {
-        return await apiFetch<CustomerNotification[]>('/notifications/my')
+        return await apiFetch<CustomerNotification[]>(HOME_NOTIFICATIONS_PATH)
       } catch {
         return []
       }
@@ -82,6 +88,7 @@ export default function MiniAppHome() {
   })
   const ann = home.data?.announcements ?? []
   const renewalNotifications = getVisibleRenewalNotifications(notifications.data ?? []) as CustomerNotification[]
+  const stockAlerts = getVisibleStockAlerts(notifications.data ?? []) as CustomerNotification[]
   const cats = home.data?.categories ?? []
   const featured = home.data?.featured ?? []
   const newest = home.data?.newest ?? []
@@ -107,6 +114,19 @@ export default function MiniAppHome() {
     }
   }
 
+  const notificationActions = {
+    removeFromCache: (notificationId: number) => {
+      queryClient.setQueryData<CustomerNotification[]>(['notifications', 'home'], (old) =>
+        removeNotificationById(old ?? [], notificationId),
+      )
+    },
+    markRead: (notificationId: number) => apiFetch<{ id: number; isRead: boolean }>(
+      `/notifications/${notificationId}/read`,
+      { method: 'PATCH' },
+      { auth: 'required' },
+    ),
+  }
+
   async function handleRenewalNotificationAction(
     item: CustomerNotification,
     url: string,
@@ -116,18 +136,23 @@ export default function MiniAppHome() {
     await acknowledgeRenewalNotification({
       notificationId: item.id,
       url,
-      removeFromCache: (notificationId: number) => {
-        queryClient.setQueryData<CustomerNotification[]>(['notifications', 'renewals'], (old) =>
-          removeNotificationById(old ?? [], notificationId),
-        )
-      },
-      markRead: (notificationId: number) => apiFetch<{ id: number; isRead: boolean }>(
-        `/notifications/${notificationId}/read`,
-        { method: 'PATCH' },
-        { auth: 'required' },
-      ),
+      ...notificationActions,
       navigate: (targetUrl: string) => router.push(targetUrl),
     })
+  }
+
+  async function handleStockAlertOpen(item: CustomerNotification, url: string, event: MouseEvent<HTMLAnchorElement>) {
+    event.preventDefault()
+    await acknowledgeRenewalNotification({
+      notificationId: item.id,
+      url,
+      ...notificationActions,
+      navigate: (targetUrl: string) => router.push(targetUrl),
+    })
+  }
+
+  function handleStockAlertDismiss(item: CustomerNotification) {
+    void dismissNotification({ notificationId: item.id, ...notificationActions })
   }
 
   return (
@@ -187,6 +212,22 @@ export default function MiniAppHome() {
           <div className="space-y-2">
             {renewalNotifications.map((item) => (
               <RenewalNotificationCard key={item.id} item={item} onAction={handleRenewalNotificationAction} />
+            ))}
+          </div>
+        </section>
+      )}
+
+      {stockAlerts.length > 0 && (
+        <section className="miniapp-section miniapp-section--compact">
+          <div className="miniapp-section-title">
+            <span className="inline-flex items-center gap-1.5">
+              <Icon name="sparkles" size={16} />
+              {t.home.stockAlertsTitle}
+            </span>
+          </div>
+          <div className="space-y-2">
+            {stockAlerts.map((item) => (
+              <StockAlertCard key={item.id} item={item} onOpen={handleStockAlertOpen} onDismiss={handleStockAlertDismiss} />
             ))}
           </div>
         </section>
@@ -301,6 +342,47 @@ function RenewalNotificationCard({
           </Link>
         )}
       </div>
+    </article>
+  )
+}
+
+function StockAlertCard({
+  item,
+  onOpen,
+  onDismiss,
+}: {
+  item: CustomerNotification
+  onOpen: (item: CustomerNotification, url: string, event: MouseEvent<HTMLAnchorElement>) => void
+  onDismiss: (item: CustomerNotification) => void
+}) {
+  const url = getStockAlertUrl(item)
+  return (
+    <article className="rounded-2xl p-3.5" style={{ background: 'var(--brand-gold-soft)', color: 'var(--brand-ink)', border: '1px solid color-mix(in srgb, var(--brand-gold-deep) 25%, transparent)' }}>
+      <div className="flex items-start justify-between gap-3">
+        <div>
+          <p className="text-sm font-semibold leading-snug">{item.title}</p>
+          <p className="text-xs opacity-75 mt-1 leading-relaxed">{item.body}</p>
+        </div>
+        <button
+          type="button"
+          aria-label={t.home.stockAlertDismiss}
+          className="text-xs opacity-60 hover:opacity-100 px-1"
+          onClick={() => onDismiss(item)}
+        >
+          ✕
+        </button>
+      </div>
+      {url && (
+        <div className="mt-3">
+          <Link
+            href={url}
+            className="miniapp-btn miniapp-btn--ink justify-center text-sm"
+            onClick={(event) => onOpen(item, url, event)}
+          >
+            {t.home.stockAlertView}
+          </Link>
+        </div>
+      )}
     </article>
   )
 }

@@ -21,7 +21,7 @@ function cleanupUser(telegramId) {
   db.prepare('DELETE FROM users WHERE telegram_id = ?').run(telegramId);
 }
 
-test('broadcast skips Telegram for disabled marketing user but still creates web notification', async (t) => {
+test('broadcast skips Telegram for disabled marketing user and stores the announcement once without per-user rows', async (t) => {
   const disabled = seedUser({ disabled: true });
   const enabled = seedUser({ disabled: false });
   const title = `Marketing pref ${disabled.telegramId}`;
@@ -47,7 +47,7 @@ test('broadcast skips Telegram for disabled marketing user but still creates web
     cleanupUser(enabled.telegramId);
   });
 
-  const service = new NotificationService({ telegram: {} });
+  const service = new NotificationService({ telegram: {} }, { pacingMs: 0 });
   const result = await service.broadcast(title, '<b>Sale</b>', 'all', 1);
 
   assert.ok(calls.some((call) => call.payload.chat_id === enabled.telegramId));
@@ -55,8 +55,8 @@ test('broadcast skips Telegram for disabled marketing user but still creates web
   assert.ok(result.skippedByPreference >= 1);
   assert.strictEqual(result.failed, 0);
 
-  const notification = db.prepare('SELECT body FROM notifications WHERE user_id = ? ORDER BY id DESC').get(disabled.telegramId);
-  assert.strictEqual(notification.body, '<b>Sale</b>');
+  assert.strictEqual(db.prepare('SELECT COUNT(*) AS c FROM notifications WHERE title = ?').get(title).c, 0);
+  assert.strictEqual(db.prepare('SELECT COUNT(*) AS c FROM announcements WHERE title = ?').get(title).c, 1);
 });
 
 test('notify marketing telegram channel skips disabled user without creating web notification', async (t) => {

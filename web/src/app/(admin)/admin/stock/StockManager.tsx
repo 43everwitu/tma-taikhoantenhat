@@ -173,7 +173,7 @@ export function StockManager({ productId, onClose }: { productId: string; onClos
     mutationFn: () => api.post<{ sent?: number; failed?: number; skipped?: string | null }>(`/admin/stock/${productId}/notify-followers`, {}),
     onSuccess: (res) => {
       if (res.data?.skipped) t.error(`Bỏ qua gửi thông báo (${res.data.skipped})`)
-      else t.success(`Đã gửi followers: ${res.data?.sent ?? 0} thành công, ${res.data?.failed ?? 0} lỗi`)
+      else t.success(`Đã gửi thông báo Telegram: ${res.data?.sent ?? 0} thành công, ${res.data?.failed ?? 0} lỗi`)
     },
     onError: (e) => t.error(`Lỗi: ${e instanceof Error ? e.message : 'gửi thông báo thất bại'}`),
   })
@@ -347,7 +347,7 @@ export function StockManager({ productId, onClose }: { productId: string; onClos
               onChange={(e) => setNotifyFollowers(e.target.checked)}
               className="h-4 w-4"
             />
-            Gửi thông báo tới followers
+            Gửi thông báo Telegram tới tất cả khách
           </label>
           <div className="flex flex-wrap gap-3">
             <button
@@ -355,7 +355,7 @@ export function StockManager({ productId, onClose }: { productId: string; onClos
               disabled={notifyFollowersMutation.isPending}
               className="clay-btn text-sm disabled:opacity-50"
             >
-              {notifyFollowersMutation.isPending ? 'Đang gửi...' : 'Gửi thông báo followers'}
+              {notifyFollowersMutation.isPending ? 'Đang gửi...' : 'Gửi thông báo Telegram'}
             </button>
             <button
               onClick={() => {
