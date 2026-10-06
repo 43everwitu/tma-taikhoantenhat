@@ -9,7 +9,7 @@ Telegram Mini App shop. Single Node process bundles bot + REST API + payment pol
 - **HTTP**: Express + `express-rate-limit`. `app.set('trust proxy', 1)` — Cloudflare Tunnel sends `X-Forwarded-For`
 - **Telegram**: `telegraf` long-polling; thin bot — `/start` + `/myid` + WebApp button.
 - **Web**: Next 16 App Router + Turbopack in `web/`, route groups `(miniapp)` + `(admin)`. Dev on `:3001`, rewrites `/api/*` + `/uploads/*` → `:3000`
-- **Payments**: Python sidecar `mbbank-api/` (FastAPI on `:8000`), polled by `src/services/paymentPoller.js`
+- **Payments**: MBBank matching goes through an external Python sidecar (FastAPI, shared process) reached via `MBBANK_API_URL` (`http://127.0.0.1:8100`) and polled by `src/services/paymentPoller.js`. The `mbbank-api/` source was removed from this repo on 2026-10-07 (unused here); `dev:mbbank`, `dev.sh` and `scripts/dev-all.sh` still reference it and no longer work as-is.
 - **Imports**: WP dump parsed by `scripts/wp-migration/*` → `npm run migrate:wp`
 - **Validation**: zod v4 — single-arg `z.record(valueType)` is NOT supported, use `z.record(z.string(), z.any())`
 
@@ -17,7 +17,7 @@ Telegram Mini App shop. Single Node process bundles bot + REST API + payment pol
 
 ```bash
 ./dev.sh              # mac: 3 services in Terminal tabs
-npm run dev:all       # concurrently into logs/{mbbank,api,web}.log
+npm run dev:all       # concurrently into logs/{mbbank,api,web}.log (mbbank step obsolete: mbbank-api/ removed)
 npm run dev           # api only (node --watch)
 npm run dev:web       # web only (Next on :3001)
 npm run migrate:wp    # WP SQL dump → shop.db + sharp pipeline
@@ -25,7 +25,7 @@ node scripts/verify-message-templates.js   # render every template
 npm run admin:reset-password [<user> [<pw>]]
 ```
 
-Ports: api `:3000`, web `:3001`, mbbank `:8000`.
+Ports: api `:3000`, web `:3001` (prod here: api `:3200`, web `:3201`); MBBank sidecar is external (`:8100`).
 
 ## Key files
 

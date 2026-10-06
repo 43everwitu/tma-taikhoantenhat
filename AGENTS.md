@@ -22,7 +22,7 @@ Hướng dẫn này áp dụng cho repo `/home/peanut/tma-taikhoantenhat`. Luôn
 - `web/src/app/(miniapp)/`: Telegram Mini App mua hàng.
 - `web/src/app/(admin)/admin/`: admin dashboard.
 - `web/src/lib/`: API client, cart, Telegram helpers, shared utils.
-- `mbbank-api/`: FastAPI sidecar cho MBBank, dev port `8000`.
+- ~~`mbbank-api/`~~: đã xóa khỏi repo ngày 2026-10-07 (không còn dùng ở đây). Sidecar MBBank chạy ngoài repo, truy cập qua `MBBANK_API_URL` (`127.0.0.1:8100`).
 - `scripts/`: maintenance/deploy/import tools, gồm `dev-all.sh`, `deploy-pm2.sh`, `migrate-wp.js`, `purge-test-data.js`, `verify-message-templates.js`.
 - `tests/`: Node built-in test runner tests cho backend/services/API.
 - `docs/superpowers/specs/`: design specs.
@@ -68,10 +68,10 @@ cd web && npm install && cd ..
 ```
 
 ```bash
-npm run dev:all       # API + web + mbbank sidecar
+npm run dev:all       # API + web (+ mbbank sidecar: lỗi thời, mbbank-api/ đã xóa)
 npm run dev           # API only, port 3000
 npm run dev:web       # Next only, port 3001
-npm run dev:mbbank    # FastAPI sidecar, port 8000
+npm run dev:mbbank    # lỗi thời: mbbank-api/ đã xóa khỏi repo
 ```
 
 ```bash
