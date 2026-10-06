@@ -11,12 +11,16 @@ export function AuthBoundary({ children }: { children: React.ReactNode }) {
 
   useEffect(() => {
     if (!wa) return
-    applyThemeVars(wa.themeParams)
-    if (!wa.initData) return
-    getMiniAppToken(wa.initData)
-      .catch((e) => {
-        setErrMsg(e instanceof Error ? e.message : 'auth failed')
-      })
+    const syncTheme = () => applyThemeVars(wa.themeParams)
+    syncTheme()
+    wa.onEvent?.('themeChanged', syncTheme)
+    if (wa.initData) {
+      getMiniAppToken(wa.initData)
+        .catch((e) => {
+          setErrMsg(e instanceof Error ? e.message : 'auth failed')
+        })
+    }
+    return () => wa.offEvent?.('themeChanged', syncTheme)
   }, [wa])
 
   if (errMsg) {

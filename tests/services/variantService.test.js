@@ -20,7 +20,14 @@ function makeDb() {
       input_type TEXT DEFAULT 'text',
       created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
       updated_at DATETIME DEFAULT CURRENT_TIMESTAMP,
-      image_url TEXT
+      image_url TEXT,
+      input_fields_json TEXT,
+      is_backorder INTEGER DEFAULT 0,
+      default_duration_days INTEGER,
+      contact_only INTEGER,
+      nfshop_package_id INTEGER,
+      nfshop_kind TEXT,
+      nfshop_valid_days INTEGER
     );
     CREATE TABLE stock (
       id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -104,4 +111,33 @@ test('reorder sets sort_order in one transaction', () => {
   variantService.reorder(db, 1, [{ id: c.id, sortOrder: 0 }, { id: a.id, sortOrder: 1 }, { id: b.id, sortOrder: 2 }]);
   const names = variantService.listByProduct(db, 1).map(r => r.name);
   assert.deepEqual(names, ['C', 'A', 'B']);
+});
+
+test('contactOnly giữ được trạng thái kế thừa, liên hệ và bán trực tiếp', () => {
+  const db = makeDb();
+  const inherited = variantService.create(db, { productId: 1, name: 'Kế thừa', price: 100 });
+  const contact = variantService.create(db, { productId: 1, name: 'Liên hệ', price: 100, contactOnly: true });
+  const direct = variantService.create(db, { productId: 1, name: 'Bán trực tiếp', price: 100, contactOnly: false });
+
+  assert.equal(variantService.getById(db, inherited.id).contact_only, null);
+  assert.equal(variantService.getById(db, contact.id).contact_only, 1);
+  assert.equal(variantService.getById(db, direct.id).contact_only, 0);
+});
+
+test('create/update/getById round-trip nfshop fields', () => {
+  const db = makeDb();
+  const { id } = variantService.create(db, {
+    productId: 1, name: 'Cookies Premium', price: 50000, isBackorder: true,
+    nfshopPackageId: 7, nfshopKind: 'monthly', nfshopValidDays: 30,
+  });
+  let v = variantService.getById(db, id);
+  assert.strictEqual(v.nfshop_package_id, 7);
+  assert.strictEqual(v.nfshop_kind, 'monthly');
+  assert.strictEqual(v.nfshop_valid_days, 30);
+  assert.strictEqual(variantService.listByProduct(db, 1)[0].nfshop_package_id, 7);
+  variantService.update(db, 1, id, { nfshopKind: 'links', nfshopValidDays: 7, nfshopPackageId: null });
+  v = variantService.getById(db, id);
+  assert.strictEqual(v.nfshop_package_id, null);
+  assert.strictEqual(v.nfshop_kind, 'links');
+  assert.strictEqual(v.nfshop_valid_days, 7);
 });

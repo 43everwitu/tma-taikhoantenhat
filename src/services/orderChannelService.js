@@ -1,14 +1,15 @@
 // Posts a structured order notification card to a Telegram group/topic.
-// Env:
-//   ORDER_CHANNEL_CHAT_ID   - chat id (negative for supergroups, e.g. -1003865156744)
-//   ORDER_CHANNEL_THREAD_ID - optional message_thread_id for forum topics (e.g. 2)
-// No-op if ORDER_CHANNEL_CHAT_ID is unset.
+// Settings:
+//   order_channel_chat_id   - chat id âm của group/channel Telegram.
+//   order_channel_thread_id - message_thread_id nếu group bật forum topic.
+// Fallback env cũ: ORDER_CHANNEL_CHAT_ID / ORDER_CHANNEL_THREAD_ID.
 //
 // Backorder / no-stock cards store message_id on the order row. When keys are
 // later supplied (manual or auto deliver), the existing card is edited in place.
 
 const messageTemplateService = require('./messageTemplateService');
-const { formatCustomerInputPlain } = require('../utils/messages');
+const { formatCustomerInputForChannel } = require('../utils/messages');
+const telegramApiClient = require('./telegramApiClient');
 
 let bot = null;
 
@@ -20,13 +21,23 @@ function escapeHtml(s) {
     .replace(/"/g, '&quot;').replace(/'/g, '&#39;');
 }
 
+function buildCustomerNameLine(userId) {
+  if (!userId) return '';
+  const db = require('../database');
+  const user = db.prepare('SELECT username, full_name FROM users WHERE telegram_id = ?').get(userId);
+  if (!user) return '';
+  const label = user.full_name || (user.username ? `@${user.username}` : `User ${userId}`);
+  const href = user.username ? `https://t.me/${user.username}` : `tg://user?id=${userId}`;
+  return `\n👤 <b>Khách hàng</b>: <a href="${href}">${escapeHtml(label)}</a>`;
+}
+
 function buildCard({ order, product, variant, keys, customerInfo }) {
   const totalSpoiler = `<b>${escapeHtml(order.total_price.toLocaleString('vi-VN') + 'đ')}</b>`;
   const paymentCode = order.payment_code || String(order.id);
 
-  const customerLine = customerInfo
-    ? `\n📧 <b>Thông tin KH</b>: <tg-spoiler>${escapeHtml(customerInfo)}</tg-spoiler>`
-    : '';
+  const customerLine = buildCustomerNameLine(order.user_id) + (customerInfo
+    ? `\n📋 <b>Thông tin KH</b>:\n<tg-spoiler>${customerInfo}</tg-spoiler>`
+    : '');
 
   const productLine = `${escapeHtml(product.name)}${variant ? ` — ${escapeHtml(variant.name)}` : ''}`;
 
@@ -35,7 +46,7 @@ function buildCard({ order, product, variant, keys, customerInfo }) {
     const spoilered = keys.map((k) => `<tg-spoiler>${escapeHtml(k)}</tg-spoiler>`).join('\n');
     keysBlock = `🔑 <b>License Keys (${keys.length})</b> — tap để xem:\n${spoilered}`;
   } else {
-    keysBlock = '⚠️ <i>Đơn cần xử lý thủ công — chưa có key.</i>';
+    keysBlock = '⚠️ <i>Đơn đặt trước cần xử lý thủ công — chưa có key.</i>';
   }
 
   return messageTemplateService.render('group.order_card', {
@@ -79,15 +90,36 @@ function clearChannelMessage(orderId) {
   `).run(orderId);
 }
 
-async function postOrderCard({ order, product, variant, keys }) {
-  if (!bot) return;
-  const chatId = process.env.ORDER_CHANNEL_CHAT_ID;
-  if (!chatId) return;
-  const threadId = process.env.ORDER_CHANNEL_THREAD_ID
-    ? parseInt(process.env.ORDER_CHANNEL_THREAD_ID, 10)
-    : undefined;
+function settingValue(key) {
+  const db = require('../database');
+  const row = db.prepare('SELECT value FROM settings WHERE key = ?').get(key);
+  return row?.value ? String(row.value).trim() : '';
+}
 
-  const customerInfo = formatCustomerInputPlain(order.input_value);
+function parseThreadId(value) {
+  const n = parseInt(value, 10);
+  return Number.isFinite(n) && n > 0 ? n : undefined;
+}
+
+function resolveOrderChannelTarget() {
+  const chatId = settingValue('order_channel_chat_id') || process.env.ORDER_CHANNEL_CHAT_ID || '';
+  const threadRaw = settingValue('order_channel_thread_id') || process.env.ORDER_CHANNEL_THREAD_ID || '';
+  return {
+    chatId: String(chatId).trim(),
+    threadId: parseThreadId(threadRaw),
+  };
+}
+
+function setTelegramRequestForTest(fn) {
+  telegramApiClient.setTelegramRequestForTest(fn);
+}
+
+async function postOrderCard({ order, product, variant, keys }) {
+  if (!bot && !process.env.BOT_TOKEN) return;
+  const { chatId, threadId } = resolveOrderChannelTarget();
+  if (!chatId) return;
+
+  const customerInfo = formatCustomerInputForChannel(order.input_value);
   const text = buildCard({ order, product, variant, keys, customerInfo });
   const sendOpts = {
     parse_mode: 'HTML',
@@ -104,13 +136,7 @@ async function postOrderCard({ order, product, variant, keys }) {
 
   if (stored && isFulfillment) {
     try {
-      await bot.telegram.editMessageText(
-        stored.chatId,
-        stored.messageId,
-        undefined,
-        text,
-        editOpts
-      );
+      await telegramApiClient.editMessageText(stored.chatId, stored.messageId, text, editOpts);
       return;
     } catch (err) {
       console.warn(`orderChannelService edit failed for order ${order.id}, sending new:`, err.message || err);
@@ -119,11 +145,17 @@ async function postOrderCard({ order, product, variant, keys }) {
   }
 
   try {
-    const msg = await bot.telegram.sendMessage(chatId, text, sendOpts);
+    const msg = await telegramApiClient.sendMessage(chatId, text, sendOpts);
     saveChannelMessage(order.id, chatId, msg.message_id);
   } catch (err) {
     console.error('orderChannelService failed:', err.message || err);
   }
 }
 
-module.exports = { init, postOrderCard, buildCard };
+module.exports = {
+  init,
+  postOrderCard,
+  buildCard,
+  resolveOrderChannelTarget,
+  setTelegramRequestForTest,
+};

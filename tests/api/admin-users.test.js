@@ -4,16 +4,22 @@ const express = require('express');
 const { PassThrough, Readable, Writable } = require('node:stream');
 const db = require('../../src/database');
 
-async function requestJson(app, method, path) {
+async function requestJson(app, method, path, body = undefined) {
   return await new Promise((resolve, reject) => {
+    const payload = body ? Buffer.from(JSON.stringify(body)) : null;
     const request = new Readable({
       read() {
+        if (payload) this.push(payload);
         this.push(null);
       },
     });
     request.method = method;
     request.url = path;
     request.headers = {};
+    if (payload) {
+      request.headers['content-type'] = 'application/json';
+      request.headers['content-length'] = String(payload.length);
+    }
     request.socket = new PassThrough();
     request.socket.remoteAddress = '127.0.0.1';
 
@@ -62,6 +68,7 @@ async function requestJson(app, method, path) {
 
 function makeApp(permissions = ['users.read']) {
   const app = express();
+  app.use(express.json());
   app.use((req, _res, next) => {
     req.admin = {
       adminId: 1,
@@ -130,6 +137,7 @@ function seedRealUserWithOrders() {
 
 function cleanupRealFixture(fixture) {
   db.transaction(() => {
+    db.prepare('DELETE FROM audit_log WHERE entity_type = ? AND entity_id = ?').run('user', fixture.userId);
     db.prepare('DELETE FROM wallet_topups WHERE id = ?').run(fixture.topupId);
     db.prepare('DELETE FROM orders WHERE id IN (?, ?)').run(...fixture.orderIds);
     db.prepare('DELETE FROM products WHERE id = ?').run(fixture.productId);
@@ -203,6 +211,8 @@ test('GET /admin/users trả users, stats, meta và giữ delivered order_count 
   assert.strictEqual(res.json.data.users[0].telegram_id, fixture.userId);
   assert.strictEqual(res.json.data.users[0].order_count, 1);
   assert.strictEqual(res.json.data.users[0].is_virtual, false);
+  assert.strictEqual(res.json.data.users[0].account_status, 'active');
+  assert.strictEqual(res.json.data.users[0].ban_reason, null);
   assert.ok(res.json.data.stats.totalUsers >= 1);
   assert.ok(res.json.data.stats.buyers >= 1);
   assert.strictEqual(typeof res.json.data.stats.missingProfiles, 'number');
@@ -230,6 +240,10 @@ test('GET /admin/users gồm virtual user cho orphan orders và đếm mọi ord
     created_at: '2099-01-03 03:04:05',
     order_count: 2,
     is_virtual: true,
+    account_status: 'active',
+    ban_reason: null,
+    banned_at: null,
+    banned_by: null,
   });
   assert.ok(res.json.data.stats.missingProfiles >= 1);
 });
@@ -263,6 +277,8 @@ test('GET /admin/users/:telegramId trả real user và dữ liệu liên quan', 
   assert.strictEqual(res.status, 200, JSON.stringify(res.json));
   assert.strictEqual(res.json.data.user.telegram_id, fixture.userId);
   assert.strictEqual(res.json.data.user.is_virtual, false);
+  assert.strictEqual(res.json.data.user.account_status, 'active');
+  assert.strictEqual(res.json.data.user.ban_reason, null);
   assert.strictEqual(res.json.data.orders.length, 2);
   assert.strictEqual(res.json.data.recentTopups.length, 1);
 });
@@ -281,6 +297,10 @@ test('GET /admin/users/:telegramId trả synthetic read-only user khi chỉ có 
     balance: 0,
     created_at: null,
     is_virtual: true,
+    account_status: 'active',
+    ban_reason: null,
+    banned_at: null,
+    banned_by: null,
   });
   assert.strictEqual(res.json.data.orders.length, 2);
   assert.deepStrictEqual(res.json.data.recentTopups, []);
@@ -309,4 +329,51 @@ test('admin users routes yêu cầu users.read', async () => {
   assert.strictEqual(list.json.error.code, 'FORBIDDEN');
   assert.strictEqual(detail.status, 403);
   assert.strictEqual(detail.json.error.code, 'FORBIDDEN');
+});
+
+test('PATCH /admin/users/:telegramId/status cập nhật moderation status và ghi audit', async (t) => {
+  const fixture = seedRealUserWithOrders();
+  t.after(() => cleanupRealFixture(fixture));
+
+  const shadow = await requestJson(
+    makeApp(['users.read', 'users.write']),
+    'PATCH',
+    `/admin/users/${fixture.userId}/status`,
+    { status: 'shadow_banned', reason: 'manual review' },
+  );
+
+  assert.strictEqual(shadow.status, 200, JSON.stringify(shadow.json));
+  assert.strictEqual(shadow.json.success, true);
+  assert.strictEqual(shadow.json.data.user.account_status, 'shadow_banned');
+  assert.strictEqual(shadow.json.data.user.ban_reason, 'manual review');
+  assert.strictEqual(shadow.json.data.user.banned_by, 1);
+
+  const detail = await requestJson(makeApp(), 'GET', `/admin/users/${fixture.userId}`);
+  assert.strictEqual(detail.json.data.user.account_status, 'shadow_banned');
+
+  const audit = db.prepare(`
+    SELECT action, entity_type, entity_id, details
+    FROM audit_log
+    WHERE action = 'user.moderation.update'
+      AND entity_type = 'user'
+      AND entity_id = ?
+    ORDER BY id DESC
+  `).get(fixture.userId);
+  assert.ok(audit);
+  assert.match(audit.details, /shadow_banned/);
+});
+
+test('PATCH /admin/users/:telegramId/status yêu cầu users.write', async (t) => {
+  const fixture = seedRealUserWithOrders();
+  t.after(() => cleanupRealFixture(fixture));
+
+  const res = await requestJson(
+    makeApp(['users.read']),
+    'PATCH',
+    `/admin/users/${fixture.userId}/status`,
+    { status: 'banned', reason: 'abuse' },
+  );
+
+  assert.strictEqual(res.status, 403);
+  assert.strictEqual(res.json.error.code, 'FORBIDDEN');
 });

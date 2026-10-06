@@ -4,7 +4,15 @@ const topupService = require('./topupService');
 const adminNotifyService = require('./adminNotifyService');
 const messageTemplateService = require('./messageTemplateService');
 const { formatPrice } = require('../utils/keyboard');
-const { escapeHtml, richifyText, formatKeysForTelegram, shouldSendAsFile, buildCustomerInputBlock } = require('../utils/messages');
+const { escapeHtml, richifyText, formatKeysForTelegram, shouldSendAsFile } = require('../utils/messages');
+const {
+  buildTransactionQuery,
+  isForeignSystemTransaction,
+  matchMemoLessTransaction,
+  parseSqliteUtc,
+} = require('./paymentTransactionMatcher');
+const { getBackorderPaidMessage } = require('../utils/backorderWaitMessage');
+const { scheduleTwofaBindingSync } = require('./twofaBindingService');
 
 // Three disjoint regexes — order first (most common), then topup variants.
 // Tolerance: case-insensitive (some banks uppercase descriptions, some don't),
@@ -13,27 +21,44 @@ const { escapeHtml, richifyText, formatKeysForTelegram, shouldSendAsFile, buildC
 // truncation has been observed — false positives are still negligible because
 // the matcher requires a live order with that payment_code).
 //
-// - Order code: PNS + pure digits (order ids start at 100000).
-// - Topup wallet username: PNS + letter-led username (5–32 chars per Telegram
+// - Order code: TBS + pure digits (order ids start at 100000).
+// - Topup wallet username: TBS + letter-led username (5–32 chars per Telegram
 //   spec). The leading-letter constraint disjoints it from ORDER_CODE_REGEX.
-// - Topup wallet fallback: PNSU + telegram_id (5+ digits). Distinct prefix.
-const ORDER_CODE_REGEX = /PNS\s?(\d{4,})\b/i;
-const TOPUP_USERNAME_REGEX = /PNS\s?([A-Za-z][A-Za-z0-9_]{4,31})\b/i;
-const TOPUP_TGID_REGEX = /PNSU\s?(\d{5,})\b/i;
-const VIETNAM_TIME_ZONE = 'Asia/Ho_Chi_Minh';
+// - Topup wallet fallback: TBSU + telegram_id (5+ digits). Distinct prefix.
+const ORDER_CODE_REGEX = /TBS\s?(\d{4,})\b/i;
+const TOPUP_USERNAME_REGEX = /TBS\s?([A-Za-z][A-Za-z0-9_]{4,31})\b/i;
+const TOPUP_TGID_REGEX = /TBSU\s?(\d{5,})\b/i;
+const LEGACY_BACKORDER_WAIT_MESSAGES = new Set([
+  'Đơn này được giao thủ công, shop sẽ xử lý trong ít phút.',
+  'Đây là đơn đặt trước, shop sẽ xử lý trong 1-2 giờ hoặc theo thời gian ghi trên sản phẩm.\nNếu cần hỗ trợ, liên hệ t.me/taikhoantenhat hoặc m.me/taikhoantenhat3 hoặc zalo.me/0896551786.',
+  'Đây là đơn đặt trước, shop sẽ xử lý thủ công trong khoảng 30-60 phút, hoặc theo thời gian ghi trên sản phẩm và thời gian hoạt động của cửa hàng.\nNếu cần hỗ trợ, liên hệ t.me/taikhoantenhat hoặc m.me/taikhoantenhat3 hoặc zalo.me/0896551786.',
+]);
 
-function formatDateInTimeZone(date = new Date(), timeZone = VIETNAM_TIME_ZONE) {
-  const parts = new Intl.DateTimeFormat('en-US', {
-    timeZone,
-    year: 'numeric',
-    month: '2-digit',
-    day: '2-digit',
-  }).formatToParts(date).reduce((acc, part) => {
-    if (part.type !== 'literal') acc[part.type] = part.value;
-    return acc;
-  }, {});
+// How long the poller stays actively armed (hitting MBBank every tick)
+// before going dormant, regardless of the configured interval.
+const ACTIVE_POLL_WINDOW_MINUTES = 30;
 
-  return `${parts.year}-${parts.month}-${parts.day}`;
+// Never poll faster than this, no matter what admin configures.
+const MIN_POLL_INTERVAL_SECONDS = 15;
+
+/**
+ * Real order data (n=2024) shows ~88% of payments confirm within 2 minutes
+ * of order creation, with a thin tail out past 15min. Poll at the
+ * configured base interval through that first window (catches the common
+ * case fast), then back off — 2x at 2min, 4x at 5min, 8x at 15min — so the
+ * rare late payment still gets found before the 30-minute window closes,
+ * without hammering the shared MBBank sidecar for the whole window.
+ */
+function computeBackoffIntervalSeconds(elapsedSeconds, configuredIntervalSeconds) {
+  const base = Math.max(MIN_POLL_INTERVAL_SECONDS, configuredIntervalSeconds);
+  if (elapsedSeconds < 120) return base;
+  if (elapsedSeconds < 300) return base * 2;
+  if (elapsedSeconds < 900) return base * 4;
+  return base * 8;
+}
+
+function shouldGoDormant(elapsedSeconds) {
+  return elapsedSeconds >= ACTIVE_POLL_WINDOW_MINUTES * 60;
 }
 
 function normalizeCode(raw) {
@@ -44,6 +69,15 @@ function normalizeCode(raw) {
   return raw.replace(/\s+/g, '').toUpperCase();
 }
 
+function toSqliteUtc(transactionTime) {
+  if (transactionTime === null || transactionTime === undefined || transactionTime === '') {
+    return null;
+  }
+  const value = new Date(transactionTime);
+  if (Number.isNaN(value.getTime())) return null;
+  return value.toISOString().slice(0, 19).replace('T', ' ');
+}
+
 class PaymentPoller {
   constructor(db, bot) {
     this.db = db;
@@ -52,28 +86,58 @@ class PaymentPoller {
     this.running = false;
     this.pollCount = 0;
     this.matchCount = 0;
+    this.pollInFlight = null;
 
     // Prepared statements for transaction log
     this.insertTransaction = db.prepare(`
-      INSERT OR IGNORE INTO transactions
-        (mb_transaction_number, amount, description, matched_order_id, matched_payment_code, match_status, raw_data)
-      VALUES (?, ?, ?, ?, ?, ?, ?)
+      INSERT OR IGNORE INTO transactions (
+        mb_transaction_number,
+        amount,
+        description,
+        matched_order_id,
+        matched_payment_code,
+        match_status,
+        raw_data,
+        bank_transaction_at,
+        match_reason,
+        candidate_order_ids_json
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
     `);
 
-    // Skip a transaction only when it has already been MATCHED. Previously
-    // unmatched rows are retried each poll — early polls can store an
-    // unmatched row before the corresponding order or its payment_code is
-    // visible (race), and we don't want one bad first look to permanently
-    // freeze a real payment.
-    this.checkTransaction = db.prepare(
-      "SELECT id FROM transactions WHERE mb_transaction_number = ? AND match_status = 'matched'"
-    );
+    this.getTransactionState = db.prepare(`
+      SELECT
+        id,
+        match_status,
+        matched_order_id,
+        matched_payment_code,
+        match_reason,
+        candidate_order_ids_json
+      FROM transactions
+      WHERE mb_transaction_number = ?
+    `);
 
-    // Update an existing unmatched row to matched once it does match.
-    this.updateTransactionMatched = db.prepare(`
+    this.claimUnmatchedTransaction = db.prepare(`
       UPDATE transactions
-      SET matched_order_id = ?, matched_payment_code = ?, match_status = 'matched',
-          raw_data = ?
+      SET matched_order_id = ?,
+          matched_payment_code = ?,
+          raw_data = ?,
+          bank_transaction_at = ?,
+          match_reason = ?,
+          candidate_order_ids_json = ?
+      WHERE mb_transaction_number = ?
+        AND match_status = 'unmatched'
+        AND matched_order_id IS NULL
+    `);
+
+    this.updateTransactionDecision = db.prepare(`
+      UPDATE transactions
+      SET matched_order_id = ?,
+          matched_payment_code = ?,
+          match_status = ?,
+          raw_data = ?,
+          bank_transaction_at = ?,
+          match_reason = ?,
+          candidate_order_ids_json = ?
       WHERE mb_transaction_number = ?
     `);
   }
@@ -82,15 +146,20 @@ class PaymentPoller {
    * Start the poller if not already running.
    *
    * Behavior: 30s grace before the first MBBank API call (customer needs
-   * time to scan + bank-app round-trip), then poll every 30s up to 30
-   * attempts (15-minute window — covers the full order_expiry_minutes
-   * default of 10 plus headroom). Goes dormant on hit cap or no pending.
+   * time to scan + bank-app round-trip), then poll at the configured base
+   * interval, backing off (computeBackoffIntervalSeconds) as the active
+   * window ages, for up to ACTIVE_POLL_WINDOW_MINUTES before going dormant.
+   * Any new order/topup calls ensureRunning() again to re-arm it.
    *
    * Called when an order/topup is created and on startup if there are
    * pre-existing pending rows.
    */
   ensureRunning() {
-    if (this.running) return;
+    if (this.running) {
+      this.attempts = 0;
+      this.armedAt = Date.now();
+      return;
+    }
     const { isAutoPaymentEnabled } = require('./pollerConfig');
     if (!isAutoPaymentEnabled(config.PAYMENT_POLL_ENABLED) || !config.MBBANK_API_TOKEN) {
       return;
@@ -98,35 +167,38 @@ class PaymentPoller {
 
     this.running = true;
     this.attempts = 0;
+    this.armedAt = Date.now();
+    this.lastCleanupAt = 0;
     const initialDelayMs = 30_000;
     const { getPollIntervalMs } = require('./pollerConfig');
-    const intervalMs = getPollIntervalMs();
-    // 60 × 30s = 30min — covers topup_expiry default (30min) and the longest
-    // realistic order_expiry. Earlier 30-cap (15min) silently skipped slow
-    // inter-bank topup transfers that settled after 15min.
-    const maxAttempts = 60;
-    console.log(`💳 Payment poller armed (first check in ${initialDelayMs / 1000}s, then every ${intervalMs / 1000}s up to ${maxAttempts}×)`);
-
-    // Run cleanup at most once every 30 minutes — clamps to at least 1 tick so
-    // a slow poll interval doesn't accidentally make this run on every tick.
-    const cleanupEveryNTicks = Math.max(1, Math.round((30 * 60 * 1000) / intervalMs));
+    console.log(`💳 Payment poller armed (first check in ${initialDelayMs / 1000}s, backing off from ${MIN_POLL_INTERVAL_SECONDS}s over ${ACTIVE_POLL_WINDOW_MINUTES}min)`);
 
     const tick = async () => {
       if (!this.running) return;
       this.attempts++;
-      if (this.attempts % cleanupEveryNTicks === 0) {
-        try {
-          const n = orderService.cleanupExpiredOrders(24);
-          if (n > 0) console.log(`🧹 Cleaned ${n} expired orders older than 24h`);
-        } catch (e) { console.error('cleanupExpiredOrders error:', e.message); }
-      }
-      try { await this._poll(); } catch (e) { console.error('Poll tick error:', e.message); }
-      if (this.running && this.attempts >= maxAttempts) {
-        console.log(`💳 Payment poller hit ${maxAttempts}-attempt cap; going dormant`);
+      const elapsedSeconds = (Date.now() - this.armedAt) / 1000;
+
+      if (shouldGoDormant(elapsedSeconds)) {
+        console.log(`💳 Payment poller hit ${ACTIVE_POLL_WINDOW_MINUTES}-minute active window; going dormant`);
         this.stop();
         return;
       }
-      if (this.running) this.interval = setTimeout(tick, intervalMs);
+
+      const configuredIntervalSeconds = getPollIntervalMs() / 1000;
+      const nextIntervalSeconds = computeBackoffIntervalSeconds(elapsedSeconds, configuredIntervalSeconds);
+
+      // Run cleanup at most once every 30 minutes of wall-clock time.
+      if (Date.now() - this.lastCleanupAt >= 30 * 60 * 1000) {
+        this.lastCleanupAt = Date.now();
+        try {
+          const expired = orderService.cleanupExpiredOrders(24);
+          const deleted = orderService.cleanupDeletedOrders(30);
+          if (expired > 0) console.log(`🧹 Cleaned ${expired} expired orders older than 24h`);
+          if (deleted > 0) console.log(`🧹 Purged ${deleted} deleted orders older than 30d`);
+        } catch (e) { console.error('cleanupExpiredOrders error:', e.message); }
+      }
+      try { await this._poll(); } catch (e) { console.error('Poll tick error:', e.message); }
+      if (this.running) this.interval = setTimeout(tick, nextIntervalSeconds * 1000);
     };
 
     this.interval = setTimeout(tick, initialDelayMs);
@@ -161,13 +233,27 @@ class PaymentPoller {
   // ============================================================
 
   async _poll() {
+    if (this.pollInFlight) return this.pollInFlight;
+    this.pollInFlight = this._pollCycle();
     try {
+      return await this.pollInFlight;
+    } finally {
+      this.pollInFlight = null;
+    }
+  }
+
+  async _pollCycle() {
+    try {
+      const expiredOrders = orderService.expireStaleOrders();
+      const expiredTopups = topupService.expireStale();
+
       // Step 1: Get pending + recently-expired orders (24h recovery window) + pending topups
       const pendingOrders = orderService.getActivePending();
       const recentlyExpired = orderService.getRecentlyExpired(24);
       const pendingTopups = topupService.getActivePending();
+      const matchableOrders = orderService.getPaymentMatchCandidates(24);
 
-      if (pendingOrders.length === 0 && recentlyExpired.length === 0 && pendingTopups.length === 0) {
+      if (matchableOrders.length === 0 && pendingTopups.length === 0) {
         // Nothing to match — go dormant
         this.stop();
         return;
@@ -177,10 +263,8 @@ class PaymentPoller {
 
       // Step 2: Fetch transactions from MBBank API
       const allOrders = pendingOrders.concat(recentlyExpired);
-      const orderMin = allOrders.length ? Math.min(...allOrders.map(o => o.total_price)) : Infinity;
-      const topupMin = pendingTopups.length ? Math.min(...pendingTopups.map(t => t.amount)) : Infinity;
-      const minAmount = Math.min(orderMin, topupMin);
-      const transactions = await this._fetchTransactions(minAmount);
+      const query = buildTransactionQuery(matchableOrders, pendingTopups);
+      const transactions = await this._fetchTransactions(query);
 
       if (!transactions) return;
 
@@ -196,11 +280,16 @@ class PaymentPoller {
 
       // Step 4: Match transactions
       for (const tx of transactions) {
-        if (this.checkTransaction.get(tx.transactionNumber)) continue;
+        const transactionState = this.getTransactionState.get(tx.transactionNumber);
+        if (transactionState?.match_status === 'matched') {
+          await this._recoverMatchedExpiredOrderTx(tx);
+          continue;
+        }
+        if (transactionState?.match_status === 'review') continue;
 
         const parsed = this._extractPaymentCode(tx.description);
         if (!parsed) {
-          this._logTransaction(tx, null, null, 'unmatched');
+          await this._processMemoLessTransaction(tx, matchableOrders);
           continue;
         }
 
@@ -225,14 +314,16 @@ class PaymentPoller {
         }
       }
 
-      // Step 5: Expire stale orders + topups
-      const expiredOrders = orderService.expireStaleOrders();
-      for (const stale of expiredOrders) await this._notifyExpired(stale);
-      const expiredTopups = topupService.expireStale();
+      // Buoc 5: Bao het han cho cac dong het han trong tick nay ma chua duoc recover.
+      for (const stale of expiredOrders) {
+        const current = orderService.getById(stale.id);
+        if (!current || current.status === 'expired') await this._notifyExpired(stale);
+      }
       for (const stale of expiredTopups) await this._notifyTopupExpired(stale);
 
-      // Step 6: Check if any pending remain
-      const remaining = orderService.getActivePending().length + topupService.getActivePending().length;
+      // Step 6: Check if any pending/recoverable orders remain
+      const remaining = orderService.getPaymentMatchCandidates(24).length
+        + topupService.getActivePending().length;
       if (remaining === 0) this.stop();
 
     } catch (err) {
@@ -240,31 +331,20 @@ class PaymentPoller {
     }
   }
 
-  async _fetchTransactions(minAmount) {
-    const today = formatDateInTimeZone();
+  async _fetchTransactions(query, timeoutMs = 10000) {
+    const controller = new AbortController();
+    const timeout = setTimeout(() => controller.abort(), timeoutMs);
 
     try {
-      const controller = new AbortController();
-      const timeout = setTimeout(() => controller.abort(), 10000);
-
       const response = await fetch(`${config.MBBANK_API_URL}/transactions/credit`, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
           'Authorization': `Bearer ${config.MBBANK_API_TOKEN}`,
         },
-        body: JSON.stringify({
-          from_date: today,
-          to_date: today,
-          description_contains: 'PNS',
-          min_amount: minAmount || 0,
-          limit: 100,
-          sort_order: 'desc',
-        }),
+        body: JSON.stringify(query),
         signal: controller.signal,
       });
-
-      clearTimeout(timeout);
 
       if (!response.ok) {
         console.error(`❌ MBBank API error: ${response.status}`);
@@ -281,6 +361,8 @@ class PaymentPoller {
     } catch (err) {
       console.error('❌ MBBank API fetch error:', err.message);
       return null;
+    } finally {
+      clearTimeout(timeout);
     }
   }
 
@@ -301,7 +383,309 @@ class PaymentPoller {
     return null;
   }
 
-  async _processOrderMatch(tx, paymentCode, order) {
+  _persistTransactionDecision(tx, decision, order = null) {
+    const paymentCode = order?.payment_code || null;
+    const candidateJson = JSON.stringify(decision.candidateOrderIds || []);
+    const status = decision.kind === 'none' ? 'unmatched' : decision.kind;
+    const args = [
+      order?.id || null,
+      paymentCode,
+      status,
+      JSON.stringify(tx),
+      toSqliteUtc(tx.transactionTime),
+      decision.reason,
+      candidateJson,
+    ];
+    const existing = this.getTransactionState.get(tx.transactionNumber);
+
+    if (existing) {
+      this.updateTransactionDecision.run(...args, tx.transactionNumber);
+      return;
+    }
+
+    this.insertTransaction.run(
+      tx.transactionNumber,
+      tx.amount,
+      tx.description || '',
+      ...args,
+    );
+  }
+
+  _isClaimedForOrder(row, order) {
+    return row
+      && row.match_status === 'unmatched'
+      && row.matched_order_id != null
+      && Number(row.matched_order_id) === Number(order.id);
+  }
+
+  _claimMemoLessTransaction(tx, order, matchReason = 'amount_time_unique') {
+    const paymentCode = order.payment_code || null;
+    const candidateJson = JSON.stringify([order.id]);
+    const rawData = JSON.stringify(tx);
+    const bankTransactionAt = toSqliteUtc(tx.transactionTime);
+    const existing = this.getTransactionState.get(tx.transactionNumber);
+
+    if (!existing) {
+      this.insertTransaction.run(
+        tx.transactionNumber,
+        tx.amount,
+        tx.description || '',
+        order.id,
+        paymentCode,
+        'unmatched',
+        rawData,
+        bankTransactionAt,
+        matchReason,
+        candidateJson,
+      );
+      return this._isClaimedForOrder(
+        this.getTransactionState.get(tx.transactionNumber),
+        order,
+      );
+    }
+
+    if (existing.match_status !== 'unmatched') return false;
+    if (existing.matched_order_id != null) {
+      return Number(existing.matched_order_id) === Number(order.id);
+    }
+
+    const result = this.claimUnmatchedTransaction.run(
+      order.id,
+      paymentCode,
+      rawData,
+      bankTransactionAt,
+      matchReason,
+      candidateJson,
+      tx.transactionNumber,
+    );
+    if (result.changes > 0) return true;
+
+    return this._isClaimedForOrder(
+      this.getTransactionState.get(tx.transactionNumber),
+      order,
+    );
+  }
+
+  async _finalizeClaimedMemoLessTransaction(tx, existing) {
+    if (!existing?.matched_order_id) return { kind: 'skipped', reason: 'claimed_order_missing' };
+
+    const order = orderService.getById(existing.matched_order_id);
+    if (!order) return { kind: 'skipped', reason: 'claimed_order_missing' };
+
+    const paymentCode = existing.matched_payment_code || order.payment_code;
+    const matchReason = existing.match_reason || 'amount_time_unique';
+    if (order.status === 'delivered') {
+      this._recordMatchedTransaction(tx, order, paymentCode, matchReason);
+      const accounts = typeof orderService.getDeliveredKeys === 'function'
+        ? orderService.getDeliveredKeys(order.id)
+        : null;
+      if (Array.isArray(accounts) && accounts.length > 0) {
+        await this._notifyCustomerDelivered(order, accounts);
+      }
+      return { kind: 'matched', order };
+    }
+    if (order.status === 'paid') {
+      this._recordMatchedTransaction(tx, order, paymentCode, matchReason);
+      if (this._isBackorderOrder(order)) {
+        await this._notifyBackorderPaid(order);
+      } else {
+        await this._notifyNoStockPaid(order);
+      }
+      return { kind: 'matched', order };
+    }
+    if (order.status === 'pending' || order.status === 'expired') {
+      return this._processOrderMatch(tx, paymentCode, order, { matchReason });
+    }
+    return { kind: 'skipped', reason: 'claimed_order_processed' };
+  }
+
+  async _processMemoLessTransaction(tx, matchableOrders) {
+    const existing = this.getTransactionState.get(tx.transactionNumber);
+    if (existing && ['matched', 'review'].includes(existing.match_status)) {
+      return { kind: 'skipped', reason: existing.match_status };
+    }
+    if (existing?.match_status === 'unmatched' && existing.matched_order_id != null) {
+      return await this._finalizeClaimedMemoLessTransaction(tx, existing);
+    }
+
+    if (isForeignSystemTransaction(tx.description)) {
+      const decision = { kind: 'none', reason: 'foreign_system', candidates: [], candidateOrderIds: [] };
+      this._persistTransactionDecision(tx, decision, null);
+      return decision;
+    }
+
+    let decision = matchMemoLessTransaction(tx, matchableOrders);
+    if (decision.kind === 'unique') {
+      decision = matchMemoLessTransaction(
+        tx,
+        orderService.getPaymentMatchCandidates(24),
+      );
+    }
+
+    if (decision.kind === 'unique') {
+      const claimed = this._claimMemoLessTransaction(tx, decision.order, 'amount_time_unique');
+      if (!claimed) return { kind: 'skipped', reason: 'claim_lost' };
+      return await this._processOrderMatch(
+        tx,
+        decision.order.payment_code,
+        decision.order,
+        { matchReason: 'amount_time_unique' },
+      );
+    }
+
+    this._persistTransactionDecision(tx, decision, decision.order);
+    if (decision.kind === 'review') {
+      await this._notifyMemoLessReview(tx, decision);
+    }
+    return decision;
+  }
+
+  async _notifyMemoLessReview(tx, decision) {
+    const reasonLabels = {
+      ambiguous: 'Có nhiều đơn cùng phù hợp',
+      short_payment: 'Số tiền nhận thấp hơn giá đơn',
+      missing_transaction_time: 'Ngân hàng không trả timestamp hợp lệ',
+    };
+    const candidateLines = (decision.candidates || []).map((order) => {
+      const delta = Number(tx.amount) - Number(order.total_price);
+      const sign = delta >= 0 ? '+' : '-';
+      const formattedDelta = formatPrice(Math.abs(delta));
+      const createdAt = parseSqliteUtc(order.created_at);
+      const createdTime = createdAt
+        ? new Intl.DateTimeFormat('vi-VN', {
+            timeZone: 'Asia/Ho_Chi_Minh',
+            dateStyle: 'short',
+            timeStyle: 'medium',
+          }).format(createdAt)
+        : 'Không có';
+      return `• #${escapeHtml(String(order.id))}: ${formatPrice(order.total_price)} `
+        + `(${sign}${formattedDelta}) — ${escapeHtml(order.status || '—')} `
+        + `— Tạo: ${escapeHtml(createdTime)}`;
+    });
+    const transactionDate = tx.transactionTime ? new Date(tx.transactionTime) : null;
+    const time = transactionDate && !Number.isNaN(transactionDate.getTime())
+      ? new Intl.DateTimeFormat('vi-VN', {
+          timeZone: 'Asia/Ho_Chi_Minh',
+          dateStyle: 'short',
+          timeStyle: 'medium',
+        }).format(transactionDate)
+      : 'Không có';
+    const body = [
+      '⚠️ <b>Giao dịch cần đối chiếu</b>',
+      '',
+      `Mã GD: <code>${escapeHtml(tx.transactionNumber || '—')}</code>`,
+      `Thời gian: <b>${escapeHtml(time)}</b>`,
+      `Số tiền: <b>${formatPrice(tx.amount)}</b>`,
+      `Nội dung: <code>${escapeHtml(tx.description || '—')}</code>`,
+      `Lý do: <b>${escapeHtml(reasonLabels[decision.reason] || decision.reason)}</b>`,
+      candidateLines.length ? `\n${candidateLines.join('\n')}` : '',
+    ].filter(Boolean).join('\n');
+
+    try {
+      const sent = await adminNotifyService.notify(
+        'payment_review',
+        body,
+        { parse_mode: 'HTML' },
+      );
+      if (!sent) {
+        console.error(`❌ Cannot notify admin about memo-less payment ${tx.transactionNumber}`);
+      }
+    } catch (err) {
+      console.error(
+        `❌ Cannot notify admin about memo-less payment ${tx.transactionNumber}:`,
+        err.message,
+      );
+    }
+  }
+
+  _recordMatchedTransaction(tx, order, paymentCode, matchReason) {
+    this._logTransaction(tx, order.id, paymentCode, 'matched', {
+      matchReason,
+      candidateOrderIds: [order.id],
+    });
+    this.updateTransactionDecision.run(
+      order.id,
+      paymentCode,
+      'matched',
+      JSON.stringify(tx),
+      toSqliteUtc(tx.transactionTime),
+      matchReason,
+      JSON.stringify([order.id]),
+      tx.transactionNumber,
+    );
+    orderService.markPaymentMatched(order.id);
+  }
+
+  _isBackorderOrder(order) {
+    if (!order?.variant_id) return false;
+    try {
+      const dbForSetting = require('../database');
+      const row = dbForSetting.prepare(
+        'SELECT is_backorder FROM product_variants WHERE id = ?',
+      ).get(order.variant_id);
+      return !!row?.is_backorder;
+    } catch {
+      return false;
+    }
+  }
+
+  _getBackorderWaitMessage() {
+    const dbForSetting = require('../database');
+    const settingRow = dbForSetting.prepare("SELECT value FROM settings WHERE key = 'backorder_wait_message'").get();
+    const value = String(settingRow?.value || '').trim();
+    if (!value || LEGACY_BACKORDER_WAIT_MESSAGES.has(value)) {
+      return `${getBackorderPaidMessage()}\nNếu cần hỗ trợ, liên hệ t.me/taikhoantenhat hoặc m.me/taikhoantenhat3 hoặc zalo.me/0896551786.`;
+    }
+    return value;
+  }
+
+  async _notifyBackorderPaid(order) {
+    // nfshop variants are fulfilled automatically; the fulfilment service speaks up only on failure.
+    // Manual-review orders still go to admins as usual.
+    if (!order.requires_manual_review && require('./nfshopFulfillmentService').isNfshopOrder(order)) return;
+    this._notifyCustomer(order.user_id,
+      messageTemplateService.render('bot.backorder_wait', {
+        orderCode: order.id,
+        waitMsg: this._getBackorderWaitMessage(),
+      }),
+      'HTML');
+    try {
+      const orderChannelService = require('./orderChannelService');
+      const variantService = require('./variantService');
+      const dbMod = require('../database');
+      const variant = order.variant_id ? variantService.getById(dbMod, order.variant_id) : null;
+      const productSvc = require('./productService').getById(order.product_id);
+      await orderChannelService.postOrderCard({ order, product: productSvc, variant, keys: null });
+    } catch (e) { console.error('orderChannelService backorder post failed:', e.message); }
+  }
+
+  async _notifyNoStockPaid(order) {
+    adminNotifyService.notify('no_stock',
+      messageTemplateService.render('admin.no_stock', {
+        orderCode: order.id,
+        productName: order.product_name,
+        quantity: order.quantity,
+        userMention: String(order.user_id),
+      }),
+      { parse_mode: 'HTML' });
+    this._notifyCustomer(order.user_id,
+      messageTemplateService.render('payment_success', {
+        orderCode: order.id,
+        productName: order.product_name,
+        quantity: order.quantity,
+        total: formatPrice(order.total_price).replace(/đ$/, ''),
+      }) + `\n\n⏳ <i>Hết hàng tạm thời — admin sẽ giao thủ công sớm nhất.</i>`,
+      'HTML');
+    try {
+      const orderChannelService = require('./orderChannelService');
+      const productSvc = require('./productService').getById(order.product_id);
+      await orderChannelService.postOrderCard({ order, product: productSvc, variant: null, keys: null });
+    } catch (e) { console.error('orderChannelService no-stock post failed:', e.message); }
+  }
+
+  async _processOrderMatch(tx, paymentCode, order, options = {}) {
+    const matchReason = options.matchReason || 'payment_code';
+
     // If order not provided, look it up
     if (!order) {
       order = orderService.getByPaymentCode(paymentCode);
@@ -311,12 +695,14 @@ class PaymentPoller {
     // Late-payment recovery: matched order is already expired. Flip it back to
     // 'paid' and continue down the normal deliver path. markRecoveredPaid is
     // a no-op if the status changed under us → safe.
+    let wasRecovered = false;
     if (order.status === 'expired') {
       const recovered = orderService.markRecoveredPaid(order.id);
       if (!recovered) {
         console.log(`💸 Recovery skipped for expired order ${order.id} (status changed under us)`);
         return null;
       }
+      wasRecovered = true;
       console.log(`💸 Recovered expired order ${order.id} via late bank transfer`);
       // Patch the in-memory row so downstream short-pay + delivery branches
       // see the correct status (DB write already happened above).
@@ -334,10 +720,16 @@ class PaymentPoller {
       ).get(tx.transactionNumber);
       if (existing) {
         if (existing.match_status !== 'matched') {
-          this._markAlreadyProcessed(tx, order.id, paymentCode);
+          this._markAlreadyProcessed(tx, order.id, paymentCode, {
+            matchReason,
+            candidateOrderIds: [order.id],
+          });
         }
       } else {
-        this._logTransaction(tx, order.id, paymentCode, 'matched');
+        this._logTransaction(tx, order.id, paymentCode, 'matched', {
+          matchReason,
+          candidateOrderIds: [order.id],
+        });
       }
       adminNotifyService.notify('payment_short',
         messageTemplateService.render('admin.payment_short', {
@@ -360,56 +752,49 @@ class PaymentPoller {
       return null;
     }
 
-    // Log/upgrade transaction to matched. INSERT OR IGNORE leaves an old
-    // unmatched row alone, so explicitly UPDATE it to matched after.
-    this._logTransaction(tx, order.id, paymentCode, 'matched');
-    this.updateTransactionMatched.run(
-      order.id, paymentCode, JSON.stringify(tx), tx.transactionNumber
-    );
-    orderService.markPaymentMatched(order.id);
-
     // Over-pay — record the difference but DO NOT auto-credit. Admin sees
     // it in the delivered notification and can manually credit if desired.
     const overpayAmount = tx.amount - order.total_price;
 
-    // Try auto-deliver
-    const result = orderService.confirmAndDeliver(order.id, 1);
+    // Shadow-ban snapshot / manual review orders: customer paid correctly but
+    // keys must not be auto-delivered. Keep the customer-facing flow identical
+    // to backorder/manual handling.
+    if (order.requires_manual_review) {
+      let paidResult;
+      if (wasRecovered || order.status === 'paid') {
+        paidResult = { success: true, order: { ...order, status: 'paid' } };
+      } else {
+        paidResult = orderService.markPaid(order.id);
+      }
+      if (!paidResult?.success) return null;
+
+      this._recordMatchedTransaction(tx, order, paymentCode, matchReason);
+      this.matchCount++;
+      await this._notifyBackorderPaid(paidResult.order || order);
+      return paidResult;
+    }
+
+    // confirmAndDeliver/markPaid atomically claim the order status. Persist
+    // the bank match only after a successful claim, so a concurrent loser
+    // remains retryable and cannot overwrite the winner's association.
+    const result = orderService.confirmAndDeliver(
+      order.id,
+      1,
+      { allowPaidBackorder: wasRecovered },
+    );
+    if (result.success && !result.backorder) {
+      scheduleTwofaBindingSync(order.id);
+    }
 
     if (result.success && result.backorder) {
+      this._recordMatchedTransaction(tx, order, paymentCode, matchReason);
       this.matchCount++;
-      const inputBlock = buildCustomerInputBlock(order.input_value);
-      adminNotifyService.notify('backorder_paid',
-        messageTemplateService.render('admin.backorder_paid', {
-          orderCode: order.id,
-          productName: result.order.product_name,
-          quantity: order.quantity,
-          total: formatPrice(order.total_price).replace(/đ$/, ''),
-          userMention: String(order.user_id),
-          inputBlock,
-        }),
-        { parse_mode: 'HTML', order_id: order.id });
-      // Backorder wait message — admin-configurable via settings.backorder_wait_message
-      const dbForSetting = require('../database');
-      const settingRow = dbForSetting.prepare("SELECT value FROM settings WHERE key = 'backorder_wait_message'").get();
-      const waitMsg = settingRow?.value || 'Đơn này được giao thủ công, shop sẽ xử lý trong ít phút.';
-      this._notifyCustomer(order.user_id,
-        messageTemplateService.render('bot.backorder_wait', {
-          orderCode: order.id,
-          waitMsg,
-        }),
-        'HTML');
-      try {
-        const orderChannelService = require('./orderChannelService');
-        const variantService = require('./variantService');
-        const dbMod = require('../database');
-        const variant = result.order.variant_id ? variantService.getById(dbMod, result.order.variant_id) : null;
-        const productSvc = require('./productService').getById(result.order.product_id);
-        await orderChannelService.postOrderCard({ order: result.order, product: productSvc, variant, keys: null });
-      } catch (e) { console.error('orderChannelService backorder post failed:', e.message); }
+      await this._notifyBackorderPaid(result.order);
       return result;
     }
 
     if (result.success) {
+      this._recordMatchedTransaction(tx, order, paymentCode, matchReason);
       this.matchCount++;
       await this._notifyCustomerDelivered(order, result.accounts);
 
@@ -438,28 +823,16 @@ class PaymentPoller {
     }
 
     // Auto-deliver failed (no stock) — mark as paid, notify admin for manual delivery
-    orderService.markPaid(order.id);
-    adminNotifyService.notify('no_stock',
-      messageTemplateService.render('admin.no_stock', {
-        orderCode: order.id,
-        productName: order.product_name,
-        quantity: order.quantity,
-        userMention: String(order.user_id),
-      }),
-      { parse_mode: 'HTML' });
-    this._notifyCustomer(order.user_id,
-      messageTemplateService.render('payment_success', {
-        orderCode: order.id,
-        productName: order.product_name,
-        quantity: order.quantity,
-        total: formatPrice(order.total_price).replace(/đ$/, ''),
-      }) + `\n\n⏳ <i>Hết hàng tạm thời — admin sẽ giao thủ công sớm nhất.</i>`,
-      'HTML');
-    try {
-      const orderChannelService = require('./orderChannelService');
-      const productSvc = require('./productService').getById(order.product_id);
-      await orderChannelService.postOrderCard({ order, product: productSvc, variant: null, keys: null });
-    } catch (e) { console.error('orderChannelService no-stock post failed:', e.message); }
+    let paidResult;
+    if (wasRecovered || order.status === 'paid') {
+      paidResult = { success: true, order };
+    } else {
+      paidResult = orderService.markPaid(order.id);
+    }
+    if (!paidResult?.success) return null;
+
+    this._recordMatchedTransaction(tx, order, paymentCode, matchReason);
+    await this._notifyNoStockPaid(order);
 
     return null;
   }
@@ -472,7 +845,7 @@ class PaymentPoller {
    * Idempotency: any row already at status 'matched' for this tx number is
    * treated as already-credited and skipped. If a row exists at status
    * 'unmatched' (e.g. logged on a previous poll before we found the order),
-   * we upgrade it via updateTransactionMatched instead of relying on the
+   * we upgrade it via updateTransactionDecision instead of relying on the
    * INSERT OR IGNORE in _logTransaction (which is a no-op for existing rows
    * and would silently leave the status stale, causing repeated credits).
    */
@@ -483,8 +856,31 @@ class PaymentPoller {
    * we must NOT credit again — money already moved. We do flip the status
    * to 'matched' so the top-of-loop skip works cleanly going forward.
    */
-  _markAlreadyProcessed(tx, refOrderId, refCode) {
-    this.updateTransactionMatched.run(refOrderId || null, refCode, JSON.stringify(tx), tx.transactionNumber);
+  _markAlreadyProcessed(tx, refOrderId, refCode, metadata = {}) {
+    const matchReason = metadata.matchReason || 'payment_code';
+    const candidateOrderIds = metadata.candidateOrderIds
+      || (refOrderId ? [refOrderId] : []);
+    this.updateTransactionDecision.run(
+      refOrderId || null,
+      refCode,
+      'matched',
+      JSON.stringify(tx),
+      toSqliteUtc(tx.transactionTime),
+      matchReason,
+      JSON.stringify(candidateOrderIds),
+      tx.transactionNumber,
+    );
+  }
+
+  async _recoverMatchedExpiredOrderTx(tx) {
+    const parsed = this._extractPaymentCode(tx.description);
+    if (!parsed || parsed.kind !== 'order') return false;
+
+    const order = orderService.getRecoverableExpiredByPaymentCode(parsed.value, 24);
+    if (!order) return false;
+
+    await this._processOrderMatch(tx, parsed.value, order);
+    return true;
   }
 
   /**
@@ -498,38 +894,41 @@ class PaymentPoller {
     ).get(tx.transactionNumber);
     const order = orderService.getByPaymentCode(paymentCode);
 
-    if (existing) {
-      if (existing.match_status !== 'matched') {
-        this._markAlreadyProcessed(tx, order?.id, paymentCode);
+    const recoverable = orderService.getRecoverableExpiredByPaymentCode(paymentCode, 24);
+    if (recoverable) {
+      return await this._processOrderMatch(tx, paymentCode, recoverable);
+    }
+
+    if (!order) {
+      if (!existing) {
+        this._logTransaction(tx, null, null, 'unmatched', {
+          matchReason: 'no_local_order',
+          candidateOrderIds: [],
+        });
       }
       return;
     }
 
-    this._logTransaction(tx, order?.id || null, paymentCode, 'matched');
-
-    if (order) {
-      adminNotifyService.notify('payment_short',
-        messageTemplateService.render('admin.payment_short', {
-          orderCode: `${order.id} (status: ${order.status})`,
-          total: '—',
-          received: formatPrice(tx.amount).replace(/đ$/, ''),
-          memo: paymentCode,
-          userMention: String(order.user_id),
-          note: `Vào /admin/users/${order.user_id}/adjust để cộng thủ công nếu cần.`,
-        }),
-        { parse_mode: 'HTML' });
-    } else {
-      adminNotifyService.notify('payment_short',
-        messageTemplateService.render('admin.payment_short', {
-          orderCode: '—',
-          total: '—',
-          received: formatPrice(tx.amount).replace(/đ$/, ''),
-          memo: paymentCode,
-          userMention: '—',
-          note: 'Không tìm thấy đơn hàng tương ứng.',
-        }),
-        { parse_mode: 'HTML' });
+    if (existing) {
+      if (existing.match_status !== 'matched') {
+        this._markAlreadyProcessed(tx, order.id, paymentCode);
+      }
+      orderService.markPaymentMatched(order.id);
+      return;
     }
+
+    this._logTransaction(tx, order.id, paymentCode, 'matched');
+    orderService.markPaymentMatched(order.id);
+    adminNotifyService.notify('payment_short',
+      messageTemplateService.render('admin.payment_short', {
+        orderCode: `${order.id} (status: ${order.status})`,
+        total: '—',
+        received: formatPrice(tx.amount).replace(/đ$/, ''),
+        memo: paymentCode,
+        userMention: String(order.user_id),
+        note: `Vào /admin/users/${order.user_id}/adjust để cộng thủ công nếu cần.`,
+      }),
+      { parse_mode: 'HTML' });
   }
 
   /**
@@ -565,19 +964,31 @@ class PaymentPoller {
       { parse_mode: 'HTML' });
   }
 
-  _logTransaction(tx, orderId, paymentCode, status) {
+  _logTransaction(tx, orderId, paymentCode, status, metadata = {}) {
     this.insertTransaction.run(
       tx.transactionNumber,
       tx.amount,
-      tx.description,
+      tx.description || '',
       orderId,
       paymentCode,
       status,
-      JSON.stringify(tx)
+      JSON.stringify(tx),
+      toSqliteUtc(tx.transactionTime),
+      metadata.matchReason || (paymentCode ? 'payment_code' : 'no_candidate'),
+      JSON.stringify(metadata.candidateOrderIds || (orderId ? [orderId] : [])),
     );
   }
 
   async _notifyCustomerDelivered(order, accounts) {
+    // Orders placed through RAG-chat-bot (source ending "_rag") are
+    // delivered by RAG itself, via whichever channel the customer actually
+    // used — this service's own bot may never have a chat with them (or,
+    // for non-Telegram channels, can't reach them at all). No dual-send.
+    if (typeof order.source === 'string' && order.source.endsWith('_rag')) {
+      const { notifyRagDelivery } = require('./ragDeliveryNotifier');
+      await notifyRagDelivery(order, accounts);
+      return;
+    }
     const { sendDelivery } = require('./notificationService');
     await sendDelivery(this.bot, order, accounts, {
       qrChatId: order.qr_chat_id,
@@ -586,10 +997,11 @@ class PaymentPoller {
   }
 
   async _notifyCustomer(userId, message, parseMode) {
+    const telegramApiClient = require('./telegramApiClient');
     const opts = parseMode ? { parse_mode: parseMode } : undefined;
     let sentTelegram = 0;
     try {
-      await this.bot.telegram.sendMessage(userId, message, opts);
+      await telegramApiClient.sendMessage(userId, message, opts);
       sentTelegram = 1;
     } catch (err) {
       console.error(`❌ Cannot notify customer ${userId}:`, err.message);
@@ -673,4 +1085,4 @@ class PaymentPoller {
   }
 }
 
-module.exports = { PaymentPoller };
+module.exports = { PaymentPoller, computeBackoffIntervalSeconds, shouldGoDormant };

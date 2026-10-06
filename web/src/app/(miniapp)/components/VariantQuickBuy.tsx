@@ -4,14 +4,18 @@ import { useState } from 'react'
 import { useQuery } from '@tanstack/react-query'
 import { apiFetch } from '@/lib/miniappApi'
 import { useCart } from '@/lib/cart'
+import { useToast } from '@/components/Toast'
 import { VariantPicker, variantFieldKey, type Variant } from './VariantPicker'
 import { Icon } from './Icon'
+import { NotifyMeButton } from './NotifyMeButton'
 import { formatPrice } from '@/lib/utils'
+import { resolveContactUrl } from '@/lib/contactUrl'
 import { findDefaultPurchasableVariant, getProductStockMode } from '@/lib/productStockDisplay'
+import { t } from '@/i18n/vi'
 
 interface ProductFull {
   id: string; slug: string; name: string; emoji: string; imageUrl?: string
-  price: number; priceMin?: number; priceMax?: number; salePrice?: number; salePriceMin?: number; salePriceMax?: number; stock: number; contactOnly: boolean
+  price: number; priceMin?: number; priceMax?: number; salePrice?: number; salePriceMin?: number; salePriceMax?: number; stock: number; contactOnly: boolean; contactUrl?: string | null
   variants?: Variant[]
 }
 
@@ -22,6 +26,7 @@ interface Props {
 
 export function VariantQuickBuy({ slug, onClose }: Props) {
   const cart = useCart()
+  const toast = useToast()
   const [selectedVariantId, setSelectedVariantId] = useState<string | null>(null)
   const [inputValues, setInputValues] = useState<Record<string, string>>({})
   const [busy, setBusy] = useState(false)
@@ -54,9 +59,11 @@ export function VariantQuickBuy({ slug, onClose }: Props) {
   const hasRange = (p.variants?.length ?? 0) > 1 && baseMin !== baseMax
   const rangeHasDiscount = hasRange && (saleMin < baseMin || saleMax < baseMax)
   const effectiveStock = variants.length > 0 ? (selected?.stock ?? 0) : p.stock
+  const effectiveContactOnly = selected?.contactOnly ?? p.contactOnly
   const stockMode = getProductStockMode({
     stock: effectiveStock,
     isBackorder: selected?.isBackorder,
+    contactOnly: effectiveContactOnly,
   })
   const requiresInput = !!selected?.requiresInput
   const fields = selected?.inputFields && selected.inputFields.length > 0
@@ -65,10 +72,15 @@ export function VariantQuickBuy({ slug, onClose }: Props) {
         ? [{ label: selected!.inputLabel || 'Thông tin', placeholder: '', type: 'text' as const, required: true }]
         : [])
   const inputValid = !requiresInput || fields.every((f, idx) => !f.required || (inputValues[variantFieldKey(f, idx)] ?? '').trim().length >= 1)
-  const disabled = (!selected?.isBackorder && effectiveStock <= 0) || p.contactOnly || !inputValid || busy
+  const disabled = (!selected?.isBackorder && effectiveStock <= 0) || effectiveContactOnly || busy
+  const canNotifyMe = !!selected && stockMode === 'out'
 
   const product = p
   function addAndClose() {
+    if (!inputValid) {
+      toast.error(t.product.inputRequired)
+      return
+    }
     setBusy(true)
     const trimmed: Record<string, string> = {}
     if (requiresInput) {
@@ -83,13 +95,15 @@ export function VariantQuickBuy({ slug, onClose }: Props) {
       variantId: selected?.id ?? null,
       variantName: selected?.name ?? null,
       inputValue: requiresInput ? JSON.stringify(trimmed) : null,
+      isBackorder: !!selected?.isBackorder,
       slug: product.slug,
       name: product.name,
       price: effectivePrice,
       emoji: product.emoji,
-      imageUrl: product.imageUrl,
+      imageUrl: selected?.imageUrl || product.imageUrl,
       quantity: 1,
     })
+    toast.success('Đã thêm vào giỏ hàng')
     setBusy(false)
     onClose()
   }
@@ -110,6 +124,8 @@ export function VariantQuickBuy({ slug, onClose }: Props) {
             inputValues={inputValues}
             onInputChange={setInputValues}
           />
+        ) : effectiveContactOnly ? (
+          <p className="text-xs opacity-70 mb-3">Sản phẩm này cần liên hệ trực tiếp để mua.</p>
         ) : (
           <p className="text-xs opacity-70">Sản phẩm không có biến thể.</p>
         )}
@@ -127,20 +143,35 @@ export function VariantQuickBuy({ slug, onClose }: Props) {
             {hasDiscount && <span className="ml-2 text-xs opacity-50 line-through">{formatPrice(effectivePrice)}</span>}
           </span>
           <span className="text-xs opacity-60">
-            {stockMode === 'stock'
-              ? `Còn ${effectiveStock}`
-              : stockMode === 'backorder' ? '∞' : 'Hết hàng'}
+            {stockMode === 'contact'
+              ? t.product.contactOnly
+              : stockMode === 'stock'
+                ? `Còn ${effectiveStock}`
+                : stockMode === 'backorder' ? '∞' : 'Hết hàng'}
           </span>
         </div>
 
-        <button
-          type="button"
-          onClick={addAndClose}
-          disabled={disabled}
-          className="miniapp-btn miniapp-btn--primary"
-        >
-          <Icon name="cart" size={18} /> Thêm vào giỏ
-        </button>
+        {effectiveContactOnly ? (
+          <a
+            href={resolveContactUrl(p.contactUrl)}
+            target="_blank"
+            rel="noopener noreferrer"
+            className="miniapp-btn miniapp-btn--primary justify-center"
+          >
+            <Icon name="support" size={18} /> Liên hệ
+          </a>
+        ) : canNotifyMe ? (
+          <NotifyMeButton productId={p.id} variantId={selected!.id} />
+        ) : (
+          <button
+            type="button"
+            onClick={addAndClose}
+            disabled={disabled}
+            className="miniapp-btn miniapp-btn--primary"
+          >
+            <Icon name="cart" size={18} /> Thêm vào giỏ
+          </button>
+        )}
       </div>
     </Backdrop>
   )

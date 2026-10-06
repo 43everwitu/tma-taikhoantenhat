@@ -1,16 +1,9 @@
 const config = require('../config');
 const { signPayload } = require('../services/twofaIntegrationAuth');
+const messages = require('../utils/messages');
 
-const NUDGE_TEXT =
-  'Mọi tính năng đã chuyển vào Mini App.\nBấm nút bên dưới để mở cửa hàng.';
-const { openShopButton } = require('../utils/miniAppButton');
-
-async function nudgeToMiniApp(ctx) {
-  await ctx.reply(NUDGE_TEXT, {
-    reply_markup: {
-      inline_keyboard: [[openShopButton('Mở cửa hàng', { botUsername: ctx.botInfo?.username })]],
-    },
-  });
+async function replySupportContact(ctx) {
+  await ctx.reply(messages.supportContact);
 }
 
 async function forwardToRagBot(ctx) {
@@ -37,8 +30,8 @@ async function forwardToRagBot(ctx) {
     });
     if (!res.ok) throw new Error(`RAG bot responded ${res.status}`);
   } catch (err) {
-    console.error('[rag-forward] failed, falling back to Mini App nudge:', err.message);
-    await nudgeToMiniApp(ctx);
+    console.error('[rag-forward] failed, falling back to support contact message:', err.message);
+    await replySupportContact(ctx);
   }
 }
 
@@ -46,7 +39,7 @@ async function handleFallback(ctx) {
   if (config.RAG_BOT_FORWARD_ENABLED) {
     return forwardToRagBot(ctx);
   }
-  return nudgeToMiniApp(ctx);
+  return replySupportContact(ctx);
 }
 
 module.exports = (bot) => {

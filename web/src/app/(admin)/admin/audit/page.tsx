@@ -14,7 +14,7 @@ const ENTITY_NAV: Record<string, (id: number) => string> = {
   product:      (id) => `/admin/products?highlight=${id}`,
   topup:        (id) => `/admin/topups?highlight=${id}`,
   admin:        (id) => `/admin/admins?highlight=${id}`,
-  stock:        (id) => `/admin/stock?highlight=${id}`,
+  stock:        (id) => `/admin/stock/keys?highlight=${id}`,
   discount:     (id) => `/admin/discounts?highlight=${id}`,
   announcement: ()   => `/admin/announcements`,
 }

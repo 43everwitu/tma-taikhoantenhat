@@ -3,11 +3,11 @@
 import Link from 'next/link'
 import { ReactNode, useCallback, useState } from 'react'
 import { usePathname, useRouter } from 'next/navigation'
-import { useQuery } from '@tanstack/react-query'
-import { apiFetch } from '@/lib/miniappApi'
+import { useCart } from '@/lib/cart'
 import { useTelegramBackButton } from '@/lib/useTelegramBackButton'
 import { Icon } from './Icon'
 import { SearchModal } from './SearchModal'
+import { ContactButton } from './SocialLinks'
 import type { MiniappIconName } from '@/lib/miniappIcons'
 import { t } from '@/i18n/vi'
 
@@ -34,15 +34,13 @@ export function MiniAppShell({
 }) {
   const pathname = usePathname()
   const router = useRouter()
+  const cart = useCart()
   const [searchOpen, setSearchOpen] = useState(false)
   const onBack = useCallback(() => { router.back() }, [router])
   useTelegramBackButton(pathname !== '/', onBack)
-  const shopInfo = useQuery({
-    queryKey: ['shop', 'info'],
-    queryFn: () => apiFetch<{ supportUrl?: string }>('/shop/info'),
-    staleTime: 5 * 60_000,
-  })
-  const supportUrl = shopInfo.data?.supportUrl?.trim() || ''
+  const cartBadge = cart.count > 99 ? '99+' : String(cart.count)
+  const renderCartBadge = () => cart.count > 0 ? <span className="miniapp-nav-badge">{cartBadge}</span> : null
+
   return (
     <div className="miniapp-root">
       {showHeader && (
@@ -64,10 +62,11 @@ export function MiniAppShell({
                 <Link
                   key={it.href}
                   href={it.href}
-                  className="miniapp-topnav-link"
+                  className={`miniapp-topnav-link ${it.icon === 'cart' ? 'miniapp-nav-badge-anchor' : ''}`}
                   aria-current={it.match(pathname) ? 'page' : undefined}
                 >
                   <Icon name={it.icon} size={18} />
+                  {it.icon === 'cart' && renderCartBadge()}
                   {it.label}
                 </Link>
               ))}
@@ -80,17 +79,7 @@ export function MiniAppShell({
                 <Icon name="search" size={18} />
                 Tìm kiếm
               </button>
-              {supportUrl && (
-                <a
-                  href={supportUrl}
-                  target="_blank"
-                  rel="noopener noreferrer"
-                  className="miniapp-topnav-link"
-                >
-                  <Icon name="support" size={18} />
-                  Hỗ trợ
-                </a>
-              )}
+              <ContactButton variant="desktop" />
             </nav>
 
             <div className="md:hidden flex items-center gap-2">
@@ -103,25 +92,15 @@ export function MiniAppShell({
               >
                 <Icon name="search" size={18} />
               </button>
-              {supportUrl && (
-                <a
-                  href={supportUrl}
-                  target="_blank"
-                  rel="noopener noreferrer"
-                  aria-label="Hỗ trợ"
-                  className="inline-flex items-center justify-center w-9 h-9 rounded-full"
-                  style={{ background: 'var(--brand-gold-soft)', color: 'var(--brand-ink)' }}
-                >
-                  <Icon name="support" size={18} />
-                </a>
-              )}
+              <ContactButton variant="mobile" />
               <Link
                 href="/gio-hang"
                 aria-label={t.nav.cart}
-                className="inline-flex items-center justify-center w-9 h-9 rounded-full"
+                className="miniapp-nav-badge-anchor inline-flex items-center justify-center w-9 h-9 rounded-full"
                 style={{ background: 'var(--brand-gold-soft)', color: 'var(--brand-ink)' }}
               >
                 <Icon name="cart" size={18} />
+                {renderCartBadge()}
               </Link>
             </div>
           </div>
@@ -137,9 +116,11 @@ export function MiniAppShell({
           <Link
             key={it.href}
             href={it.href}
+            className={it.icon === 'cart' ? 'miniapp-nav-badge-anchor' : undefined}
             aria-current={it.match(pathname) ? 'page' : undefined}
           >
             <Icon name={it.icon} size={22} />
+            {it.icon === 'cart' && renderCartBadge()}
             {it.label}
           </Link>
         ))}

@@ -9,6 +9,13 @@ import { formatDate, formatPrice } from '@/lib/utils'
 import { t } from '@/i18n/vi'
 
 type OrderStatus = 'pending' | 'paid' | 'delivered' | 'cancelled' | 'expired'
+type KeyLifecycleStatus = 'active' | 'expiring_soon' | 'expired'
+interface KeyLifecycle {
+  status: KeyLifecycleStatus
+  statusLabel: string
+  expiryDate: string
+  remainingDays: number
+}
 interface OrderRow {
   id: number
   status: OrderStatus
@@ -16,6 +23,7 @@ interface OrderRow {
   created_at: string
   product_name?: string
   quantity?: number
+  keyLifecycle?: KeyLifecycle | null
 }
 
 const STATUS_LABEL: Record<OrderStatus, string> = {
@@ -23,10 +31,16 @@ const STATUS_LABEL: Record<OrderStatus, string> = {
   cancelled: t.order.cancelled, expired: t.order.expired,
 }
 
+const LIFECYCLE_CLASS: Record<KeyLifecycleStatus, string> = {
+  active: 'key-active',
+  expiring_soon: 'key-soon',
+  expired: 'key-expired',
+}
+
 export default function MyOrdersPage() {
   const { data, isLoading } = useQuery({
     queryKey: ['orders', 'my'],
-    queryFn: () => apiFetch<OrderRow[]>('/orders/my'),
+    queryFn: () => apiFetch<OrderRow[]>('/orders/my', {}, { auth: 'required' }),
   })
 
   return (
@@ -45,30 +59,33 @@ export default function MyOrdersPage() {
       )}
       {data && data.length > 0 && (
         <ul className="space-y-2">
-          {data.map((o) => (
-            <li key={o.id}>
-              <Link
-                href={`/don-hang/${o.id}`}
-                className="block rounded-2xl p-3.5"
-                style={{ background: 'var(--tg-bg-2)' }}
-              >
-                <div className="flex items-start justify-between gap-2 mb-1">
-                  <p className="text-sm font-semibold line-clamp-1 flex-1">
-                    {o.product_name || `Đơn #${o.id}`}
-                  </p>
-                  <span className={`miniapp-status miniapp-status--${o.status}`}>
-                    {STATUS_LABEL[o.status]}
-                  </span>
-                </div>
-                <div className="flex items-center justify-between text-xs opacity-70">
-                  <span>#{o.id} · {formatDate(o.created_at)}</span>
-                  <span className="font-semibold" style={{ color: 'var(--brand-ink)' }}>
-                    {formatPrice(o.total_price)}
-                  </span>
-                </div>
-              </Link>
-            </li>
-          ))}
+          {data.map((o) => {
+            const lifecycle = o.status === 'delivered' ? o.keyLifecycle : null
+            return (
+              <li key={o.id}>
+                <Link
+                  href={`/don-hang/${o.id}`}
+                  className="block rounded-2xl p-3.5"
+                  style={{ background: 'var(--tg-bg-2)' }}
+                >
+                  <div className="flex items-start justify-between gap-2 mb-1">
+                    <p className="text-sm font-semibold line-clamp-1 flex-1">
+                      {o.product_name || `Đơn #${o.id}`}
+                    </p>
+                    <span className={`miniapp-status miniapp-status--${lifecycle ? LIFECYCLE_CLASS[lifecycle.status] : o.status}`}>
+                      {lifecycle ? lifecycle.statusLabel : STATUS_LABEL[o.status]}
+                    </span>
+                  </div>
+                  <div className="flex items-center justify-between text-xs opacity-70">
+                    <span>#{o.id} · {formatDate(o.created_at)}</span>
+                    <span className="font-semibold" style={{ color: 'var(--brand-ink)' }}>
+                      {formatPrice(o.total_price)}
+                    </span>
+                  </div>
+                </Link>
+              </li>
+            )
+          })}
         </ul>
       )}
     </MiniAppShell>

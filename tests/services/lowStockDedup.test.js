@@ -1,9 +1,20 @@
 const assert = require('node:assert');
 const test = require('node:test');
 const db = require('../../src/database');
+const telegramApiClient = require('../../src/services/telegramApiClient');
 
 function makeFakeBot(sent) {
   return { telegram: { sendMessage: async (...args) => { sent.push(args); } } };
+}
+
+// adminNotifyService.notify() always sends through telegramApiClient (real
+// Telegram HTTPS calls), never through the bot instance passed to init() —
+// route it back into the fakeBot above so nothing here reaches production.
+function wireFakeTelegram(fakeBot) {
+  telegramApiClient.setTelegramRequestForTest(async (method, payload) => {
+    await fakeBot.telegram.sendMessage(payload.chat_id, payload.text, payload);
+    return { message_id: 1 };
+  });
 }
 
 test('checkLowStock sends only once per product within 24h', async () => {
@@ -23,6 +34,7 @@ test('checkLowStock sends only once per product within 24h', async () => {
   const fakeBot = makeFakeBot(sent);
   adminNotify.init(fakeBot);
   adminNotify.invalidateCache();
+  wireFakeTelegram(fakeBot);
 
   // Seed one low-stock product with explicit threshold 5, stock count 1.
   const slug = 'd-' + Math.floor(Math.random() * 1e9);
@@ -46,6 +58,8 @@ test('checkLowStock sends only once per product within 24h', async () => {
   assert.strictEqual(oursSent.length, 1, `Expected exactly 1 send for product ${p.lastInsertRowid}, got ${oursSent.length}`);
 
   // Cleanup
+  telegramApiClient.setTelegramRequestForTest(null);
+  db.prepare("DELETE FROM low_stock_alert_states WHERE product_id = ?").run(p.lastInsertRowid);
   db.prepare("DELETE FROM stock WHERE product_id = ?").run(p.lastInsertRowid);
   db.prepare("DELETE FROM products WHERE id = ?").run(p.lastInsertRowid);
   db.prepare("DELETE FROM categories WHERE id = ?").run(cat.lastInsertRowid);

@@ -3,17 +3,21 @@
 import { useEffect, useState } from 'react'
 import { useQuery } from '@tanstack/react-query'
 import { useParams, useRouter } from 'next/navigation'
-import Image from 'next/image'
 import { apiFetch } from '@/lib/miniappApi'
 import { useCart } from '@/lib/cart'
+import { useToast } from '@/components/Toast'
 import { pushRecentlyViewed, getRecentlyViewedIds } from '@/lib/recentlyViewed'
 import { MiniAppShell } from '../../components/MiniAppShell'
 import { Icon } from '../../components/Icon'
+import { MiniAppProductImage } from '../../components/MiniAppProductImage'
+import { NotifyMeButton } from '../../components/NotifyMeButton'
 import { VariantPicker, variantFieldKey, type Variant } from '../../components/VariantPicker'
 import { ProductRail } from '../../components/ProductRail'
+import { SocialLinksRow } from '../../components/SocialLinks'
 import type { ProductSummary } from '../../components/ProductCard'
-import { formatPrice } from '@/lib/utils'
+import { resolveContactUrl } from '@/lib/contactUrl'
 import { findDefaultPurchasableVariant, getProductStockMode } from '@/lib/productStockDisplay'
+import { formatPrice } from '@/lib/utils'
 import { t } from '@/i18n/vi'
 
 interface ProductBase {
@@ -36,6 +40,7 @@ export default function ProductDetailPage() {
   const { slug } = useParams<{ slug: string }>()
   const router = useRouter()
   const cart = useCart()
+  const toast = useToast()
   const [qty, setQty] = useState(1)
   const [selectedVariantId, setSelectedVariantId] = useState<string | null>(null)
   const [inputValues, setInputValues] = useState<Record<string, string>>({})
@@ -65,9 +70,11 @@ export default function ProductDetailPage() {
   const effectiveSalePrice = selected?.salePrice ?? p?.salePrice ?? null
   const hasDiscount = typeof effectiveSalePrice === 'number' && effectiveSalePrice < effectivePrice
   const effectiveStock = variants.length > 0 ? (selected?.stock ?? 0) : (p?.stock ?? 0)
+  const effectiveContactOnly = selected?.contactOnly ?? p.contactOnly
   const stockMode = getProductStockMode({
     stock: effectiveStock,
     isBackorder: selected?.isBackorder,
+    contactOnly: effectiveContactOnly,
   })
   const requiresInput = !!selected?.requiresInput
   const fields = selected?.inputFields && selected.inputFields.length > 0
@@ -77,8 +84,13 @@ export default function ProductDetailPage() {
         : [])
   const inputValid = !requiresInput || fields.every((f, idx) => !f.required || (inputValues[variantFieldKey(f, idx)] ?? '').trim().length >= 1)
 
-  const disabled = (!selected?.isBackorder && effectiveStock <= 0) || p.contactOnly || !inputValid
+  const disabled = (!selected?.isBackorder && effectiveStock <= 0) || effectiveContactOnly
+  const canNotifyMe = !!selected && stockMode === 'out'
   const addToCart = () => {
+    if (!inputValid) {
+      toast.error(t.product.inputRequired)
+      return false
+    }
     const trimmed: Record<string, string> = {}
     if (requiresInput) {
       fields.forEach((f, idx) => {
@@ -92,13 +104,16 @@ export default function ProductDetailPage() {
       variantId: selected?.id ?? null,
       variantName: selected?.name ?? null,
       inputValue: requiresInput ? JSON.stringify(trimmed) : null,
+      isBackorder: !!selected?.isBackorder,
       slug: p.slug,
       name: p.name,
       price: effectivePrice,
       emoji: p.emoji,
-      imageUrl: p.imageUrl,
+      imageUrl: effectiveImage,
       quantity: qty,
     })
+    toast.success('Đã thêm vào giỏ hàng')
+    return true
   }
 
   return (
@@ -111,20 +126,7 @@ export default function ProductDetailPage() {
                 {selected?.discountLabel || p.discountLabel || p.promotion}
               </span>
             )}
-            {effectiveImage ? (
-              <Image
-                src={effectiveImage}
-                alt={p.name}
-                fill
-                priority
-                sizes="(min-width: 768px) 50vw, 100vw"
-                style={{ objectFit: 'cover' }}
-              />
-            ) : (
-              <div className="absolute inset-0 grid place-items-center" style={{ color: 'var(--brand-gold-deep)' }}>
-                <Icon name="package" size={88} strokeWidth={1.25} />
-              </div>
-            )}
+            <MiniAppProductImage src={effectiveImage} alt={p.name} priority iconSize={88} />
           </div>
         </div>
 
@@ -147,14 +149,16 @@ export default function ProductDetailPage() {
                 <p className="text-sm opacity-50 line-through">{formatPrice(effectivePrice)}</p>
               )}
               <p className="text-xs mt-1">
-                {stockMode === 'stock'
+                {stockMode === 'contact'
+                  ? <span style={{ color: '#16a34a' }}>● {t.product.contactOnly}</span>
+                  : stockMode === 'stock'
                     ? <span style={{ color: '#16a34a' }}>● {t.product.inStock.replace('{n}', String(effectiveStock))}</span>
                     : stockMode === 'backorder'
                       ? <span style={{ color: '#16a34a' }}>● ∞</span>
                       : <span style={{ color: '#dc2626' }}>● {t.product.outOfStock}</span>}
               </p>
             </div>
-            {!disabled && (
+            {!disabled && !effectiveContactOnly && (
               <div className="inline-flex items-center gap-1 rounded-full p-1" style={{ background: 'var(--tg-bg-2)' }}>
                 <button
                   type="button"
@@ -218,23 +222,40 @@ export default function ProductDetailPage() {
         </section>
       )}
 
+      <SocialLinksRow />
+
       <div className="miniapp-bottombar">
-        <button
-          type="button"
-          onClick={addToCart}
-          disabled={disabled}
-          className="miniapp-btn miniapp-btn--ghost"
-        >
-          <Icon name="cart" size={18} /> {t.product.addToCart}
-        </button>
-        <button
-          type="button"
-          onClick={() => { addToCart(); router.push('/dat-hang') }}
-          disabled={disabled}
-          className="miniapp-btn miniapp-btn--primary"
-        >
-          <Icon name="zap" size={18} /> {t.product.buyNow}
-        </button>
+        {effectiveContactOnly ? (
+          <a
+            href={resolveContactUrl(p.contactUrl)}
+            target="_blank"
+            rel="noopener noreferrer"
+            className="miniapp-btn miniapp-btn--primary justify-center"
+          >
+            <Icon name="support" size={18} /> {t.product.contactOnly}
+          </a>
+        ) : canNotifyMe ? (
+          <NotifyMeButton productId={p.id} variantId={selected!.id} />
+        ) : (
+          <>
+            <button
+              type="button"
+              onClick={addToCart}
+              disabled={disabled}
+              className="miniapp-btn miniapp-btn--ghost"
+            >
+              <Icon name="cart" size={18} /> {t.product.addToCart}
+            </button>
+            <button
+              type="button"
+              onClick={() => { if (addToCart()) router.push('/dat-hang') }}
+              disabled={disabled}
+              className="miniapp-btn miniapp-btn--primary"
+            >
+              <Icon name="zap" size={18} /> {t.product.buyNow}
+            </button>
+          </>
+        )}
       </div>
     </MiniAppShell>
   )

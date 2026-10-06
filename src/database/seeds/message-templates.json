@@ -65,6 +65,12 @@
     "variables": ["productEmoji", "productName", "productId", "stockCount", "threshold", "stockUrlBlock"],
     "body": "⚠️ <b>Tồn kho thấp</b>\n\n{{productEmoji}} <b>{{productName}}</b>\n🆔 ID: <code>{{productId}}</code>\n📦 Còn lại: <b>{{stockCount}}</b> / ngưỡng {{threshold}}{{stockUrlBlock}}"
   },
+  "admin.out_of_stock": {
+    "channel": "admin",
+    "label": "Admin — sản phẩm hết hàng",
+    "variables": ["productEmoji", "productName", "productId", "variantLine", "variantName", "variantId", "targetType", "targetKey", "stockUrlBlock"],
+    "body": "🔴 <b>Hết hàng</b>\n\n{{productEmoji}} <b>{{productName}}</b>{{variantLine}}\n🆔 ID: <code>{{productId}}</code>\n📦 Còn lại: <b>0</b>{{stockUrlBlock}}"
+  },
   "group.order_card": {
     "channel": "group",
     "label": "Kênh đơn hàng — thẻ đơn",
@@ -79,15 +85,27 @@
   },
   "bot.backorder_wait": {
     "channel": "bot",
-    "label": "Bot — chờ giao thủ công (backorder)",
+    "label": "Bot — chờ đơn đặt trước (backorder)",
     "variables": ["orderCode", "waitMsg"],
     "body": "💳 Đã nhận thanh toán đơn #{{orderCode}}.\n{{waitMsg}}"
+  },
+  "bot.order_expired_short": {
+    "channel": "bot",
+    "label": "Bot — đơn hết hạn (ngắn)",
+    "variables": ["orderCode"],
+    "body": "Đơn #{{orderCode}} đã hết hạn."
+  },
+  "bot.order_cancelled_short": {
+    "channel": "bot",
+    "label": "Bot — đơn bị hủy (ngắn)",
+    "variables": ["orderCode"],
+    "body": "Đơn #{{orderCode}} đã bị hủy."
   },
   "bot.stock_replenished": {
     "channel": "bot",
     "label": "Bot — báo có hàng lại (gửi tất cả user)",
-    "variables": ["productEmoji", "productName", "stockCount"],
-    "body": "🔔 <b>{{productName}} đã có hàng!</b>\nSố lượng trong kho: <b>{{stockCount}}</b>"
+    "variables": ["productEmoji", "productName", "productPrice", "stockCount"],
+    "body": "🔔 <b>{{productName}} đã có hàng!</b>\nGiá: <b>{{productPrice}}</b>\nSố lượng trong kho: <b>{{stockCount}}</b>"
   },
   "bot.product_new": {
     "channel": "bot",
@@ -104,8 +122,8 @@
   "web.stock_replenished": {
     "channel": "web",
     "label": "Web — báo có hàng lại (thông báo trong Mini App)",
-    "variables": ["productEmoji", "productName", "stockCount"],
-    "body": "{{productEmoji}} {{productName}} đã có hàng trở lại. Còn {{stockCount}} sản phẩm — mở cửa hàng để đặt ngay."
+    "variables": ["productEmoji", "productName", "productPrice", "stockCount"],
+    "body": "{{productEmoji}} {{productName}} đã có hàng trở lại. Giá: {{productPrice}}. Còn {{stockCount}} sản phẩm."
   },
   "web.product_new": {
     "channel": "web",

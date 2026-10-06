@@ -8,10 +8,12 @@ import { Save, RotateCcw, Eye } from '@/lib/icons'
 const VARIABLE_HINTS: Record<string, string> = {
   orderCode: 'Mã đơn',
   productName: 'Tên sản phẩm',
+  changedAt: 'Thời điểm cập nhật tài khoản',
+  orderUrl: 'Link trang đơn hàng',
   quantity: 'Số lượng',
   keysBlock: 'Nội dung key (plain text, URL tự link)',
   usageBlock: 'Block hướng dẫn sản phẩm (HTML)',
-  waitMsg: 'Tin chờ giao thủ công (bot.backorder_wait)',
+  waitMsg: 'Tin chờ đơn đặt trước (bot.backorder_wait)',
   inputBlock: 'Thông tin KH nhập lúc đặt (admin only)',
   paymentCode: 'Mã thanh toán VietQR',
   total: 'Tổng tiền',
@@ -30,7 +32,7 @@ const PREVIEW_SAMPLES: Record<string, Record<string, string>> = {
     orderCode: '100226',
     productName: 'Tài khoản ChatGPT Plus',
     quantity: '1',
-    keysBlock: 'Tài khoản của bạn đã được gia hạn gói ChatGPT Plus Cá nhân 01 tháng Email: user@gmail.com | Nếu bạn cần hỗ trợ thêm vui lòng liên hệ: m.me/taikhoantenhat2 hoặc zalo.me/0896551786',
+    keysBlock: 'Tài khoản của bạn đã được gia hạn gói ChatGPT Plus Cá nhân 01 tháng Email: user@gmail.com | Nếu bạn cần hỗ trợ thêm vui lòng liên hệ: m.me/taikhoantenhat3 hoặc zalo.me/0896551786',
     usageBlock: '\n\n📘 Hướng dẫn:\nLiên hệ hỗ trợ nếu cần.',
   },
   'admin.backorder_paid': {
@@ -43,7 +45,13 @@ const PREVIEW_SAMPLES: Record<string, Record<string, string>> = {
   },
   'bot.backorder_wait': {
     orderCode: '100226',
-    waitMsg: 'Đơn này được giao thủ công, shop sẽ xử lý trong ít phút.',
+    waitMsg: 'Shop sẽ xử lý thủ công trong khoảng 30-60 phút, hoặc theo thời gian ghi trên sản phẩm. Nếu ngoài giờ, shop sẽ xử lý vào 9h30 sáng mai.',
+  },
+  'bot.2fa_order_updated': {
+    productName: 'ChatGPT Plus',
+    orderCode: '100226',
+    changedAt: '29/07/2026 19:30',
+    orderUrl: 'https://order.taikhoantenhat.com/example',
   },
 }
 

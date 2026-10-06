@@ -1,4 +1,5 @@
 const db = require('../database');
+const { countEffectiveLowStockBuckets } = require('./lowStockQuery');
 
 const statsService = {
   getDashboardStats() {
@@ -32,13 +33,7 @@ const statsService = {
       "SELECT COUNT(*) as c FROM transactions WHERE match_status = 'unmatched'"
     ).get().c;
 
-    // Low stock products
-    const lowStockCount = db.prepare(`
-      SELECT COUNT(*) as c FROM products p
-      WHERE p.is_active = 1 AND p.low_stock_threshold > 0
-        AND (SELECT COUNT(*) FROM stock s WHERE s.product_id = p.id AND s.is_sold = 0) <= p.low_stock_threshold
-        AND (SELECT COUNT(*) FROM stock s WHERE s.product_id = p.id AND s.is_sold = 0) > 0
-    `).get().c;
+    const lowStockCount = countEffectiveLowStockBuckets();
 
     return {
       totalOrders,

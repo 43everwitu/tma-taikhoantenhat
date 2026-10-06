@@ -10,6 +10,7 @@ import { SearchBox } from '../components/SearchBox'
 import { FilterBar, type FilterValue } from '../components/FilterBar'
 import { Icon } from '../components/Icon'
 import { SmartSearchCatalogResults } from '../components/SmartSearchCatalogResults'
+import { SocialLinksRow } from '../components/SocialLinks'
 import {
   buildSmartSearchPath,
   isSmartSearchQuery,
@@ -119,6 +120,8 @@ function AllProductsContent({ initialQuery }: { initialQuery: string }) {
           </>
         )}
       </div>
+
+      <SocialLinksRow />
     </MiniAppShell>
   )
 }

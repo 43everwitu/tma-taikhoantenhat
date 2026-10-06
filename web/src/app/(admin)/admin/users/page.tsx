@@ -17,6 +17,10 @@ interface UserRow {
   created_at: string | null
   order_count: number
   is_virtual?: boolean
+  account_status: 'active' | 'shadow_banned' | 'banned'
+  ban_reason: string | null
+  banned_at?: string | null
+  banned_by?: number | null
 }
 
 interface UsersResponse {
@@ -62,6 +66,7 @@ export default function UsersPage() {
   const [selectedTgid, setSelectedTgid] = useState<number | null>(null)
   const [adjustOpen, setAdjustOpen] = useState(false)
   const [adjustForm, setAdjustForm] = useState({ delta: 0, reason: '' })
+  const [statusForm, setStatusForm] = useState<{ status: UserRow['account_status']; reason: string }>({ status: 'active', reason: '' })
 
   useEffect(() => {
     const t = setTimeout(() => setDebouncedSearch(search), 300)
@@ -95,6 +100,14 @@ export default function UsersPage() {
     },
   })
 
+  const statusMutation = useMutation({
+    mutationFn: ({ tgid, body }: { tgid: number; body: { status: UserRow['account_status']; reason: string } }) =>
+      api.patch(`/admin/users/${tgid}/status`, body),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['admin', 'users'] })
+    },
+  })
+
   const users = data?.data.users ?? []
   const stats = data?.data.stats
   const meta = data?.meta as UsersMeta | undefined
@@ -104,6 +117,24 @@ export default function UsersPage() {
     setSelectedTgid(u.telegram_id)
     setAdjustOpen(false)
     setAdjustForm({ delta: 0, reason: '' })
+    setStatusForm({ status: u.account_status || 'active', reason: u.ban_reason || '' })
+  }
+
+  function openBanDetail(u: UserRow) {
+    setSelectedTgid(u.telegram_id)
+    setAdjustOpen(false)
+    setAdjustForm({ delta: 0, reason: '' })
+    setStatusForm({ status: 'banned', reason: u.ban_reason || '' })
+  }
+
+  function statusBadge(status: UserRow['account_status']) {
+    if (status === 'banned') {
+      return <span className="clay-pill text-[10px] px-2 py-0.5" style={{ background: 'var(--color-pomegranate-100)', color: 'var(--color-pomegranate-700)' }}>Đã ban</span>
+    }
+    if (status === 'shadow_banned') {
+      return <span className="clay-pill text-[10px] px-2 py-0.5" style={{ background: 'var(--color-lemon-100)', color: 'var(--color-lemon-700)' }}>Duyệt tay</span>
+    }
+    return null
   }
 
   const columns: Column<UserRow>[] = [
@@ -118,6 +149,7 @@ export default function UsersPage() {
                 ảo
               </span>
             )}
+            {statusBadge(u.account_status)}
           </div>
           <div className="text-xs text-clay-silver">
             {u.username ? `@${u.username}` : `ID ${u.telegram_id}`}
@@ -137,15 +169,34 @@ export default function UsersPage() {
       header: 'Thao tác',
       className: 'text-center',
       cell: (u) => (
-        <a
-          href={buildTelegramContactUrl({ username: u.username, telegramId: u.telegram_id })}
-          target="_blank"
-          rel="noreferrer"
-          title={telegramContactTitle({ username: u.username, telegramId: u.telegram_id })}
-          className="clay-btn text-xs py-1 px-2"
-        >
-          Nhắn tin
-        </a>
+        <div className="flex items-center justify-center gap-2">
+          <button
+            type="button"
+            onClick={() => openDetail(u)}
+            className="clay-btn text-xs py-1 px-2"
+          >
+            Chi tiết
+          </button>
+          <a
+            href={buildTelegramContactUrl({ username: u.username, telegramId: u.telegram_id })}
+            target="_blank"
+            rel="noreferrer"
+            title={telegramContactTitle({ username: u.username, telegramId: u.telegram_id })}
+            className="clay-btn text-xs py-1 px-2"
+          >
+            Nhắn tin
+          </a>
+          {!u.is_virtual && (
+            <button
+              type="button"
+              onClick={() => openBanDetail(u)}
+              className="clay-btn text-xs py-1 px-2"
+              style={{ color: 'var(--color-pomegranate-700)' }}
+            >
+              Ban
+            </button>
+          )}
+        </div>
       ),
     },
   ]
@@ -153,6 +204,12 @@ export default function UsersPage() {
   function closeDetail() {
     setSelectedTgid(null)
     setAdjustOpen(false)
+  }
+
+  function submitStatus(e: React.FormEvent) {
+    e.preventDefault()
+    if (!selectedTgid) return
+    statusMutation.mutate({ tgid: selectedTgid, body: statusForm })
   }
 
   function submitAdjust(e: React.FormEvent) {
@@ -254,6 +311,10 @@ export default function UsersPage() {
                     {detailData.data.user.username ? `@${detailData.data.user.username}` : 'Không có username'}
                   </div>
                   <div className="font-mono text-xs text-clay-silver mt-1">ID {detailData.data.user.telegram_id}</div>
+                  <div className="mt-2 flex items-center gap-2">
+                    <span className="text-xs text-clay-silver">Trạng thái</span>
+                    {statusBadge(detailData.data.user.account_status) || <span className="text-xs text-clay-charcoal">Hoạt động</span>}
+                  </div>
                   <div className="mt-3 text-2xl clay-display">
                     💼 {formatPrice(detailData.data.user.balance)}
                   </div>
@@ -266,6 +327,40 @@ export default function UsersPage() {
                     </button>
                   )}
                 </div>
+
+                {!detailData.data.user.is_virtual && (
+                  <form onSubmit={submitStatus} className="clay-card-dashed p-4 space-y-3">
+                    <h3 className="font-semibold">Kiểm duyệt</h3>
+                    <div className="grid gap-3 sm:grid-cols-[180px_1fr]">
+                      <select
+                        value={statusForm.status}
+                        onChange={(e) => setStatusForm(f => ({ ...f, status: e.target.value as UserRow['account_status'] }))}
+                        className="clay-input text-sm"
+                      >
+                        <option value="active">Hoạt động</option>
+                        <option value="shadow_banned">Duyệt tay đơn mới</option>
+                        <option value="banned">Chặn bot/TMA</option>
+                      </select>
+                      <input
+                        type="text"
+                        value={statusForm.reason}
+                        onChange={(e) => setStatusForm(f => ({ ...f, reason: e.target.value }))}
+                        placeholder="Lý do"
+                        className="clay-input text-sm"
+                        maxLength={500}
+                      />
+                    </div>
+                    <div className="flex justify-end">
+                      <button
+                        type="submit"
+                        disabled={statusMutation.isPending}
+                        className="clay-btn clay-btn--ink text-sm disabled:opacity-50"
+                      >
+                        {statusMutation.isPending ? 'Đang lưu...' : 'Lưu trạng thái'}
+                      </button>
+                    </div>
+                  </form>
+                )}
 
                 {adjustOpen && !detailData.data.user.is_virtual && (
                   <form onSubmit={submitAdjust} className="clay-card-dashed p-4 space-y-3">

@@ -14,7 +14,7 @@ const body = z.object({
   maxDiscount: z.number().int().min(0).nullable().optional(),
   minOrder: z.number().int().min(0).optional(),
   usageLimit: z.number().int().min(0).nullable().optional(),
-  perUserLimit: z.number().int().min(0).nullable().optional(),
+  perUserLimit: z.number().int().min(1).nullable().optional(),
   startsAt: z.string().nullable().optional(),
   endsAt: z.string().nullable().optional(),
   isActive: z.boolean().optional(),

@@ -97,6 +97,7 @@ const bot = createBot();
 // ============================================================
 let paymentPoller = null;
 let stopTwofaSync = () => {};
+let stopNfshopFulfillment = () => {};
 
 function getPaymentPoller() {
   if (!paymentPoller) {
@@ -119,8 +120,22 @@ app.set('bot', bot);
 // Telegram) used to be permanent — no retry — leaving the process up with
 // the Express API healthy but every bot command silently unanswered until
 // the next manual restart. Retry with backoff instead.
+// getUpdates only delivers update types added after the original Bot API
+// by default-excluding them (same rule chat_member has always followed) —
+// business_message/business_connection need explicit opt-in here, or the
+// Telegram Business forwarder never fires. If a future handler needs
+// another update type, add it to this list too.
 function launchBot(attempt = 1) {
-  bot.launch().catch((err) => {
+  bot.launch({
+    allowedUpdates: [
+      'message',
+      'callback_query',
+      'business_connection',
+      'business_message',
+      'edited_business_message',
+      'deleted_business_messages',
+    ],
+  }).catch((err) => {
     console.error(`⚠️ Bot launch error (attempt ${attempt}):`, err.message || err);
     const delayMs = Math.min(30_000, 2 ** attempt * 1000);
     setTimeout(() => launchBot(attempt + 1), delayMs);
@@ -166,6 +181,8 @@ async function start() {
   require('./services/orderChannelService').init(bot);
   require('./services/keyExpiryReminderService').start(bot);
   console.log('⏰ Key expiry reminder armed (daily 09:00 ICT)');
+  stopNfshopFulfillment = require('./services/nfshopFulfillmentService').start({ bot });
+  console.log('🍿 nfshop fulfilment armed (event + 3 min retry sweep)');
   stopTwofaSync = require('./services/twofaBindingService').startRetryWorker({
     intervalMs: config.TWOFA_SYNC_INTERVAL_MS,
   });
@@ -177,11 +194,14 @@ async function start() {
   app.locals.notificationService = notificationService;
   notificationService.startLowStockMonitor();
 
-  // Sweep stale expired orders (>24h) on every boot so the table doesn't grow
-  // unbounded between deploys. Cheap delete on an indexed status column.
+  // Sweep stale expired orders and old trash on every boot so the table
+  // doesn't grow unbounded between deploys. Cheap deletes on indexed columns.
   try {
-    const n = require('./services/orderService').cleanupExpiredOrders(24);
-    if (n > 0) console.log(`🧹 Startup: cleaned ${n} expired orders`);
+    const orderService = require('./services/orderService');
+    const expired = orderService.cleanupExpiredOrders(24);
+    const deleted = orderService.cleanupDeletedOrders(30);
+    if (expired > 0) console.log(`🧹 Startup: cleaned ${expired} expired orders`);
+    if (deleted > 0) console.log(`🧹 Startup: purged ${deleted} deleted orders`);
   } catch (e) { console.error('Startup cleanup error:', e.message); }
 
   // Initialize payment poller singleton (so bot handlers can access it)
@@ -189,11 +209,12 @@ async function start() {
     getPaymentPoller();
     console.log(`💳 Auto-payment enabled (poll interval: ${config.PAYMENT_POLL_INTERVAL}ms)`);
 
-    // Check for pending orders on startup — wake poller if any exist
+    // Check for pending/recoverable orders on startup — wake poller if any exist
     const orderService = require('./services/orderService');
     const pending = orderService.getActivePending();
-    if (pending.length > 0) {
-      console.log(`💳 ${pending.length} pending orders found, starting payment poller...`);
+    const recentlyExpired = orderService.getRecentlyExpired(24);
+    if (pending.length + recentlyExpired.length > 0) {
+      console.log(`💳 ${pending.length} pending + ${recentlyExpired.length} recoverable expired orders found, starting payment poller...`);
       paymentPoller.ensureRunning();
     }
   } else {
@@ -221,15 +242,18 @@ process.on('uncaughtException', (err) => {
 });
 
 // Graceful shutdown
+const { safeBotStop } = require('./utils/safeBotStop');
 process.once('SIGINT', () => {
   stopTwofaSync();
+  stopNfshopFulfillment();
   if (paymentPoller) paymentPoller.stop();
-  bot.stop('SIGINT');
+  safeBotStop(bot, 'SIGINT');
 });
 process.once('SIGTERM', () => {
   stopTwofaSync();
+  stopNfshopFulfillment();
   if (paymentPoller) paymentPoller.stop();
-  bot.stop('SIGTERM');
+  safeBotStop(bot, 'SIGTERM');
 });
 
 module.exports = { app, bot, getPaymentPoller };

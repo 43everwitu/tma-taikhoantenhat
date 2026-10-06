@@ -14,7 +14,7 @@ const router = Router();
 
 const shopInfoStmt = db.prepare(`
   SELECT key, value FROM settings
-  WHERE key IN ('shop_name', 'support_contact', 'support_url')
+  WHERE key IN ('shop_name', 'support_contact', 'support_url', 'social_telegram', 'social_zalo', 'social_facebook')
 `);
 const productBySlugStmt = db.prepare(`
   ${productSelectSql()}
@@ -103,6 +103,9 @@ router.get('/shop/info', (req, res) => {
       shopName: settings.shop_name || config.SHOP_NAME,
       supportContact: settings.support_contact || config.SUPPORT_CONTACT,
       supportUrl: settings.support_url || '',
+      socialTelegram: settings.social_telegram || '',
+      socialZalo: settings.social_zalo || '',
+      socialFacebook: settings.social_facebook || '',
     },
   });
 });

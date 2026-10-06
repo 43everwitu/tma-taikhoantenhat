@@ -4,6 +4,7 @@ const { z } = require('zod');
 const db = require('../../../database');
 const variantService = require('../../../services/variantService');
 const auditService = require('../../../services/auditService');
+const { cacheImageUrl } = require('../../../services/imageCacheService');
 const { validate } = require('../../middleware/validate');
 
 const router = Router({ mergeParams: true });
@@ -28,6 +29,10 @@ const variantBody = z.object({
   imageUrl: z.string().max(500).nullable().optional(),
   isBackorder: z.boolean().optional(),
   defaultDurationDays: z.number().int().min(1).max(36500).nullable().optional(),
+  contactOnly: z.boolean().nullable().optional(),
+  nfshopPackageId: z.number().int().positive().nullable().optional(),
+  nfshopKind: z.enum(['monthly', 'links']).nullable().optional(),
+  nfshopValidDays: z.number().int().min(1).max(365).nullable().optional(),
 });
 
 const variantPatch = variantBody.partial().extend({
@@ -59,6 +64,10 @@ function shapeVariant(v) {
     imageUrl: v.image_url || null,
     isBackorder: !!v.is_backorder,
     defaultDurationDays: v.default_duration_days ?? null,
+    contactOnly: v.contact_only == null ? null : !!v.contact_only,
+    nfshopPackageId: v.nfshop_package_id ?? null,
+    nfshopKind: v.nfshop_kind ?? null,
+    nfshopValidDays: v.nfshop_valid_days ?? null,
     stock: variantService.countAvailableStock(db, v.product_id, v.id),
   };
 }
@@ -70,19 +79,27 @@ router.get('/', (req, res) => {
   res.json({ success: true, data: rows.map(shapeVariant) });
 });
 
-router.post('/', validate(variantBody), (req, res) => {
+router.post('/', validate(variantBody), async (req, res) => {
   const productId = parseInt(req.params.productId);
   const product = db.prepare('SELECT id FROM products WHERE id = ?').get(productId);
   if (!product) return res.status(404).json({ success: false, error: { code: 'PRODUCT_NOT_FOUND' } });
-  const { id } = variantService.create(db, { productId, ...req.validated });
+  const { id } = variantService.create(db, {
+    productId,
+    ...req.validated,
+    imageUrl: await cacheImageUrl(req.validated.imageUrl),
+  });
   auditService.log(req.admin?.adminId, 'variant.create', 'variant', id, { productId }, req.ip);
   res.status(201).json({ success: true, data: { id } });
 });
 
-router.put('/:id', validate(variantPatch), (req, res) => {
+router.put('/:id', validate(variantPatch), async (req, res) => {
   const productId = parseInt(req.params.productId);
   const variantId = parseInt(req.params.id);
-  const r = variantService.update(db, productId, variantId, req.validated);
+  const fields = { ...req.validated };
+  if (fields.imageUrl !== undefined) {
+    fields.imageUrl = await cacheImageUrl(fields.imageUrl);
+  }
+  const r = variantService.update(db, productId, variantId, fields);
   if (r.changes === 0) return res.status(404).json({ success: false, error: { code: 'NOT_FOUND' } });
   auditService.log(req.admin?.adminId, 'variant.update', 'variant', variantId, { productId, fields: Object.keys(req.validated) }, req.ip);
   res.json({ success: true });

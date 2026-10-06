@@ -73,4 +73,27 @@ module.exports = {
       1,
       parseInt(process.env.RAG_BOT_FORWARD_TIMEOUT_SECONDS, 10) || 10,
     ),
+
+    // Forward Telegram Business messages (customer -> connected personal
+    // account) to RAG-chat-bot. Independent from RAG_BOT_FORWARD_ENABLED,
+    // which gates direct messages to this bot itself — a separate channel.
+    RAG_BUSINESS_FORWARD_ENABLED: process.env.RAG_BUSINESS_FORWARD_ENABLED === 'true',
+
+    // Customers often split one thought across several rapid messages;
+    // businessForward.js buffers them per chat and forwards once as a
+    // combined turn after this many quiet ms.
+    RAG_BUSINESS_DEBOUNCE_MS: Math.max(
+      0,
+      parseInt(process.env.RAG_BUSINESS_DEBOUNCE_MS, 10) || 4000,
+    ),
+
+    // Called once a RAG-created order (source ending "_rag") is delivered —
+    // RAG owns notifying that customer instead of this service's own bot,
+    // since RAG knows the actual channel/conversation the order came from.
+    RAG_ORDERS_DELIVERED_URL: process.env.RAG_ORDERS_DELIVERED_URL || 'http://localhost:3100/orders/delivered',
+
+    // nfshop (Netflix cookies fulfilment) integration API. Remote host: use the real https URL.
+    NFSHOP_API_URL: process.env.NFSHOP_API_URL || '',
+    NFSHOP_API_KEY: process.env.NFSHOP_API_KEY || '',
+    NFSHOP_TIMEOUT_MS: Math.max(1000, parseInt(process.env.NFSHOP_TIMEOUT_MS, 10) || 10000),
 };

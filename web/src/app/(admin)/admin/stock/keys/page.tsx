@@ -5,7 +5,7 @@ import { useEffect, useMemo, useState } from 'react'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { api } from '@/lib/api'
 import { formatDate } from '@/lib/utils'
-import { Copy, GripVertical, Pencil, Search, Trash2 } from '@/lib/icons'
+import { Copy, GripVertical, Pencil, Search, Trash2, X } from '@/lib/icons'
 import { ResponsiveTable, Column } from '@/components/ResponsiveTable'
 import { useToast } from '@/components/Toast'
 import { QuickAddKeysModal } from '../QuickAddKeysModal'
@@ -85,6 +85,11 @@ export default function AllStockKeysPage() {
   const [bulkVariantId, setBulkVariantId] = useState('')
   const [bulkDurationDays, setBulkDurationDays] = useState('')
   const [quickAddOpen, setQuickAddOpen] = useState(false)
+  const [confirmState, setConfirmState] = useState<{ message: string; onConfirm: () => void } | null>(null)
+
+  function askConfirm(message: string, onConfirm: () => void) {
+    setConfirmState({ message, onConfirm })
+  }
   const limit = 50
 
   useEffect(() => {
@@ -312,7 +317,7 @@ export default function AllStockKeysPage() {
             const message = row.sold
               ? 'Xoá key đã bán khỏi kho? Đơn đã giao vẫn giữ snapshot key cũ.'
               : 'Xoá key này?'
-            if (confirm(message)) deleteMutation.mutate(row)
+            askConfirm(message, () => deleteMutation.mutate(row))
           }}
           disabled={deleteMutation.isPending}
           className="clay-btn clay-btn--pomegranate text-xs disabled:opacity-50 flex items-center gap-1"
@@ -558,7 +563,7 @@ export default function AllStockKeysPage() {
           </button>
           <button
             onClick={() => {
-              if (confirm(`Xoá ${selectedIds.size} key đã chọn?`)) bulkDeleteMutation.mutate()
+              askConfirm(`Xoá ${selectedIds.size} key đã chọn?`, () => bulkDeleteMutation.mutate())
             }}
             disabled={bulkDeleteMutation.isPending}
             className="clay-btn clay-btn--pomegranate text-sm disabled:opacity-50"
@@ -601,7 +606,7 @@ export default function AllStockKeysPage() {
                       onCopy={() => copyKey(row.content)}
                       onEdit={() => openEdit(row)}
                       onDelete={() => {
-                        if (confirm('Xoá key này?')) deleteMutation.mutate(row)
+                        askConfirm('Xoá key này?', () => deleteMutation.mutate(row))
                       }}
                     />
                   ))}
@@ -668,8 +673,41 @@ export default function AllStockKeysPage() {
         />
       )}
 
+      {confirmState && (
+        <div
+          className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4"
+          onClick={() => setConfirmState(null)}
+          role="dialog"
+          aria-modal="true"
+          aria-label="Xác nhận"
+        >
+          <div className="clay-card max-w-sm w-full p-5" onClick={(e) => e.stopPropagation()}>
+            <div className="flex items-center justify-between mb-3">
+              <h2 className="text-sm font-semibold">Xác nhận</h2>
+              <button onClick={() => setConfirmState(null)} className="clay-btn p-1.5" aria-label="Đóng">
+                <X size={14} />
+              </button>
+            </div>
+            <p className="text-sm text-clay-charcoal mb-4">{confirmState.message}</p>
+            <div className="flex justify-end gap-2">
+              <button type="button" onClick={() => setConfirmState(null)} className="clay-btn text-sm">Huỷ</button>
+              <button
+                type="button"
+                onClick={() => {
+                  confirmState.onConfirm()
+                  setConfirmState(null)
+                }}
+                className="clay-btn clay-btn--pomegranate text-sm"
+              >
+                Xoá
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
       {editingRow && editDraft && (
-        <div className="fixed inset-0 z-50 bg-black/40 backdrop-blur-sm flex items-center justify-center p-4" onClick={closeEdit}>
+        <div className="fixed inset-0 z-50 bg-black/40 backdrop-blur-sm flex items-center justify-center p-4">
           <form
             onSubmit={(e) => {
               e.preventDefault()
@@ -679,7 +717,7 @@ export default function AllStockKeysPage() {
             onClick={(e) => e.stopPropagation()}
             className="bg-white rounded-2xl shadow-xl w-full max-w-2xl max-h-[90vh] overflow-y-auto p-5 space-y-4"
           >
-            <div className="flex items-start justify-between gap-3">
+            <div className="sticky top-0 z-10 -mx-5 -mt-5 px-5 pt-5 pb-3 bg-white rounded-t-2xl border-b border-gray-100 flex items-start justify-between gap-3">
               <div>
                 <h2 className="text-lg font-semibold">Sửa key #{editingRow.id}</h2>
                 <p className="text-xs text-clay-charcoal">

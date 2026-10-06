@@ -1,0 +1,113 @@
+<style>
+  .grid3 { display:grid; grid-template-columns:repeat(3,minmax(0,1fr)); gap:16px; align-items:stretch; }
+  .choice-card { border:1px solid #e8dfcf; border-radius:14px; background:#fffdf8; overflow:hidden; cursor:pointer; box-shadow:0 10px 28px rgba(42,33,18,.08); }
+  .choice-card.selected { outline:3px solid #ffc200; border-color:#ffc200; }
+  .head { padding:14px 16px; border-bottom:1px solid #eee2cf; display:flex; justify-content:space-between; gap:10px; align-items:center; }
+  .head strong { color:#1c222b; font-size:15px; }
+  .badge { font-size:11px; padding:4px 8px; border-radius:999px; background:#f5ead6; color:#5e503e; white-space:nowrap; }
+  .screen { padding:13px; min-height:365px; background:#faf7ef; }
+  .filters { display:grid; grid-template-columns:1fr 90px 90px 88px; gap:7px; margin-bottom:9px; }
+  .input { height:26px; border-radius:8px; background:#fff; border:1px solid #eadfcc; }
+  .table { background:#fff; border:1px solid #ebdfcc; border-radius:10px; overflow:hidden; }
+  .row, .thead { display:grid; align-items:start; gap:8px; padding:8px 9px; border-bottom:1px solid #f0e8da; }
+  .thead { background:#eee8dc; color:#685d4c; font-size:8.5px; text-transform:uppercase; font-weight:800; }
+  .row { font-size:10px; color:#242424; }
+  .row:last-child { border-bottom:0; }
+  .key { display:block; font-family:ui-monospace,SFMono-Regular,Menlo,monospace; background:#f8f5ee; border:1px solid #eee3d2; border-radius:8px; padding:6px; line-height:1.35; user-select:text; }
+  .copy { display:inline-flex; width:20px; height:20px; align-items:center; justify-content:center; border-radius:7px; background:#fff; border:1px solid #ddd1bd; font-size:12px; margin-left:4px; }
+  .pill { display:inline-block; border-radius:999px; padding:4px 7px; font-size:9px; background:#9be3b1; color:#165c2c; font-weight:800; }
+  .pill.sold { background:#e5dccf; color:#5f5548; }
+  .meta { color:#706654; font-size:9px; line-height:1.45; }
+  .action { display:inline-block; border-radius:999px; border:1px solid #ddd4c4; padding:4px 7px; background:#fff; font-size:9px; margin:1px; }
+  .danger { background:#ff7181; color:white; border-color:#ff7181; }
+  .tabs { display:flex; gap:6px; margin-bottom:9px; }
+  .tab { padding:6px 9px; border:1px solid #e0d2bc; border-radius:999px; background:#fff; font-size:10px; color:#5e503e; }
+  .tab.active { background:#ffc200; border-color:#ffc200; color:#1c222b; font-weight:800; }
+  .note { padding:12px 16px 16px; color:#5c5344; font-size:13px; line-height:1.45; }
+  @media (max-width: 980px) { .grid3 { grid-template-columns:1fr; } }
+</style>
+
+<h2>Chọn cách tối ưu UI khi filter Còn hàng / Đã bán</h2>
+<p class="subtitle">Vấn đề hiện tại: khi lọc “Còn hàng”, cột “Bán lúc” và “Đơn bán” toàn dấu gạch ngang nên làm bảng rộng và nhiễu.</p>
+
+<div class="grid3">
+  <div class="choice-card" data-choice="a" onclick="toggleSelect(this)">
+    <div class="head">
+      <strong>A. Dynamic columns theo filter</strong>
+      <span class="badge">Khuyến nghị</span>
+    </div>
+    <div class="screen">
+      <div class="filters"><div class="input"></div><div class="input"></div><div class="input"></div><div class="input"></div></div>
+      <div class="tabs"><span class="tab active">Còn hàng</span><span class="tab">Đã bán</span><span class="tab">Tất cả</span></div>
+      <div class="table">
+        <div class="thead" style="grid-template-columns:42px 1.8fr 1fr 92px 86px;">ID • Key • Sản phẩm • Thêm lúc • Thao tác</div>
+        <div class="row" style="grid-template-columns:42px 1.8fr 1fr 92px 86px;">
+          <span>#5149</span>
+          <span><span class="key">Email: tvongbat... | Password: 123123</span><span class="copy">⧉</span></span>
+          <span>Netflix Extra<br><span class="meta">1 tháng</span></span>
+          <span class="meta">07/07<br>16:52</span>
+          <span><span class="action">Sửa</span><span class="action danger">Xóa</span></span>
+        </div>
+        <div class="row" style="grid-template-columns:42px 1.8fr 1fr 92px 86px;">
+          <span>#5130</span>
+          <span><span class="key">SuperGrok cấp riêng 7 ngày...</span><span class="copy">⧉</span></span>
+          <span>SuperGrok<br><span class="meta">7 ngày</span></span>
+          <span class="meta">07/07<br>15:40</span>
+          <span><span class="action">Sửa</span><span class="action danger">Xóa</span></span>
+        </div>
+      </div>
+      <p class="meta" style="margin-top:9px">Khi chọn Đã bán/Tất cả, bảng tự thêm cột Bán lúc + Đơn/khách.</p>
+    </div>
+    <div class="note">Sạch nhất cho workflow hiện tại. Còn hàng tập trung vào tồn kho; đã bán mới hiện thông tin bán.</div>
+  </div>
+
+  <div class="choice-card" data-choice="b" onclick="toggleSelect(this)">
+    <div class="head">
+      <strong>B. Tab riêng cho Còn hàng / Đã bán</strong>
+      <span class="badge">Rõ ngữ cảnh</span>
+    </div>
+    <div class="screen">
+      <div class="filters"><div class="input"></div><div class="input"></div><div class="input"></div><div class="input"></div></div>
+      <div class="tabs"><span class="tab active">Kho còn</span><span class="tab">Lịch sử bán</span><span class="tab">Tất cả</span></div>
+      <div class="table">
+        <div class="thead" style="grid-template-columns:42px 1.4fr .9fr 90px 80px;">ID • Key • Sản phẩm • Tạo lúc • Action</div>
+        <div class="row" style="grid-template-columns:42px 1.4fr .9fr 90px 80px;">
+          <span>#5149</span><span class="key">Email: tvongbat...</span><span>Netflix</span><span class="meta">07/07 16:52</span><span class="action">Sửa</span>
+        </div>
+      </div>
+      <div class="table" style="margin-top:10px">
+        <div class="thead" style="grid-template-columns:42px 1.2fr .8fr 92px 1fr;">ID • Key • Sản phẩm • Bán lúc • Đơn/khách</div>
+        <div class="row" style="grid-template-columns:42px 1.2fr .8fr 92px 1fr;">
+          <span>#5131</span><span class="key">Claude Pro...</span><span>Claude</span><span class="meta">07/07 16:53</span><span>#1556668931<br>Vetmz</span>
+        </div>
+      </div>
+    </div>
+    <div class="note">Rõ về mặt mental model, nhưng thay đổi filter thành tab và có thể nhiều hơn scope cần thiết.</div>
+  </div>
+
+  <div class="choice-card" data-choice="c" onclick="toggleSelect(this)">
+    <div class="head">
+      <strong>C. Một bảng cố định, ẩn nội dung rỗng</strong>
+      <span class="badge">Ít thay đổi</span>
+    </div>
+    <div class="screen">
+      <div class="filters"><div class="input"></div><div class="input"></div><div class="input"></div><div class="input"></div></div>
+      <div class="table">
+        <div class="thead" style="grid-template-columns:42px 1.3fr .9fr 105px 105px 82px;">ID • Key • Sản phẩm • Thời gian • Giao dịch • Action</div>
+        <div class="row" style="grid-template-columns:42px 1.3fr .9fr 105px 105px 82px;">
+          <span>#5149</span><span class="key">Email: tvongbat...</span><span>Netflix</span>
+          <span class="meta">Tạo 07/07 16:52</span>
+          <span class="meta">Còn hàng</span>
+          <span><span class="action">Sửa</span></span>
+        </div>
+        <div class="row" style="grid-template-columns:42px 1.3fr .9fr 105px 105px 82px;">
+          <span>#5131</span><span class="key">Claude Pro...</span><span>Claude</span>
+          <span class="meta">Tạo -<br>Bán 07/07 16:53</span>
+          <span class="meta">#1556668931<br>Vetmz</span>
+          <span><span class="action">Sửa</span></span>
+        </div>
+      </div>
+    </div>
+    <div class="note">Ít code hơn nhưng khi lọc còn hàng vẫn còn cột giao dịch, chỉ đổi thành “Còn hàng”. Đỡ rỗng nhưng chưa gọn.</div>
+  </div>
+</div>

@@ -1,10 +1,12 @@
 'use client'
 
 import { useEffect, useState } from 'react'
+import Link from 'next/link'
 import { useParams } from 'next/navigation'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { apiFetch } from '@/lib/miniappApi'
-import { extractUrls, linkifyText, renderLabeledText, shortenUrl } from '@/lib/renderLabeledText'
+import { extractUrls, renderLabeledText, shortenUrl } from '@/lib/renderLabeledText'
+import { getBackorderPaidMessage } from '@/lib/backorderWaitMessage'
 import { RichText } from '@/components/RichText'
 import { MiniAppShell } from '../../components/MiniAppShell'
 import { QrPanel } from '../../components/QrPanel'
@@ -13,14 +15,29 @@ import { StatusBadge } from '../../components/StatusBadge'
 import { formatPrice } from '@/lib/utils'
 import { t } from '@/i18n/vi'
 
+type KeyLifecycleStatus = 'active' | 'expiring_soon' | 'expired'
+interface KeyLifecycle {
+  status: KeyLifecycleStatus
+  statusLabel: string
+  startDate: string
+  expiryDate: string
+  remainingDays: number
+  durationDays: number
+  progressPercent: number
+  renewalReminderSent: boolean
+  renewUrl: string | null
+  orderUrl: string
+}
+
 interface OrderStatus {
   id: string
   status: 'pending' | 'paid' | 'delivered' | 'cancelled' | 'expired'
   totalPrice: number; paymentCode: string; qrUrl: string; bankName: string; expiresAt: string
   accountNumber?: string; accountName?: string
-  productName: string; quantity: number
+  productName: string; variantName?: string | null; quantity: number
   isBackorder?: boolean
   backorderWaitMode?: 'business_hours' | 'after_hours'
+  keyLifecycle?: KeyLifecycle | null
   accounts?: string[]; usageInstructions?: string | null
 }
 
@@ -61,22 +78,14 @@ export default function OrderDetailPage() {
       </MiniAppShell>
     )
   }
+  const backorderPaidMessage = order.isBackorder ? getBackorderPaidMessage() : ''
 
   return (
     <MiniAppShell title={`${t.order.title} #${order.id}`}>
-      <div className="rounded-2xl p-4 mb-3" style={{ background: 'var(--tg-bg-2)' }}>
-        <div className="flex items-start justify-between gap-3 mb-3">
-          <div className="min-w-0">
-            <p className="text-base font-semibold leading-tight line-clamp-2">{order.productName}</p>
-            <p className="text-xs opacity-60 mt-0.5">Số lượng: {order.quantity}</p>
-          </div>
-          <StatusBadge status={order.status} />
-        </div>
-        <div className="flex items-baseline justify-between border-t pt-3" style={{ borderColor: 'color-mix(in srgb, var(--brand-ink) 8%, transparent)' }}>
-          <span className="text-xs opacity-60">Tổng thanh toán</span>
-          <span className="text-xl font-bold">{formatPrice(order.totalPrice)}</span>
-        </div>
-      </div>
+      <OrderSummaryCard
+        order={order}
+        hasDeliveredKeys={order.status === 'delivered' && !!order.accounts?.length}
+      />
 
       {order.status === 'pending' && (
         <QrPanel
@@ -96,25 +105,24 @@ export default function OrderDetailPage() {
             <Icon name="clock" size={22} strokeWidth={1.5} />
           </div>
           {order.isBackorder ? (
-            order.backorderWaitMode === 'after_hours' ? (
-              <>
-                <p className="text-sm font-medium">Đơn hàng sẽ được xử lý lúc 9:00 sáng.</p>
-                <p className="text-xs opacity-80 mt-1">Shop sẽ thông báo ngay khi đơn hoàn thành.</p>
-              </>
-            ) : (
-              <>
-                <p className="text-sm font-medium">Thanh toán đã được ghi nhận.</p>
-                <p className="text-xs opacity-80 mt-1">
-                  Shop sẽ xử lý đơn hàng và thông báo khi hoàn thành. Thời gian dự kiến: 30-60 phút, hoặc theo mô tả sản phẩm.
-                </p>
-                <p className="text-xs opacity-80 mt-2">
-                  Cần hỗ trợ? Liên hệ{' '}
-                  <a href="https://t.me/taikhoantenhat" target="_blank" rel="noopener noreferrer" className="font-semibold underline underline-offset-2">
-                    @taikhoantenhat
-                  </a>
-                </p>
-              </>
-            )
+            <>
+              <p className="text-sm font-medium">Thanh toán đã được ghi nhận.</p>
+              <p className="text-xs opacity-80 mt-1">{backorderPaidMessage}</p>
+              <p className="text-xs opacity-80 mt-2">
+                Cần hỗ trợ? Liên hệ{' '}
+                <a href="https://t.me/taikhoantenhat" target="_blank" rel="noopener noreferrer" className="font-semibold underline underline-offset-2">
+                  Telegram
+                </a>
+                {' · '}
+                <a href="https://m.me/taikhoantenhat3" target="_blank" rel="noopener noreferrer" className="font-semibold underline underline-offset-2">
+                  Messenger
+                </a>
+                {' · '}
+                <a href="https://zalo.me/0896551786" target="_blank" rel="noopener noreferrer" className="font-semibold underline underline-offset-2">
+                  Zalo
+                </a>
+              </p>
+            </>
           ) : (
             <>
               <p className="text-sm font-medium">Đang xử lý đơn hàng…</p>
@@ -125,7 +133,7 @@ export default function OrderDetailPage() {
       )}
 
       {order.status === 'delivered' && order.accounts && order.accounts.length > 0 && (
-        <section className="mt-1">
+        <section id="delivered-keys" className="mt-1 scroll-mt-24">
           <div className="miniapp-section-title text-base">
             <span>🔑 {t.order.keysTitle}</span>
           </div>
@@ -143,6 +151,80 @@ export default function OrderDetailPage() {
         </section>
       )}
     </MiniAppShell>
+  )
+}
+
+function OrderSummaryCard({
+  order,
+  hasDeliveredKeys,
+}: {
+  order: OrderStatus
+  hasDeliveredKeys: boolean
+}) {
+  const lifecycle = order.status === 'delivered' ? order.keyLifecycle : null
+  const remainingText = lifecycle
+    ? lifecycle.status === 'expired'
+      ? `Quá hạn ${Math.abs(lifecycle.remainingDays)} ngày`
+      : `Còn ${lifecycle.remainingDays} ngày`
+    : ''
+  const productMeta = order.variantName
+    ? `${order.variantName} - Số lượng: ${order.quantity}`
+    : `Số lượng: ${order.quantity}`
+  const ctaLabel = lifecycle?.renewalReminderSent ? 'Gia hạn ngay' : 'Mua lại'
+
+  return (
+    <section className="rounded-2xl p-4 mb-3" style={{ background: 'var(--tg-bg-2)' }}>
+      <div className="flex items-start justify-between gap-3 mb-3">
+        <div className="min-w-0">
+          <p className="text-base font-semibold leading-tight line-clamp-2">{order.productName}</p>
+          <p className="text-xs opacity-60 mt-0.5">{productMeta}</p>
+        </div>
+        {lifecycle ? (
+          <span className={`miniapp-status miniapp-status--${lifecycle.status === 'active' ? 'key-active' : lifecycle.status === 'expiring_soon' ? 'key-soon' : 'key-expired'}`}>
+            {lifecycle.statusLabel}
+          </span>
+        ) : (
+          <StatusBadge status={order.status} />
+        )}
+      </div>
+
+      <div className="flex items-baseline justify-between border-t pt-3" style={{ borderColor: 'color-mix(in srgb, var(--brand-ink) 8%, transparent)' }}>
+        <span className="text-xs opacity-60">Tổng thanh toán</span>
+        <span className="text-xl font-bold">{formatPrice(order.totalPrice)}</span>
+      </div>
+
+      {lifecycle && (
+        <div className="border-t mt-3 pt-3" style={{ borderColor: 'color-mix(in srgb, var(--brand-ink) 8%, transparent)' }}>
+          <div className="h-1.5 rounded-full overflow-hidden" style={{ background: 'color-mix(in srgb, var(--brand-ink) 12%, transparent)' }} aria-label={remainingText}>
+            <div
+              className="h-full rounded-full"
+              style={{
+                width: `${Math.min(100, Math.max(0, lifecycle.progressPercent))}%`,
+                background: lifecycle.status === 'expired'
+                  ? '#fc7981'
+                  : lifecycle.status === 'expiring_soon'
+                    ? 'var(--brand-gold)'
+                    : '#078a52',
+              }}
+            />
+          </div>
+          <div className={`grid gap-2 mt-4 ${hasDeliveredKeys ? 'grid-cols-2' : 'grid-cols-1'}`}>
+            {lifecycle.renewUrl ? (
+              <Link href={lifecycle.renewUrl} className="miniapp-btn miniapp-btn--primary justify-center text-sm">
+                {ctaLabel}
+              </Link>
+            ) : (
+              <span className="miniapp-btn justify-center text-sm opacity-60">Liên hệ hỗ trợ</span>
+            )}
+            {hasDeliveredKeys && (
+              <a href="#delivered-keys" className="miniapp-btn miniapp-btn--ghost justify-center text-sm">
+                Xem đơn
+              </a>
+            )}
+          </div>
+        </div>
+      )}
+    </section>
   )
 }
 

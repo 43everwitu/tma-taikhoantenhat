@@ -33,10 +33,13 @@ const messages = {
         `💰 Giá: ${formatPrice(product.price)}\n` +
         (product.promotion ? `🎁 ${richifyText(product.promotion)}\n` : '') +
         `\n💬 Sản phẩm này cần liên hệ trực tiếp để mua.\n` +
-        `Bấm nút bên dưới để xem thông tin liên hệ.`,
+        `Liên hệ: t.me/taikhoantenhat hoặc m.me/taikhoantenhat3 hoặc zalo.me/0896551786.`,
 
     noStock:
         '❌ Rất tiếc, sản phẩm đã hết hàng. Vui lòng thử lại sau.',
+
+    supportContact:
+        'Quý khách cần hỗ trợ vui lòng liên hệ @taikhoantenhat hoặc zalo.me/0896551786',
 };
 
 function escapeHtml(s) {
@@ -113,6 +116,30 @@ function formatCustomerInputPlain(inputValueEncrypted) {
 }
 
 /**
+ * HTML-escaped customer input for the internal order channel.
+ * Values stay visible after opening Telegram spoiler so managers can process backorders.
+ */
+function formatCustomerInputForChannel(inputValueEncrypted) {
+  if (!inputValueEncrypted) return null;
+  try {
+    const { decryptString } = require('./secrets');
+    const raw = decryptString(inputValueEncrypted);
+    const parsed = JSON.parse(raw);
+    if (!parsed || typeof parsed !== 'object') return escapeHtml(String(raw));
+    const lines = [];
+    for (const [label, value] of Object.entries(parsed)) {
+      if (!value) continue;
+      const labelless = !label || /^__field_\d+$/.test(label);
+      const shown = escapeHtml(String(value));
+      lines.push(labelless ? shown : `${escapeHtml(label)}: ${shown}`);
+    }
+    return lines.length > 0 ? lines.join('\n') : null;
+  } catch {
+    return null;
+  }
+}
+
+/**
  * Decide whether to send keys inline vs as a .txt file attachment.
  * Telegram message body limit is 4096 chars; the delivery_keys template
  * adds ~300 chars of chrome. Budget ~3000 chars of raw key data before
@@ -130,4 +157,5 @@ module.exports.richifyText = richifyText;
 module.exports.formatKeysForTelegram = formatKeysForTelegram;
 module.exports.buildCustomerInputBlock = buildCustomerInputBlock;
 module.exports.formatCustomerInputPlain = formatCustomerInputPlain;
+module.exports.formatCustomerInputForChannel = formatCustomerInputForChannel;
 module.exports.shouldSendAsFile = shouldSendAsFile;

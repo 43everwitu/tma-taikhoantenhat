@@ -1,6 +1,7 @@
 const assert = require('node:assert');
 const test = require('node:test');
 const db = require('../../src/database');
+const telegramApiClient = require('../../src/services/telegramApiClient');
 
 function makeFakeBot(sent) {
   return { telegram: { sendMessage: async (...args) => { sent.push(args); } } };
@@ -18,6 +19,7 @@ function seedLowStockProduct() {
 }
 
 function cleanup({ productId, categoryId }) {
+  db.prepare("DELETE FROM low_stock_alert_states WHERE product_id = ?").run(productId);
   db.prepare("DELETE FROM stock WHERE product_id = ?").run(productId);
   db.prepare("DELETE FROM products WHERE id = ?").run(productId);
   db.prepare("DELETE FROM categories WHERE id = ?").run(categoryId);
@@ -34,6 +36,13 @@ function loadServiceFresh(fakeBot) {
   db.prepare("INSERT INTO settings (key, value) VALUES ('low_stock_thread_id','') ON CONFLICT(key) DO UPDATE SET value=''").run();
   adminNotify.init(fakeBot);
   adminNotify.invalidateCache();
+  // adminNotifyService.notify() always sends through telegramApiClient (real
+  // Telegram HTTPS calls), never through the bot instance passed to init() —
+  // route it back into fakeBot so nothing here reaches production.
+  telegramApiClient.setTelegramRequestForTest(async (method, payload) => {
+    await fakeBot.telegram.sendMessage(payload.chat_id, payload.text, payload);
+    return { message_id: 1 };
+  });
   return new NotificationService(fakeBot);
 }
 
@@ -64,6 +73,7 @@ test('no re-alert after 24h while stock still low', async () => {
       'Re-alerted after 24h while still low — should suppress until stock replenished'
     );
   } finally {
+    telegramApiClient.setTelegramRequestForTest(null);
     cleanup(seeded);
   }
 });
@@ -113,6 +123,7 @@ test('self-heal resets marker when stock rises above threshold without notifySto
       'second episode should re-alert after self-heal cleared the marker'
     );
   } finally {
+    telegramApiClient.setTelegramRequestForTest(null);
     cleanup(seeded);
   }
 });
@@ -137,6 +148,7 @@ test('marker survives a process restart (fresh service load)', async () => {
       'fresh service after restart must honor the persisted marker'
     );
   } finally {
+    telegramApiClient.setTelegramRequestForTest(null);
     cleanup(seeded);
   }
 });

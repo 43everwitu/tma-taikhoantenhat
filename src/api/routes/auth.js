@@ -6,8 +6,20 @@ const { verifyInitData } = require('../../utils/initData');
 const config = require('../../config');
 const { validate } = require('../middleware/validate');
 const { requireCustomer } = require('../middleware/auth');
+const telegramApiClient = require('../../services/telegramApiClient');
+const userModerationService = require('../../services/userModerationService');
 
 const router = Router();
+
+function bannedResponse(res) {
+  return res.status(403).json({
+    success: false,
+    error: {
+      code: 'USER_BANNED',
+      message: 'Tài khoản của bạn đã bị hạn chế. Vui lòng liên hệ hỗ trợ.',
+    },
+  });
+}
 
 // POST /auth/login — Admin login (returns full token, 2FA challenge, or
 // enrollment-step token depending on the admin's 2FA state).
@@ -59,7 +71,7 @@ router.post('/link-telegram', validate(z.object({
   try {
     const bot = req.app.locals.bot;
     if (bot) {
-      await bot.telegram.sendMessage(telegramId,
+      await telegramApiClient.sendMessage(telegramId,
         `🔑 Mã xác nhận liên kết web: <b>${code}</b>\nHiệu lực 5 phút.`,
         { parse_mode: 'HTML' });
     }
@@ -119,6 +131,9 @@ router.post('/customer/login', validate(z.object({
   if (!result) {
     return res.status(401).json({ success: false, error: { code: 'INVALID_CREDENTIALS', message: 'Email hoặc mật khẩu không đúng' } });
   }
+  if (userModerationService.isBanned(result.user.telegramId)) {
+    return bannedResponse(res);
+  }
   res.json({ success: true, data: result });
 });
 
@@ -133,7 +148,7 @@ router.post('/customer/forgot', validate(z.object({
     try {
       const bot = req.app.locals.bot;
       if (bot) {
-        await bot.telegram.sendMessage(result.telegramId,
+        await telegramApiClient.sendMessage(result.telegramId,
           `🔑 Mã đặt lại mật khẩu: <b>${result.code}</b>\n` +
           `Hiệu lực 10 phút. Nếu bạn không yêu cầu, hãy bỏ qua tin này.`,
           { parse_mode: 'HTML' });
@@ -183,6 +198,9 @@ router.post('/miniapp', validate(z.object({
   }
 
   const user = userService.findOrCreateFromInitData(result.user);
+  if (userModerationService.isBanned(user.telegram_id)) {
+    return bannedResponse(res);
+  }
   const token = await authService.issueCustomerToken(user.telegram_id);
 
   res.json({

@@ -9,6 +9,17 @@ function createBot() {
 
   const bot = new Telegraf(config.BOT_TOKEN);
   bot.use(session());
+  bot.use(async (ctx, next) => {
+    const telegramId = ctx.from?.id;
+    if (telegramId) {
+      const userModerationService = require('../services/userModerationService');
+      if (userModerationService.isBanned(telegramId)) {
+        await ctx.reply('Tài khoản của bạn đã bị hạn chế. Vui lòng liên hệ hỗ trợ.');
+        return;
+      }
+    }
+    return next();
+  });
 
   bot.catch((err, ctx) => {
     console.error(`❌ Error for ${ctx.updateType}:`, err.message);
@@ -18,14 +29,22 @@ function createBot() {
   // Single real command: the Mini App entry point.
   require('../commands/start')(bot);
   require('../commands/notificationPreferences')(bot);
+  require('../commands/hotro')(bot);
+
+  require('./lowStockActions')(bot);
 
   // Fallback: any other input nudges the user back to the Mini App.
   require('./fallback')(bot);
+
+  // Telegram Business messages (customer -> connected personal account),
+  // forwarded to RAG-chat-bot when RAG_BUSINESS_FORWARD_ENABLED=true.
+  require('./businessForward')(bot);
 
   // Replace the menu — the Mini App entry point and notification toggle show in the slash UI.
   const COMMANDS = [
     { command: 'start', description: 'Mở cửa hàng' },
     { command: 'thongbao', description: 'Bật/tắt thông báo' },
+    { command: 'hotro', description: 'Liên hệ hỗ trợ' },
   ];
   (async () => {
     try {

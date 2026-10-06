@@ -1,0 +1,122 @@
+<style>
+  .stock-options { display: grid; gap: 18px; }
+  .stock-grid { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 16px; align-items: stretch; }
+  .stock-card { border: 1px solid #e8dfcf; border-radius: 14px; background: #fffdf8; overflow: hidden; cursor: pointer; box-shadow: 0 10px 28px rgba(42, 33, 18, .08); }
+  .stock-card.selected { outline: 3px solid #ffc200; border-color: #ffc200; }
+  .stock-card-head { padding: 14px 16px; border-bottom: 1px solid #eee2cf; display: flex; align-items: center; justify-content: space-between; gap: 12px; }
+  .stock-card-head strong { font-size: 15px; color: #1c222b; }
+  .badge { font-size: 11px; padding: 4px 8px; border-radius: 999px; background: #f5ead6; color: #5e503e; white-space: nowrap; }
+  .mini-screen { padding: 14px; background: #faf7ef; min-height: 330px; }
+  .toolbar { display: grid; grid-template-columns: 1fr 92px 92px; gap: 8px; margin-bottom: 10px; }
+  .input { height: 26px; border-radius: 8px; background: white; border: 1px solid #eadfcc; }
+  .table { background: white; border: 1px solid #ebdfcc; border-radius: 10px; overflow: hidden; }
+  .thead, .row { display: grid; align-items: center; gap: 8px; padding: 8px 10px; border-bottom: 1px solid #f0e8da; }
+  .thead { background: #eee8dc; color: #685d4c; font-size: 9px; text-transform: uppercase; font-weight: 700; }
+  .row { color: #242424; font-size: 10px; }
+  .row:last-child { border-bottom: 0; }
+  .key { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; background: #f8f5ee; border: 1px solid #eee3d2; border-radius: 8px; padding: 6px; line-height: 1.35; user-select: text; }
+  .copy { display: inline-flex; width: 20px; height: 20px; align-items: center; justify-content: center; border-radius: 7px; background: #fff; border: 1px solid #ddd1bd; font-size: 12px; margin-left: 4px; }
+  .pill { display: inline-block; border-radius: 999px; padding: 4px 7px; font-size: 9px; background: #9be3b1; color: #165c2c; font-weight: 700; }
+  .pill.sold { background: #e5dccf; color: #5f5548; }
+  .action { display: inline-block; border-radius: 999px; border: 1px solid #ddd4c4; padding: 4px 7px; background: #fff; font-size: 9px; margin: 1px; }
+  .danger { background: #ff7181; color: white; border-color: #ff7181; }
+  .drawer { margin-top: 10px; background: white; border: 1px solid #ebdfcc; border-radius: 10px; padding: 10px; }
+  .drawer-title { font-size: 11px; font-weight: 800; color: #1c222b; margin-bottom: 8px; }
+  .fields { display: grid; grid-template-columns: 1fr 1fr; gap: 6px; }
+  .field { height: 24px; border-radius: 7px; background: #f8f5ee; border: 1px solid #eee3d2; }
+  .meta { color: #706654; font-size: 9px; line-height: 1.45; }
+  .note { padding: 12px 16px 16px; color: #5c5344; font-size: 13px; line-height: 1.45; }
+  @media (max-width: 980px) { .stock-grid { grid-template-columns: 1fr; } }
+</style>
+
+<h2>Chọn hướng tối ưu trang Tất cả Key</h2>
+<p class="subtitle">Mục tiêu: xem đủ thông tin thêm/bán, sửa/xóa được key đã bán, copy bằng icon riêng, và key vẫn bôi đen được.</p>
+
+<div class="stock-grid">
+  <div class="stock-card" data-choice="a" onclick="toggleSelect(this)">
+    <div class="stock-card-head">
+      <strong>A. Bảng compact + drawer sửa</strong>
+      <span class="badge">Khuyến nghị</span>
+    </div>
+    <div class="mini-screen">
+      <div class="toolbar"><div class="input"></div><div class="input"></div><div class="input"></div></div>
+      <div class="table">
+        <div class="thead" style="grid-template-columns: 56px 1.7fr 1fr 110px 130px 92px;">ID / Key • Sản phẩm • Trạng thái • Thời gian • Đơn bán • Thao tác</div>
+        <div class="row" style="grid-template-columns: 56px 1.7fr 1fr 110px 130px 92px;">
+          <span>#5149</span>
+          <span><span class="key">Email: tvongbat... | Password: 123123 | Profile...</span><span class="copy">⧉</span></span>
+          <span>Netflix Extra<br><span class="meta">1 tháng</span></span>
+          <span><span class="pill">Còn hàng</span><br><span class="meta">Thêm 07/07 16:52</span></span>
+          <span class="meta">-</span>
+          <span><span class="action">Sửa</span><span class="action danger">Xóa</span></span>
+        </div>
+        <div class="row" style="grid-template-columns: 56px 1.7fr 1fr 110px 130px 92px;">
+          <span>#5131</span>
+          <span><span class="key">Claude Pro đã nâng cấp | Email: markpage...</span><span class="copy">⧉</span></span>
+          <span>Claude Pro<br><span class="meta">Personal / 1 tháng</span></span>
+          <span><span class="pill sold">Đã bán</span><br><span class="meta">Bán 07/07 16:53</span></span>
+          <span class="meta">#1556668931<br>Vetermz Kolgk</span>
+          <span><span class="action">Sửa</span><span class="action danger">Xóa</span></span>
+        </div>
+      </div>
+      <div class="drawer">
+        <div class="drawer-title">Drawer sửa key #5131</div>
+        <div class="fields"><div class="field"></div><div class="field"></div><div class="field"></div><div class="field"></div></div>
+        <p class="meta" style="margin-top:8px">Sửa value, sản phẩm, biến thể, thời hạn. Key đã bán có cảnh báo và giữ lịch sử đơn.</p>
+      </div>
+    </div>
+    <div class="note">Dễ triển khai nhất, giữ bảng quen thuộc nhưng giảm phình dòng. Chi tiết bán nằm trong cột riêng và drawer.</div>
+  </div>
+
+  <div class="stock-card" data-choice="b" onclick="toggleSelect(this)">
+    <div class="stock-card-head">
+      <strong>B. Master-detail bên phải</strong>
+      <span class="badge">Nhiều chi tiết</span>
+    </div>
+    <div class="mini-screen">
+      <div class="toolbar"><div class="input"></div><div class="input"></div><div class="input"></div></div>
+      <div style="display:grid;grid-template-columns:1.2fr .8fr;gap:10px">
+        <div class="table">
+          <div class="thead" style="grid-template-columns: 46px 1fr 82px;">ID • Key • TT</div>
+          <div class="row" style="grid-template-columns: 46px 1fr 82px;"><span>#5149</span><span class="key">Email: tvongbat...</span><span class="pill">Còn hàng</span></div>
+          <div class="row" style="grid-template-columns: 46px 1fr 82px;background:#fff7dc"><span>#5131</span><span class="key">Claude Pro...</span><span class="pill sold">Đã bán</span></div>
+          <div class="row" style="grid-template-columns: 46px 1fr 82px;"><span>#5130</span><span class="key">SuperGrok...</span><span class="pill">Còn hàng</span></div>
+        </div>
+        <div class="drawer" style="margin-top:0;min-height:218px">
+          <div class="drawer-title">Chi tiết key đã chọn</div>
+          <p class="meta">Đơn: #1556668931<br>Khách: Vetermz Kolgk<br>Bán lúc: 07/07/2026 16:53<br>Sản phẩm: Claude Pro</p>
+          <div class="fields" style="grid-template-columns:1fr"><div class="field"></div><div class="field"></div><div class="field"></div></div>
+          <span class="action">Sửa</span><span class="action danger">Xóa</span>
+        </div>
+      </div>
+    </div>
+    <div class="note">Rõ thông tin nhưng tốn chiều ngang; trên laptop nhỏ dễ chật, cần xử lý responsive nhiều hơn.</div>
+  </div>
+
+  <div class="stock-card" data-choice="c" onclick="toggleSelect(this)">
+    <div class="stock-card-head">
+      <strong>C. Danh sách card audit</strong>
+      <span class="badge">Mobile-first</span>
+    </div>
+    <div class="mini-screen">
+      <div class="toolbar"><div class="input"></div><div class="input"></div><div class="input"></div></div>
+      <div class="drawer" style="margin-top:0">
+        <div style="display:flex;justify-content:space-between;gap:10px">
+          <div><div class="drawer-title">#5131 • Claude Pro Personal</div><div class="key">Email: markpage.study@gmail.com | ...</div></div>
+          <span class="copy">⧉</span>
+        </div>
+        <p class="meta">Thêm: - • Bán: 07/07/2026 16:53 • Đơn #1556668931 • Vetermz Kolgk</p>
+        <span class="pill sold">Đã bán</span> <span class="action">Sửa</span><span class="action danger">Xóa</span>
+      </div>
+      <div class="drawer">
+        <div style="display:flex;justify-content:space-between;gap:10px">
+          <div><div class="drawer-title">#5149 • Netflix Extra</div><div class="key">Email: tvongbat... | Password...</div></div>
+          <span class="copy">⧉</span>
+        </div>
+        <p class="meta">Thêm: 07/07/2026 16:52 • Bán: -</p>
+        <span class="pill">Còn hàng</span> <span class="action">Sửa</span><span class="action danger">Xóa</span>
+      </div>
+    </div>
+    <div class="note">Đọc tốt trên mobile nhưng mất mật độ dữ liệu trên desktop; không tận dụng màn hình rộng của admin.</div>
+  </div>
+</div>

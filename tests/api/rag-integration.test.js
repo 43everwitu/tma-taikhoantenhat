@@ -121,6 +121,32 @@ test('orders/get returns a shaped order for a real order id', async (t) => {
   assert.strictEqual(body.data.id, String(order.id));
   assert.strictEqual(body.data.productId, fixture.productId);
   assert.strictEqual(body.data.status, 'pending');
+  assert.strictEqual(body.data.customerId, String(fixture.userId));
+});
+
+test('customers/exists returns exists:true for a real telegram_id', async (t) => {
+  const fixture = createRagTestFixture();
+  t.after(fixture.cleanup);
+
+  const app = freshApp();
+  const res = await post(app, '/api/v1/internal/rag/customers/exists', { telegramId: fixture.userId });
+  assert.strictEqual(res.status, 200);
+  const body = await res.json();
+  assert.strictEqual(body.data.exists, true);
+});
+
+test('customers/exists returns exists:false for a telegram_id with no users row', async () => {
+  const app = freshApp();
+  const res = await post(app, '/api/v1/internal/rag/customers/exists', { telegramId: 1 });
+  assert.strictEqual(res.status, 200);
+  const body = await res.json();
+  assert.strictEqual(body.data.exists, false);
+});
+
+test('customers/exists rejects a non-integer telegramId', async () => {
+  const app = freshApp();
+  const res = await post(app, '/api/v1/internal/rag/customers/exists', { telegramId: 'abc' });
+  assert.strictEqual(res.status, 400);
 });
 
 test('orders/list-by-customer returns recent orders for that customer', async (t) => {

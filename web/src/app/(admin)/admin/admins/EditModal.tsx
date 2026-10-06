@@ -41,9 +41,12 @@ export function EditAdminModal({
   })
 
   return (
-    <div className="fixed inset-0 z-50 bg-black/40 backdrop-blur-sm flex items-center justify-center p-4" onClick={onClose}>
+    <div className="fixed inset-0 z-50 bg-black/40 backdrop-blur-sm flex items-center justify-center p-4">
       <div onClick={(e) => e.stopPropagation()} className="bg-white rounded-2xl shadow-xl w-full max-w-md p-5 space-y-3">
-        <h2 className="text-lg font-semibold">Sửa @{admin.username}</h2>
+        <div className="flex items-center justify-between">
+          <h2 className="text-lg font-semibold">Sửa @{admin.username}</h2>
+          <button onClick={onClose} className="opacity-60 text-xl leading-none">×</button>
+        </div>
         <label className="block text-xs font-medium opacity-70">Tên hiển thị</label>
         <input value={displayName} onChange={(e) => setDisplayName(e.target.value)} className="clay-input w-full text-sm" />
         {isSuper && (

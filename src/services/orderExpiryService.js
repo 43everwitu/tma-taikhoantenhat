@@ -73,13 +73,20 @@ function selectLifecycleRow(order, extraWhere = '', extraParams = []) {
     ? 'AND s.variant_id IS NULL'
     : 'AND s.variant_id = ?';
   const variantParams = order.variant_id == null ? [] : [order.variant_id];
+  // A repeat purchase of the same instructional-text product can leave two
+  // stock rows with byte-identical `data` (the text has no per-sale unique
+  // value), so filtering by data alone can match more than one row. Order by
+  // closeness of sold_at to this order's own delivery time and take exactly
+  // one row instead of aggregating MIN() across every match, which used to
+  // silently pick an unrelated older (possibly already-expired) sale.
+  const anchor = order.delivered_at || order.paid_at || order.created_at;
   return db.prepare(`
     SELECT
       p.slug AS product_slug,
-      MIN(DATE(s.sold_at)) AS start_date,
-      MIN(DATE(s.sold_at, '+' || s.duration_days || ' days')) AS expiry_date,
-      MIN(s.duration_days) AS duration_days,
-      CAST(MIN(julianday(DATE(s.sold_at, '+' || s.duration_days || ' days')) - julianday(DATE('now'))) AS INTEGER) AS remaining_days
+      DATE(s.sold_at) AS start_date,
+      DATE(s.sold_at, '+' || s.duration_days || ' days') AS expiry_date,
+      s.duration_days AS duration_days,
+      CAST(julianday(DATE(s.sold_at, '+' || s.duration_days || ' days')) - julianday(DATE('now')) AS INTEGER) AS remaining_days
     FROM stock s
     JOIN products p ON p.id = s.product_id
     WHERE s.sold_to = ?
@@ -89,7 +96,9 @@ function selectLifecycleRow(order, extraWhere = '', extraParams = []) {
       AND s.duration_days > 0
       ${variantWhere}
       ${extraWhere}
-  `).get(order.user_id, order.product_id, ...variantParams, ...extraParams);
+    ORDER BY ABS(strftime('%s', s.sold_at) - strftime('%s', ?))
+    LIMIT 1
+  `).get(order.user_id, order.product_id, ...variantParams, ...extraParams, anchor);
 }
 
 function getKeyLifecycleForOrder(order) {

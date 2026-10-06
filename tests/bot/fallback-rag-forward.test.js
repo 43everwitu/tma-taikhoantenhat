@@ -64,7 +64,7 @@ test('forwards to RAG-chat-bot when RAG_BOT_FORWARD_ENABLED=true, signed with RA
   );
 });
 
-test('falls back to the Mini App nudge when RAG_BOT_FORWARD_ENABLED is false (default)', async () => {
+test('falls back to the support contact message when RAG_BOT_FORWARD_ENABLED is false (default)', async () => {
   config.RAG_BOT_FORWARD_ENABLED = false;
   delete require.cache[require.resolve('../../src/bot/fallback')];
   const { handleFallback } = require('../../src/bot/fallback');
@@ -73,10 +73,10 @@ test('falls back to the Mini App nudge when RAG_BOT_FORWARD_ENABLED is false (de
   await handleFallback(ctx);
 
   assert.strictEqual(ctx._replies.length, 1);
-  assert.match(ctx._replies[0], /Mini App/);
+  assert.match(ctx._replies[0], /@taikhoantenhat|zalo\.me/i);
 });
 
-test('a RAG-chat-bot that never responds times out and falls back to the nudge', async () => {
+test('a RAG-chat-bot that never responds times out and falls back to the support contact message', async () => {
   const server = http.createServer(() => { /* never respond */ });
   await new Promise((resolve) => server.listen(0, '127.0.0.1', resolve));
   const { port } = server.address();
@@ -93,7 +93,7 @@ test('a RAG-chat-bot that never responds times out and falls back to the nudge',
   server.close();
 
   assert.strictEqual(ctx._replies.length, 1);
-  assert.match(ctx._replies[0], /Mini App/);
+  assert.match(ctx._replies[0], /@taikhoantenhat|zalo\.me/i);
 });
 
 test.after(() => {

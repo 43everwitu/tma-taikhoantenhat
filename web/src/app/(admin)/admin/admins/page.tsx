@@ -134,9 +134,12 @@ function CreateModal({ onClose, onCreated }: { onClose: () => void; onCreated: (
     onError: (e) => setErr(e instanceof Error ? e.message : 'Lỗi'),
   })
   return (
-    <div className="fixed inset-0 z-50 bg-black/40 backdrop-blur-sm flex items-center justify-center p-4" onClick={onClose}>
+    <div className="fixed inset-0 z-50 bg-black/40 backdrop-blur-sm flex items-center justify-center p-4">
       <div onClick={(e) => e.stopPropagation()} className="bg-white rounded-2xl shadow-xl w-full max-w-md p-5 space-y-3">
-        <h2 className="text-lg font-semibold">Tạo quản trị mới</h2>
+        <div className="flex items-center justify-between">
+          <h2 className="text-lg font-semibold">Tạo quản trị mới</h2>
+          <button onClick={onClose} className="opacity-60 text-xl leading-none">×</button>
+        </div>
         <input value={form.username} onChange={(e) => setForm({ ...form, username: e.target.value })} placeholder="Tên đăng nhập" className="clay-input w-full text-sm" />
         <input type="password" value={form.password} onChange={(e) => setForm({ ...form, password: e.target.value })} placeholder="Mật khẩu" className="clay-input w-full text-sm" />
         <input value={form.displayName} onChange={(e) => setForm({ ...form, displayName: e.target.value })} placeholder="Tên hiển thị" className="clay-input w-full text-sm" />

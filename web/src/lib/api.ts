@@ -1,4 +1,4 @@
-const API_BASE = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:3000/api/v1'
+const API_BASE = process.env.NEXT_PUBLIC_API_URL || '/api/v1'
 
 interface ApiResponse<T = unknown> {
   success: boolean
@@ -23,6 +23,14 @@ export function setAdminToken(token: string) { localStorage.setItem(ADMIN_KEY, t
 export function clearAdminToken() { localStorage.removeItem(ADMIN_KEY) }
 export function getAdminToken(): string | null { return readKey(ADMIN_KEY) }
 
+export function handleAdminUnauthorized() {
+  if (typeof window === 'undefined') return
+  clearAdminToken()
+  if (window.location.pathname !== '/admin/login') {
+    window.location.assign('/admin/login')
+  }
+}
+
 export function setCustomerToken(token: string) { localStorage.setItem(CUSTOMER_KEY, token) }
 export function clearCustomerToken() { localStorage.removeItem(CUSTOMER_KEY) }
 export function getCustomerToken(): string | null { return readKey(CUSTOMER_KEY) }
@@ -46,6 +54,10 @@ async function apiFetch<T>(path: string, options: RequestInit = {}): Promise<Api
 
   const res = await fetch(`${API_BASE}${path}`, { ...options, headers })
   const data = await res.json()
+
+  if (isAdmin && res.status === 401) {
+    handleAdminUnauthorized()
+  }
 
   if (!res.ok && !data.success) {
     throw new Error(data.error?.message || `API error ${res.status}`)

@@ -1,6 +1,8 @@
 const { Router } = require('express');
 const db = require('../../../database');
 const { requirePermission } = require('../../middleware/auth');
+const auditService = require('../../../services/auditService');
+const userModerationService = require('../../../services/userModerationService');
 
 const router = Router();
 
@@ -30,6 +32,10 @@ router.get('/', (req, res) => {
         u.full_name,
         u.balance,
         u.created_at,
+        COALESCE(u.account_status, 'active') AS account_status,
+        u.ban_reason,
+        u.banned_at,
+        u.banned_by,
         (
           SELECT COUNT(*)
           FROM orders delivered_orders
@@ -47,6 +53,10 @@ router.get('/', (req, res) => {
         'ID ' || o.user_id AS full_name,
         0 AS balance,
         MAX(o.created_at) AS created_at,
+        'active' AS account_status,
+        NULL AS ban_reason,
+        NULL AS banned_at,
+        NULL AS banned_by,
         COUNT(*) AS order_count,
         1 AS is_virtual
       FROM orders o
@@ -131,6 +141,10 @@ router.get('/:telegramId', (req, res) => {
         balance: 0,
         created_at: null,
         is_virtual: true,
+        account_status: 'active',
+        ban_reason: null,
+        banned_at: null,
+        banned_by: null,
       };
 
   const orders = db.prepare(`
@@ -147,6 +161,58 @@ router.get('/:telegramId', (req, res) => {
   `).all(telegramId);
 
   res.json({ success: true, data: { user, orders, recentTopups } });
+});
+
+router.patch('/:telegramId/status', requirePermission('users.write'), (req, res) => {
+  const rawTelegramId = String(req.params.telegramId);
+  const telegramId = Number(rawTelegramId);
+  if (!/^\d+$/.test(rawTelegramId) || !Number.isSafeInteger(telegramId)) {
+    return res.status(400).json({
+      success: false,
+      error: { code: 'INVALID_TELEGRAM_ID', message: 'Telegram ID phải là số nguyên hợp lệ.' },
+    });
+  }
+
+  const existing = db.prepare('SELECT telegram_id FROM users WHERE telegram_id = ?').get(telegramId);
+  if (!existing) {
+    return res.status(404).json({
+      success: false,
+      error: { code: 'USER_NOT_FOUND', message: 'Không tìm thấy hồ sơ user để cập nhật trạng thái.' },
+    });
+  }
+
+  let status;
+  try {
+    status = userModerationService.normalizeStatus(req.body?.status);
+  } catch {
+    return res.status(400).json({
+      success: false,
+      error: { code: 'INVALID_STATUS', message: 'Trạng thái không hợp lệ.' },
+    });
+  }
+
+  const user = userModerationService.setStatus(telegramId, status, {
+    reason: req.body?.reason || '',
+    adminId: req.admin?.adminId ?? null,
+  });
+
+  auditService.log(req.admin.adminId, 'user.moderation.update', 'user', telegramId, {
+    status,
+    reason: req.body?.reason || '',
+  }, req.ip);
+
+  res.json({
+    success: true,
+    data: {
+      user: {
+        telegram_id: user.telegramId,
+        account_status: user.accountStatus,
+        ban_reason: user.banReason,
+        banned_at: user.bannedAt,
+        banned_by: user.bannedBy,
+      },
+    },
+  });
 });
 
 module.exports = router;

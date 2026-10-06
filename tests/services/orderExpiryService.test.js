@@ -148,6 +148,35 @@ test('getKeyLifecycleForOrder ignores older sold keys outside the order snapshot
   }
 });
 
+test('getKeyLifecycleForOrder uses this order\'s own key when duplicate-data repeat purchase exists', () => {
+  const seed = seedDeliveredOrder({ soldOffset: '-40 days', durationDays: 30, reminderDays: 3 });
+  // Repeat purchase of the same instructional-text product: the new stock row
+  // shares the exact same `data` text as the older, already-expired one
+  // (e.g. a static "accept this invite" instruction reused per repurchase).
+  const sameTextKey = db.prepare('SELECT data FROM stock WHERE id = ?').get(seed.stockId).data;
+  const newOrder = db.prepare(`
+    INSERT INTO orders (user_id, product_id, quantity, total_price, payment_code, status, source, delivered_at, delivered_keys_json)
+    VALUES (?, ?, 1, 1000, ?, 'delivered', 'telegram', datetime('now'), ?)
+  `).run(seed.userId, seed.productId, `PNS_REPEAT_${seed.orderId}`, JSON.stringify([sameTextKey]));
+  const newStock = db.prepare(`
+    INSERT INTO stock (product_id, data, duration_days, is_sold, sold_to, sold_at)
+    VALUES (?, ?, 30, 1, ?, datetime('now'))
+  `).run(seed.productId, sameTextKey, seed.userId);
+
+  try {
+    const order = db.prepare('SELECT * FROM orders WHERE id = ?').get(newOrder.lastInsertRowid);
+    const lifecycle = orderExpiryService.getKeyLifecycleForOrder(order);
+    const expectedExpiry = db.prepare("SELECT DATE('now', '+30 days') AS d").get().d;
+
+    assert.strictEqual(lifecycle.status, 'active');
+    assert.strictEqual(lifecycle.expiryDate, expectedExpiry);
+  } finally {
+    db.prepare('DELETE FROM stock WHERE id = ?').run(newStock.lastInsertRowid);
+    db.prepare('DELETE FROM orders WHERE id = ?').run(newOrder.lastInsertRowid);
+    cleanup(seed);
+  }
+});
+
 test('findDeliveredOrderForStock matches the order snapshot instead of the latest order', () => {
   const seed = seedDeliveredOrder({ soldOffset: '-20 days', durationDays: 30, reminderDays: 3 });
   const newerKey = `newer-key-${seed.orderId}`;

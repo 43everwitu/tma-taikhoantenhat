@@ -1,0 +1,93 @@
+<h2>Ghi chú nội bộ cho đơn hàng</h2>
+<p class="subtitle">Chọn cách hiển thị trên admin/orders. Ghi chú là nội bộ admin, có thể thêm/sửa/xóa, mỗi ghi chú có admin + thời gian.</p>
+
+<div class="cards">
+  <div class="card" data-choice="a" onclick="toggleSelect(this)">
+    <div class="card-image">
+      <div class="mockup">
+        <div class="mockup-header">Option A: Icon ghi chú cạnh Chi tiết</div>
+        <div class="mockup-body">
+          <div style="display:grid;grid-template-columns:60px 1fr 1fr 90px 170px;gap:8px;align-items:center;font-size:12px">
+            <strong>#103090</strong>
+            <span>Phu Dong</span>
+            <span>Tài khoản Claude Pro/Claude Max</span>
+            <span>Đã thanh toán</span>
+            <div style="display:flex;gap:4px;flex-wrap:wrap">
+              <button class="mock-button">Chi tiết</button>
+              <button class="mock-button">Nhắn tin</button>
+              <button class="mock-button">📝 2</button>
+            </div>
+            <strong>#103089</strong>
+            <span>Huy LNam</span>
+            <span>Gemini Advanced</span>
+            <span>Đã thanh toán</span>
+            <div style="display:flex;gap:4px;flex-wrap:wrap">
+              <button class="mock-button">Chi tiết</button>
+              <button class="mock-button">Nhắn tin</button>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+    <div class="card-body">
+      <h3>A. Icon riêng ở dòng đơn</h3>
+      <p>Đơn có ghi chú hiện icon + số lượng cạnh “Chi tiết/Nhắn tin”. Click icon mở drawer chi tiết và kéo tới phần Ghi chú.</p>
+    </div>
+  </div>
+
+  <div class="card" data-choice="b" onclick="toggleSelect(this)">
+    <div class="card-image">
+      <div class="mockup">
+        <div class="mockup-header">Option B: Chỉ hiện trong Chi tiết</div>
+        <div class="mockup-body">
+          <div style="display:grid;grid-template-columns:60px 1fr 1fr 90px 130px;gap:8px;align-items:center;font-size:12px">
+            <strong>#103090</strong>
+            <span>Phu Dong</span>
+            <span>Tài khoản Claude Pro/Claude Max</span>
+            <span>Đã thanh toán</span>
+            <button class="mock-button">Chi tiết</button>
+          </div>
+          <div style="margin-top:12px;border:1px solid #ddd;border-radius:8px;padding:10px;background:white">
+            <strong>Ghi chú nội bộ</strong>
+            <div style="margin-top:8px;padding:8px;background:#f7f3ea;border-radius:6px">Admin #1 · 06/07/2026 14:30<br/>Khách cần xử lý thủ công.</div>
+            <button class="mock-button" style="margin-top:8px">Thêm ghi chú</button>
+          </div>
+        </div>
+      </div>
+    </div>
+    <div class="card-body">
+      <h3>B. Tối giản trong drawer</h3>
+      <p>Không thêm nút/icon vào bảng. Ghi chú chỉ nằm trong “Chi tiết”, phù hợp nếu không cần scan nhanh đơn có ghi chú.</p>
+    </div>
+  </div>
+
+  <div class="card" data-choice="c" onclick="toggleSelect(this)">
+    <div class="card-image">
+      <div class="mockup">
+        <div class="mockup-header">Option C: Popover nhanh</div>
+        <div class="mockup-body">
+          <div style="display:grid;grid-template-columns:60px 1fr 1fr 90px 170px;gap:8px;align-items:center;font-size:12px">
+            <strong>#103090</strong>
+            <span>Phu Dong</span>
+            <span>Tài khoản Claude Pro/Claude Max</span>
+            <span>Đã thanh toán</span>
+            <div style="display:flex;gap:4px;flex-wrap:wrap;position:relative">
+              <button class="mock-button">Chi tiết</button>
+              <button class="mock-button">Nhắn tin</button>
+              <button class="mock-button">📝 2</button>
+            </div>
+          </div>
+          <div style="margin-top:10px;margin-left:auto;width:260px;border:1px solid #ddd;border-radius:8px;padding:10px;background:white;box-shadow:0 8px 24px rgba(0,0,0,.12)">
+            <strong>2 ghi chú</strong>
+            <p style="font-size:11px;margin:6px 0">Admin #1 · 14:30<br/>Khách cần xử lý thủ công.</p>
+            <button class="mock-button">Mở chi tiết</button>
+          </div>
+        </div>
+      </div>
+    </div>
+    <div class="card-body">
+      <h3>C. Popover nhanh + drawer</h3>
+      <p>Click icon xem nhanh ghi chú ngay trên bảng, vẫn có quản lý đầy đủ trong drawer. Tiện hơn nhưng phức tạp UI hơn.</p>
+    </div>
+  </div>
+</div>

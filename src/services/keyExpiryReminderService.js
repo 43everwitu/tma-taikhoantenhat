@@ -6,6 +6,7 @@ const db = require('../database');
 const messageTemplateService = require('./messageTemplateService');
 const orderExpiryService = require('./orderExpiryService');
 const renewalReminderLogService = require('./renewalReminderLogService');
+const telegramApiClient = require('./telegramApiClient');
 
 let bot = null;
 let timer = null;
@@ -196,7 +197,7 @@ async function runSweep() {
     }
 
     try {
-      await bot.telegram.sendMessage(r.sold_to, body, { parse_mode: 'HTML' });
+      await telegramApiClient.sendMessage(r.sold_to, body, { parse_mode: 'HTML' });
     } catch (err) {
       failed++;
       try {

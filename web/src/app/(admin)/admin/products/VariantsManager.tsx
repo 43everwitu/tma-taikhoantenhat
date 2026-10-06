@@ -31,6 +31,10 @@ interface Variant {
   inputFields: InputField[] | null
   isBackorder: boolean
   defaultDurationDays: number | null
+  contactOnly: boolean | null
+  nfshopPackageId: number | null
+  nfshopKind: 'monthly' | 'links' | null
+  nfshopValidDays: number | null
   stock: number
   imageUrl: string | null
 }
@@ -45,7 +49,13 @@ const INPUT_TYPES = [
   { value: 'textarea', label: 'Textarea' },
 ]
 
-export function VariantsManager({ productId }: { productId: string | null }) {
+export function VariantsManager({
+  productId,
+  productContactOnly = false,
+}: {
+  productId: string | null
+  productContactOnly?: boolean
+}) {
   const qc = useQueryClient()
   const t = useToast()
   const { data, isLoading } = useQuery({
@@ -242,6 +252,7 @@ export function VariantsManager({ productId }: { productId: string | null }) {
                 selected={selectedIds.has(v.id)}
                 onToggle={() => toggleOne(v.id)}
                 onEdit={() => setEditing(v)}
+                productContactOnly={productContactOnly}
                 onDelete={() => {
                   if (confirm(`Xoá vĩnh viễn biến thể "${v.name}"? Không thể hoàn tác.`)) deleteMut.mutate(v.id)
                 }}
@@ -255,13 +266,14 @@ export function VariantsManager({ productId }: { productId: string | null }) {
         <VariantEditModal
           productId={productId}
           variant={editing === 'new' ? null : editing}
+          productContactOnly={productContactOnly}
           onClose={() => setEditing(null)}
           onSaved={() => { qc.invalidateQueries({ queryKey: ['admin', 'variants', productId] }); qc.invalidateQueries({ queryKey: ['admin', 'variants', productId, 'panel'] }); setEditing(null) }}
         />
       )}
 
       {bulkPriceOpen && (
-        <div className="fixed inset-0 z-[60] bg-black/40 backdrop-blur-sm flex items-center justify-center p-4" onClick={() => setBulkPriceOpen(false)}>
+        <div className="fixed inset-0 z-[60] bg-black/40 backdrop-blur-sm flex items-center justify-center p-4">
           <div onClick={(e) => e.stopPropagation()} className="bg-white rounded-2xl shadow-xl w-full max-w-sm p-5 space-y-3">
             <div className="flex items-center justify-between">
               <h3 className="text-base font-semibold">Đổi giá {selectedIds.size} biến thể</h3>
@@ -294,9 +306,10 @@ export function VariantsManager({ productId }: { productId: string | null }) {
   )
 }
 
-function VariantEditModal({ productId, variant, onClose, onSaved }: {
+function VariantEditModal({ productId, variant, productContactOnly, onClose, onSaved }: {
   productId: string
   variant: Variant | null
+  productContactOnly: boolean
   onClose: () => void
   onSaved: () => void
 }) {
@@ -319,6 +332,10 @@ function VariantEditModal({ productId, variant, onClose, onSaved }: {
     imageUrl: variant?.imageUrl ?? '',
     isBackorder: variant?.isBackorder ?? false,
     defaultDurationDays: variant?.defaultDurationDays ?? '',
+    contactOnly: variant?.contactOnly ?? null,
+    nfshopKind: variant?.nfshopKind ?? '',
+    nfshopPackageId: variant?.nfshopPackageId ?? '',
+    nfshopValidDays: variant?.nfshopValidDays ?? '',
   })
   const [inputFields, setInputFields] = useState<InputField[]>(initialFields)
   const [err, setErr] = useState<string | null>(null)
@@ -327,6 +344,9 @@ function VariantEditModal({ productId, variant, onClose, onSaved }: {
 
   const mutation = useMutation({
     mutationFn: () => {
+      if (form.nfshopKind && (form.nfshopPackageId === '' || form.nfshopValidDays === '')) {
+        throw new Error('Giao qua nfshop cần nhập ID gói nfshop và số ngày hiệu lực')
+      }
       const payload = {
         name: form.name,
         description: form.description || null,
@@ -344,6 +364,10 @@ function VariantEditModal({ productId, variant, onClose, onSaved }: {
         imageUrl: form.imageUrl || null,
         isBackorder: form.isBackorder,
         defaultDurationDays: form.defaultDurationDays === '' ? null : Number(form.defaultDurationDays),
+        contactOnly: form.contactOnly,
+        nfshopKind: form.nfshopKind || null,
+        nfshopPackageId: form.nfshopKind ? Number(form.nfshopPackageId) : null,
+        nfshopValidDays: form.nfshopKind ? Number(form.nfshopValidDays) : null,
         ...(variant ? { isActive: form.isActive } : {}),
       }
       if (variant) return api.put(`/admin/products/${productId}/variants/${variant.id}`, payload)
@@ -361,9 +385,9 @@ function VariantEditModal({ productId, variant, onClose, onSaved }: {
   })
 
   return (
-    <div className="fixed inset-0 z-[60] bg-black/50 backdrop-blur-sm flex items-center justify-center p-4" onClick={onClose}>
+    <div className="fixed inset-0 z-[60] bg-black/50 backdrop-blur-sm flex items-center justify-center p-4">
       <div onClick={(e) => e.stopPropagation()} className="bg-white rounded-2xl shadow-xl w-full max-w-md p-5 space-y-3 max-h-[90vh] overflow-y-auto">
-        <div className="flex items-center justify-between">
+        <div className="sticky top-0 z-10 -mx-5 -mt-5 px-5 pt-5 pb-3 bg-white rounded-t-2xl border-b border-gray-100 flex items-center justify-between">
           <h3 className="text-lg font-semibold">{variant ? 'Sửa biến thể' : 'Thêm biến thể'}</h3>
           <button type="button" onClick={onClose} className="opacity-60 text-xl leading-none">×</button>
         </div>
@@ -436,6 +460,68 @@ function VariantEditModal({ productId, variant, onClose, onSaved }: {
           <span>
             <span>Đặt trước (admin xử lý thủ công)</span>
             <span className="block text-xs opacity-60">Không cần stock key sẵn. Khách thanh toán xong, bot báo admin để giao thủ công.</span>
+          </span>
+        </label>
+
+        <div className="space-y-2 rounded-lg border border-gray-200 p-3">
+          <label className="block text-sm">
+            <span className="text-xs opacity-70 mb-1 inline-block">Giao tự động qua nfshop (cần bật &quot;Đặt trước&quot;)</span>
+            <select
+              value={form.nfshopKind}
+              onChange={(e) => setForm({ ...form, nfshopKind: e.target.value as '' | 'monthly' | 'links' })}
+              className="clay-input w-full text-sm"
+            >
+              <option value="">Không dùng</option>
+              <option value="monthly">Gói tháng (khách mua lại thì gia hạn đơn cũ)</option>
+              <option value="links">Gói theo lượt (số lượng mua = số lượt lấy link)</option>
+            </select>
+          </label>
+          {form.nfshopKind && (
+            <div className="grid grid-cols-2 gap-2">
+              <label className="block text-sm">
+                <span className="text-xs opacity-70 mb-1 inline-block">ID gói trên nfshop</span>
+                <input
+                  type="number"
+                  min={1}
+                  value={form.nfshopPackageId}
+                  onChange={(e) => setForm({ ...form, nfshopPackageId: e.target.value === '' ? '' : Number(e.target.value) })}
+                  className="clay-input w-full text-sm"
+                />
+              </label>
+              <label className="block text-sm">
+                <span className="text-xs opacity-70 mb-1 inline-block">Hiệu lực (ngày)</span>
+                <input
+                  type="number"
+                  min={1}
+                  max={365}
+                  value={form.nfshopValidDays}
+                  onChange={(e) => setForm({ ...form, nfshopValidDays: e.target.value === '' ? '' : Number(e.target.value) })}
+                  placeholder={form.nfshopKind === 'links' ? 'VD: 7' : 'VD: 30'}
+                  className="clay-input w-full text-sm"
+                />
+              </label>
+            </div>
+          )}
+        </div>
+
+        <label className="block text-sm">
+          <span className="text-xs opacity-70 mb-1 inline-block">Cách bán</span>
+          <select
+            value={form.contactOnly == null ? 'inherit' : form.contactOnly ? 'contact' : 'direct'}
+            onChange={(e) => {
+              const value = e.target.value
+              setForm({ ...form, contactOnly: value === 'inherit' ? null : value === 'contact' })
+            }}
+            className="clay-input w-full text-sm"
+          >
+            <option value="inherit">
+              Theo sản phẩm ({productContactOnly ? 'Chỉ liên hệ' : 'Bán trực tiếp'})
+            </option>
+            <option value="contact">Chỉ liên hệ</option>
+            <option value="direct">Bán trực tiếp</option>
+          </select>
+          <span className="block text-xs opacity-60 mt-1">
+            Mặc định kế thừa lựa chọn “Chỉ liên hệ” của sản phẩm.
           </span>
         </label>
 
@@ -531,9 +617,10 @@ function VariantEditModal({ productId, variant, onClose, onSaved }: {
   )
 }
 
-function SortableVariantRow({ v, selected, onToggle, onEdit, onDelete }: {
+function SortableVariantRow({ v, selected, productContactOnly, onToggle, onEdit, onDelete }: {
   v: Variant
   selected: boolean
+  productContactOnly: boolean
   onToggle: () => void
   onEdit: () => void
   onDelete: () => void
@@ -575,6 +662,16 @@ function SortableVariantRow({ v, selected, onToggle, onEdit, onDelete }: {
           {v.isBackorder && (
             <span className="ml-2 text-[10px] uppercase tracking-wide bg-blue-500 text-white px-1.5 py-0.5 rounded">
               Đặt trước
+            </span>
+          )}
+          {v.nfshopKind && (
+            <span className="ml-2 text-[10px] uppercase tracking-wide bg-red-600 text-white px-1.5 py-0.5 rounded">
+              nfshop
+            </span>
+          )}
+          {(v.contactOnly ?? productContactOnly) && (
+            <span className="ml-2 text-[10px] uppercase tracking-wide bg-emerald-600 text-white px-1.5 py-0.5 rounded">
+              Liên hệ
             </span>
           )}
         </p>

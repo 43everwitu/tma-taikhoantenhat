@@ -60,13 +60,15 @@ export interface TelegramWebApp {
   platform?: string
   contentSafeAreaInset?: { top: number; bottom: number; left: number; right: number }
   safeAreaInset?:        { top: number; bottom: number; left: number; right: number }
-  onEvent?: (event: 'safeAreaChanged' | 'contentSafeAreaChanged' | 'viewportChanged', cb: () => void) => void
-  offEvent?: (event: 'safeAreaChanged' | 'contentSafeAreaChanged' | 'viewportChanged', cb: () => void) => void
+  onEvent?: (event: TelegramWebAppEvent, cb: () => void) => void
+  offEvent?: (event: TelegramWebAppEvent, cb: () => void) => void
   isVerticalSwipesEnabled?: boolean
   disableVerticalSwipes?: () => void
   enableVerticalSwipes?: () => void
   postEvent?: (eventType: string, eventData: Record<string, unknown>) => void
 }
+
+type TelegramWebAppEvent = 'safeAreaChanged' | 'contentSafeAreaChanged' | 'viewportChanged' | 'themeChanged'
 
 declare global {
   interface Window {
@@ -93,8 +95,13 @@ export function isTmaVersionAtLeast(wa: TelegramWebApp, minVersion: string): boo
   return true
 }
 
+function isAndroidTelegram(wa: TelegramWebApp): boolean {
+  return (wa.platform ?? '').toLowerCase().includes('android')
+}
+
 /** Bot API 7.7+ — disable pull-down-to-minimize on page content (header swipe may still close). */
 export function disableMiniAppVerticalSwipes(wa: TelegramWebApp): boolean {
+  if (isAndroidTelegram(wa)) return false
   if (!isTmaVersionAtLeast(wa, '7.7')) return false
   try {
     wa.disableVerticalSwipes?.()
@@ -203,11 +210,25 @@ export function useTmaViewport() {
     let wa: TelegramWebApp | null = null
     let bootTimer: number | undefined
     let disposed = false
+    let touchGuardAttached = false
+
+    function attachTouchGuard(w: TelegramWebApp) {
+      if (touchGuardAttached || isAndroidTelegram(w)) return
+      document.addEventListener('touchstart', preventTopSwipeCollapse, { passive: true })
+      touchGuardAttached = true
+    }
+
+    function detachTouchGuard() {
+      if (!touchGuardAttached) return
+      document.removeEventListener('touchstart', preventTopSwipeCollapse)
+      touchGuardAttached = false
+    }
 
     function attach(w: TelegramWebApp) {
       wa = w
       prepareWebApp(w)
       writeInsets(w)
+      attachTouchGuard(w)
     }
 
     function onViewport() {
@@ -249,7 +270,6 @@ export function useTmaViewport() {
       }, 30)
     }
 
-    document.addEventListener('touchstart', preventTopSwipeCollapse, { passive: true })
     const orientation = window.matchMedia?.('(orientation: landscape)')
     orientation?.addEventListener?.('change', onChange)
 
@@ -257,7 +277,7 @@ export function useTmaViewport() {
       disposed = true
       if (bootTimer) window.clearInterval(bootTimer)
       if (wa) unbind(wa)
-      document.removeEventListener('touchstart', preventTopSwipeCollapse)
+      detachTouchGuard()
       orientation?.removeEventListener?.('change', onChange)
     }
   }, [])

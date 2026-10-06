@@ -10,6 +10,7 @@ Hướng dẫn này áp dụng cho repo `/home/peanut/tma-taikhoantenhat`. Luôn
 - Runtime DB là `data/shop.db`; `data/db.sqlite` là artifact cũ, không dùng làm nguồn sự thật.
 - Không commit `data/shop.db`, backup DB, `data/uploads/`, log, temporary test, hoặc file ảnh local.
 - Không chạy hoặc viết test/lệnh gửi Telegram broadcast tới toàn bộ user thật. Khi cần kiểm thử Telegram notification, phải mock `telegramApiClient`/bot hoặc chỉ gửi tới admin/test chat được chỉ định; không dùng runtime `users` làm danh sách nhận thật.
+- Luôn dọn dữ liệu test/prompt sau khi tạo hoặc phát hiện: user `9990001`, product `R`, product `Test`, `Dedup`, `Notify variant product *`, slug `r-*`, slug `notify-variant-product-*`, và các order/stock/transaction/notification liên quan. Quy trình bắt buộc: chạy `node scripts/purge-test-data.js` dry-run, kiểm tra counts, rồi mới `node scripts/purge-test-data.js --apply`; không bỏ qua backup và không stage DB/backup.
 
 ## Cấu Trúc Project
 
@@ -33,7 +34,7 @@ Hướng dẫn này áp dụng cho repo `/home/peanut/tma-taikhoantenhat`. Luôn
 
 - Sửa automatic MBBank polling để query theo ngày ngân hàng Việt Nam (`Asia/Ho_Chi_Minh`) thay vì UTC ISO date. Incident gốc: order `100479` ngày `2026-06-12/2026-06-13`; order này đã confirm thủ công, không được reprocess.
 - Đặt runtime timezone `TZ=Asia/Ho_Chi_Minh` cho PM2 API/Web và `.env.example`, nhưng vẫn giữ SQLite `CURRENT_TIMESTAMP`/`datetime('now')` là UTC.
-- Dọn sạch dữ liệu test/prompt: user `9990001`, product `R`, product `Test`, slug `r-*`, các order/stock/transaction liên quan. Phải dry-run, tạo backup, xóa trong transaction, và không commit DB.
+- Dọn sạch dữ liệu test/prompt: user `9990001`, product `R`, product `Test`, `Dedup`, `Notify variant product *`, slug `r-*`, slug `notify-variant-product-*`, các order/stock/transaction/notification liên quan. Đây là quy tắc thường trực sau mọi lần tạo/chạy test data: phải dry-run, tạo backup, xóa trong transaction, và không commit DB/backup.
 - Hiển thị timestamp frontend theo giờ Hà Nội: parse SQLite timestamp `YYYY-MM-DD HH:mm:ss` như UTC, format với `Asia/Ho_Chi_Minh`.
 - Giữ late-payment recovery: đơn `expired` nhưng khách chuyển đúng tiền/đúng memo trong 24 giờ vẫn được xử lý theo flow thanh toán hiện có.
 
@@ -105,6 +106,8 @@ pm2 start ecosystem.config.cjs
 pm2 reload ecosystem.config.cjs
 ```
 
+**Đổi `.env` xong mà không thấy áp dụng?** `pm2 reload`/`restart` (kể cả `--update-env`) dùng lại env đã lưu từ lúc app được `pm2 start` lần đầu, KHÔNG đọc lại `.env`. Phải `pm2 delete taikhoantenhat-api && pm2 start ecosystem.config.cjs --only taikhoantenhat-api && pm2 save`. Kiểm tra bằng `tr '\0' '\n' < /proc/<pid>/environ | grep TÊN_BIẾN`.
+
 ## Lỗi Còn Tồn Tại / Cần Lưu Ý
 
 - `CLAUDE.md` còn nói runtime Node 20+, trong khi `.nvmrc`, README, `package.json`, và docs deploy đã chốt Node 22+.
@@ -115,6 +118,8 @@ pm2 reload ecosystem.config.cjs
 - `notifyOrderExpired` và `notifyOrderCancelled` trong `NotificationService` chưa có caller; cần wire hoặc xóa.
 - Telegram Android WebView có thể cache trang lỗi cũ; xem `docs/ANDROID-TMA-LOADING-FIX.md` khi Android lỗi nhưng Chrome/iOS/PC bình thường.
 - Sau khi chạy purge, `data/shop.db` và `data/shop.db.bak-pre-test-purge-*` có thể thay đổi ở local; không stage/commit.
+- `MBBANK_API_URL` phải dùng `127.0.0.1:8100`, không dùng `localhost:8100` — Node fetch có thể resolve `localhost` ra `::1` (IPv6), sidecar chỉ bind `127.0.0.1` nên bị `ECONNREFUSED` không đều (test tay bằng `node -e`/`curl` có thể pass do may mắn, process pm2 thật vẫn fail mọi lần). Đã fix 2026-09-26, xem `CLAUDE.md` phần Gotchas.
+- Handler `SIGINT`/`SIGTERM` trong `src/index.js` gọi `bot.stop()` phải qua `src/utils/safeBotStop.js`, không gọi trực tiếp — telegraf throw `Error('Bot is not running!')` nếu bot chưa launch xong hoặc đang trong lúc retry backoff, gọi trực tiếp sẽ crash process (đã xảy ra thật 2026-09-26).
 
 ## Việc Cần Làm Tiếp Theo
 

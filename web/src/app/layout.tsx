@@ -34,7 +34,7 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
         <script src="https://telegram.org/js/telegram-web-app.js?57" async />
         <script
           dangerouslySetInnerHTML={{
-            __html: `(function(){function d(){var w=window.Telegram&&window.Telegram.WebApp;if(!w)return false;w.ready();w.expand();try{if(typeof w.disableVerticalSwipes==='function')w.disableVerticalSwipes();}catch(e){}try{if(typeof w.postEvent==='function')w.postEvent('web_app_setup_swipe_behavior',{allow_vertical_swipe:false});}catch(e){}try{if(window.TelegramWebviewProxy)window.TelegramWebviewProxy.postEvent('web_app_setup_swipe_behavior',JSON.stringify({allow_vertical_swipe:false}));}catch(e){}return true;}if(!d()){var n=0,t=setInterval(function(){if(d()||++n>200)clearInterval(t);},25);}})();`,
+            __html: `(function(){function d(){var w=window.Telegram&&window.Telegram.WebApp;if(!w)return false;try{w.ready();w.expand();}catch(e){}return true;}if(!d()){var n=0,t=setInterval(function(){if(d()||++n>200)clearInterval(t);},25);}})();`,
           }}
         />
       </head>

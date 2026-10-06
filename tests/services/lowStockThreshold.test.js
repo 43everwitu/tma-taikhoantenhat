@@ -10,7 +10,7 @@ function seedProduct(threshold) {
     INSERT INTO products (category_id, name, slug, price, is_active, low_stock_threshold, last_low_stock_alert_at)
     VALUES (?, 'Test', ?, 1000, 1, ?, NULL)
   `).run(cat.lastInsertRowid, slug, threshold);
-  return r.lastInsertRowid;
+  return { productId: r.lastInsertRowid, categoryId: cat.lastInsertRowid };
 }
 
 function addStock(productId, count) {
@@ -18,30 +18,49 @@ function addStock(productId, count) {
   for (let i = 0; i < count; i++) stmt.run(productId, `k${i}-${productId}`);
 }
 
-test('product with NULL threshold uses settings default (3) — appears when stock <= 3', () => {
+function cleanup(seed) {
+  db.prepare('DELETE FROM low_stock_alert_states WHERE product_id = ?').run(seed.productId);
+  db.prepare('DELETE FROM stock WHERE product_id = ?').run(seed.productId);
+  db.prepare('DELETE FROM products WHERE id = ?').run(seed.productId);
+  db.prepare('DELETE FROM categories WHERE id = ?').run(seed.categoryId);
+}
+
+test('product with NULL threshold uses settings default (3) — appears when stock <= 3', (t) => {
   db.prepare("UPDATE settings SET value='3' WHERE key='low_stock_alert_threshold'").run();
-  const id = seedProduct(null);
-  addStock(id, 2);
+  const seed = seedProduct(null);
+  t.after(() => cleanup(seed));
+  addStock(seed.productId, 2);
   const rows = effectiveLowStockProducts();
-  const hit = rows.find(r => r.id === id);
+  const hit = rows.find(r => r.id === seed.productId);
   assert.ok(hit, 'expected product in list');
   assert.strictEqual(hit.effective_threshold, 3);
   assert.strictEqual(hit.stock_count, 2);
 });
 
-test('product with explicit threshold=10 keeps its own value', () => {
+test('product with explicit threshold=10 keeps its own value', (t) => {
   db.prepare("UPDATE settings SET value='3' WHERE key='low_stock_alert_threshold'").run();
-  const id = seedProduct(10);
-  addStock(id, 5);
+  const seed = seedProduct(10);
+  t.after(() => cleanup(seed));
+  addStock(seed.productId, 5);
   const rows = effectiveLowStockProducts();
-  const hit = rows.find(r => r.id === id);
+  const hit = rows.find(r => r.id === seed.productId);
   assert.ok(hit, 'expected product in list');
   assert.strictEqual(hit.effective_threshold, 10);
 });
 
-test('product with stock=0 excluded even when threshold would match', () => {
-  const id = seedProduct(5);
+test('product with threshold=0 disables low-stock alerts', (t) => {
+  db.prepare("UPDATE settings SET value='3' WHERE key='low_stock_alert_threshold'").run();
+  const seed = seedProduct(0);
+  t.after(() => cleanup(seed));
+  addStock(seed.productId, 2);
+  const rows = effectiveLowStockProducts();
+  assert.strictEqual(rows.find(r => r.id === seed.productId), undefined);
+});
+
+test('product with stock=0 excluded even when threshold would match', (t) => {
+  const seed = seedProduct(5);
+  t.after(() => cleanup(seed));
   // no stock added
   const rows = effectiveLowStockProducts();
-  assert.strictEqual(rows.find(r => r.id === id), undefined);
+  assert.strictEqual(rows.find(r => r.id === seed.productId), undefined);
 });

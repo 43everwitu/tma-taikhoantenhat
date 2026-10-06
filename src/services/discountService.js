@@ -123,7 +123,9 @@ function validateCodeRecord(code, subtotal, userId = null) {
     const used = db.prepare(`
       SELECT COUNT(*) AS c FROM orders WHERE user_id = ? AND discount_code_id = ? AND status != 'cancelled' AND status != 'expired'
     `).get(userId, code.id).c;
-    if (used >= code.per_user_limit) return { ok: false, reason: 'Bạn đã dùng mã này tối đa số lần cho phép' };
+    if (used >= code.per_user_limit) {
+      return { ok: false, reason: `Bạn đã dùng mã này tối đa ${code.per_user_limit} lần` };
+    }
   }
 
   const discount = computeDiscount(code, subtotal);

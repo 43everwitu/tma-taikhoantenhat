@@ -55,6 +55,7 @@ const orderService = require('../../services/orderService');
 function shapeOrder(o) {
   return {
     id: String(o.id),
+    customerId: String(o.user_id),
     productId: o.product_id,
     productName: o.product_name,
     variantId: o.variant_id,
@@ -74,6 +75,14 @@ router.post('/orders/get', rawJson, verifyRagAuth, (req, res) => {
   if (!order) return fail(res, 404, 'NOT_FOUND', 'Đơn hàng không tồn tại');
 
   return res.json({ success: true, data: shapeOrder(order) });
+});
+
+router.post('/customers/exists', rawJson, verifyRagAuth, (req, res) => {
+  const telegramId = req.ragBody && req.ragBody.telegramId;
+  const id = parseInt(telegramId, 10);
+  if (!Number.isInteger(id)) return fail(res, 400, 'INVALID_TELEGRAM_ID', 'telegramId không hợp lệ');
+
+  return res.json({ success: true, data: { exists: !!userService.get(id) } });
 });
 
 router.post('/orders/list-by-customer', rawJson, verifyRagAuth, (req, res) => {

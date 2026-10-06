@@ -11,7 +11,8 @@ const dir = path.dirname(fileURLToPath(import.meta.url))
 // Next so the browser always uses same-origin URLs — critical for mobile
 // devices on the LAN that hit `http://192.168.x.x:3001` and would otherwise
 // resolve `localhost:3000` to their own loopback (no server there).
-const API_BACKEND = process.env.API_BACKEND_URL || 'http://localhost:3000'
+const API_BACKEND = process.env.API_BACKEND_URL
+  || (process.env.NODE_ENV === 'production' ? 'http://127.0.0.1:3200' : 'http://localhost:3000')
 
 // Dev tunnel hosts. DEV_TUNNEL_HOST env can pin a specific quick-tunnel
 // hostname; the wildcards cover Cloudflare Tunnel and ngrok defaults.
@@ -31,11 +32,29 @@ const nextConfig: NextConfig = {
   async headers() {
     return [
       {
-        source: '/(.*)',
+        source: '/:path*',
         headers: [
           {
             key: 'X-Robots-Tag',
             value: 'noindex, nofollow, noarchive, nosnippet',
+          },
+        ],
+      },
+      {
+        source: '/((?!_next/static|_next/image|uploads|api/).*)',
+        headers: [
+          {
+            key: 'Cache-Control',
+            value: 'no-store, must-revalidate, no-transform',
+          },
+        ],
+      },
+      {
+        source: '/_next/static/:path*',
+        headers: [
+          {
+            key: 'Cache-Control',
+            value: 'public, max-age=31536000, immutable, no-transform',
           },
         ],
       },

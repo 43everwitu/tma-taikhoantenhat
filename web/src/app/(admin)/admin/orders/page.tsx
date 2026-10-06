@@ -6,9 +6,10 @@ import { useSearchParams } from 'next/navigation'
 import { api } from '@/lib/api'
 import { formatPrice, formatDate } from '@/lib/utils'
 import { buildTelegramContactUrl, telegramContactTitle } from '@/lib/telegramContact'
-import { Search, Clock, CheckCircle2, XCircle, Check, Eye, EyeOff, Copy, Send, X, StickyNote } from '@/lib/icons'
+import { Search, Clock, CheckCircle2, XCircle, Check, Eye, EyeOff, Copy, Send, Trash2, RotateCcw, X, StickyNote } from '@/lib/icons'
 import { ResponsiveTable, Column } from '@/components/ResponsiveTable'
 import { useHighlightId, useHighlightedRowRef } from '@/lib/useHighlightedRow'
+import { ChangeProductModal } from './ChangeProductModal'
 
 interface Order {
   id: string
@@ -242,7 +243,7 @@ interface OrdersResponse {
 function StatusPill({ status }: { status: string }) {
   const map: Record<string, { label: string; bg: string; color?: string; icon: React.ReactNode }> = {
     pending: { label: 'Chờ thanh toán', bg: 'var(--color-clay-oat-light)', icon: <Clock size={14} /> },
-    paid: { label: 'Đã thanh toán', bg: 'var(--color-lemon-400)', icon: <Check size={14} /> },
+    paid: { label: 'Đang xử lý', bg: 'var(--color-lemon-400)', icon: <Check size={14} /> },
     delivered: { label: 'Đã giao', bg: 'var(--color-matcha-300)', icon: <CheckCircle2 size={14} /> },
     expired: { label: 'Hết hạn', bg: 'var(--color-pomegranate-400)', color: '#fff', icon: <XCircle size={14} /> },
     cancelled: { label: 'Đã hủy', bg: 'var(--color-pomegranate-400)', color: '#fff', icon: <XCircle size={14} /> },
@@ -267,7 +268,7 @@ function StatusPill({ status }: { status: string }) {
 const statusOptions = [
   { value: '', label: 'Tất cả trạng thái' },
   { value: 'pending', label: 'Chờ thanh toán' },
-  { value: 'paid', label: 'Đã trả (chờ giao)' },
+  { value: 'paid', label: 'Đang xử lý' },
   { value: 'delivered', label: 'Đã giao' },
   { value: 'cancelled', label: 'Đã hủy' },
   { value: 'expired', label: 'Hết hạn (chưa thanh toán)' },
@@ -345,6 +346,8 @@ export default function OrdersPage() {
   const refFor = useHighlightedRowRef(highlightId)
   const [page, setPage] = useState(1)
   const [statusFilter, setStatusFilter] = useState('')
+  const [orderView, setOrderView] = useState<'active' | 'deleted'>('active')
+  const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set())
   const [search, setSearch] = useState('')
   const [debouncedSearch, setDebouncedSearch] = useState('')
   const [detailOrderId, setDetailOrderId] = useState<string | null>(null)
@@ -430,12 +433,13 @@ export default function OrdersPage() {
     }
   }, [detailOrderId])
 
-  const queryKey = ['admin', 'orders', page, statusFilter, debouncedSearch]
+  const queryKey = ['admin', 'orders', orderView, page, statusFilter, debouncedSearch]
 
   const { data, isLoading } = useQuery({
     queryKey,
     queryFn: () => {
       let url = `/admin/orders?page=${page}&limit=${limit}`
+      if (orderView === 'deleted') url += '&view=deleted'
       if (statusFilter) url += `&status=${statusFilter}`
       if (debouncedSearch) url += `&q=${encodeURIComponent(debouncedSearch)}`
       return api.get<OrdersResponse>(url)
@@ -452,6 +456,39 @@ export default function OrdersPage() {
   const cancelMutation = useMutation({
     mutationFn: (id: string) => api.post(`/admin/orders/${id}/cancel`),
     onSuccess: () => queryClient.invalidateQueries({ queryKey: ['admin', 'orders'] }),
+  })
+
+  const restoreMutation = useMutation({
+    mutationFn: (id: string) => api.post(`/admin/orders/${id}/restore`, { status: 'paid' }),
+    onSuccess: (_res, id) => {
+      setRestoreOrderId(null)
+      queryClient.invalidateQueries({ queryKey: ['admin', 'orders'] })
+      queryClient.invalidateQueries({ queryKey: ['admin', 'order', id, 'detail'] })
+    },
+    onError: (error: unknown) => {
+      queryClient.invalidateQueries({ queryKey: ['admin', 'orders'] })
+      alert(`❌ ${error instanceof Error ? error.message : 'Khôi phục đơn thất bại'}`)
+    },
+  })
+
+  const bulkDeleteMutation = useMutation({
+    mutationFn: (ids: string[]) => api.post<{ requested: number; affected: number }>('/admin/orders/bulk-delete', { ids }),
+    onSuccess: (res) => {
+      alert(`Đã xóa ${res.data.affected}/${res.data.requested} đơn. Có thể khôi phục trong 30 ngày.`)
+      setSelectedIds(new Set())
+      queryClient.invalidateQueries({ queryKey: ['admin', 'orders'] })
+    },
+    onError: (e) => alert(`❌ ${e instanceof Error ? e.message : 'Xóa thất bại'}`),
+  })
+
+  const bulkRestoreMutation = useMutation({
+    mutationFn: (ids: string[]) => api.post<{ requested: number; affected: number }>('/admin/orders/bulk-restore', { ids }),
+    onSuccess: (res) => {
+      alert(`Đã khôi phục ${res.data.affected}/${res.data.requested} đơn.`)
+      setSelectedIds(new Set())
+      queryClient.invalidateQueries({ queryKey: ['admin', 'orders'] })
+    },
+    onError: (e) => alert(`❌ ${e instanceof Error ? e.message : 'Khôi phục thất bại'}`),
   })
 
   const resendMutation = useMutation({
@@ -475,6 +512,7 @@ export default function OrdersPage() {
       queryClient.removeQueries({ queryKey: ['admin', 'order', vars.id, 'detail'] })
       setManualOrderId(null)
       setManualText('')
+      setManualDuration('')
     },
     onError: (e) => alert(`❌ ${e instanceof Error ? e.message : 'Giao thất bại'}`),
   })
@@ -531,9 +569,11 @@ export default function OrdersPage() {
     resendMutation.mutate(id)
   }
 
+  const [changeProductOrder, setChangeProductOrder] = useState<{ id: string; quantity: number } | null>(null)
   const [manualOrderId, setManualOrderId] = useState<string | null>(null)
   const [manualText, setManualText] = useState('')
   const [manualDuration, setManualDuration] = useState<string>('')
+  const [restoreOrderId, setRestoreOrderId] = useState<string | null>(null)
   const [editOrderId, setEditOrderId] = useState<string | null>(null)
   const [editText, setEditText] = useState('')
 
@@ -628,6 +668,34 @@ export default function OrdersPage() {
   const orders = data?.data?.orders ?? []
   const total = data?.data?.total ?? 0
   const totalPages = Math.ceil(total / limit)
+  const selectedCount = selectedIds.size
+  const selectedList = [...selectedIds]
+
+  function toggleRow(id: string | number, checked: boolean) {
+    setSelectedIds(prev => {
+      const next = new Set(prev)
+      const key = String(id)
+      if (checked) next.add(key)
+      else next.delete(key)
+      return next
+    })
+  }
+
+  function toggleAllRows(checked: boolean) {
+    setSelectedIds(checked ? new Set(orders.map(o => o.id)) : new Set())
+  }
+
+  function bulkDeleteSelected() {
+    if (selectedCount === 0) return
+    if (!confirm(`Xóa ${selectedCount} đơn đã chọn? Đơn sẽ nằm trong mục Đã xóa 30 ngày để có thể khôi phục.`)) return
+    bulkDeleteMutation.mutate(selectedList)
+  }
+
+  function bulkRestoreSelected() {
+    if (selectedCount === 0) return
+    if (!confirm(`Khôi phục ${selectedCount} đơn đã chọn?`)) return
+    bulkRestoreMutation.mutate(selectedList)
+  }
 
   const columns: Column<Order>[] = [
     {
@@ -721,7 +789,23 @@ export default function OrdersPage() {
       </div>
     ) : null
 
-    if (order.status === 'pending' || order.status === 'paid') {
+    if (orderView === 'deleted') {
+      return (
+        <>
+          {detailButton}
+          {contactButton}
+          {noteButton}
+          <button
+            onClick={() => bulkRestoreMutation.mutate([order.id])}
+            disabled={bulkRestoreMutation.isPending}
+            className="clay-btn clay-btn--matcha text-xs py-1 px-2 disabled:opacity-50 flex items-center gap-1"
+          >
+            <RotateCcw size={12} />Khôi phục
+          </button>
+        </>
+      )
+    }
+    if (order.status === 'pending' || order.status === 'paid' || order.status === 'expired') {
       return (
         <>
           {detailButton}
@@ -736,11 +820,19 @@ export default function OrdersPage() {
             onClick={() => { setManualOrderId(order.id); setManualText('') }}
             className="clay-btn clay-btn--lemon text-xs py-1 px-2"
           >Giao thủ công</button>
-          <button
-            onClick={() => cancelMutation.mutate(order.id)}
-            disabled={cancelMutation.isPending}
-            className="clay-btn clay-btn--pomegranate text-xs py-1 px-2 disabled:opacity-50"
-          >Hủy</button>
+          {order.status !== 'expired' && (
+            <button
+              onClick={() => setChangeProductOrder({ id: order.id, quantity: order.quantity })}
+              className="clay-btn text-xs py-1 px-2"
+            >Đổi sản phẩm</button>
+          )}
+          {order.status !== 'expired' && (
+            <button
+              onClick={() => cancelMutation.mutate(order.id)}
+              disabled={cancelMutation.isPending}
+              className="clay-btn clay-btn--pomegranate text-xs py-1 px-2 disabled:opacity-50"
+            >Hủy</button>
+          )}
         </>
       )
     }
@@ -764,6 +856,20 @@ export default function OrdersPage() {
         </>
       )
     }
+    if (order.status === 'cancelled') {
+      return (
+        <>
+          {detailButton}
+          {contactButton}
+          {noteButton}
+          <button
+            onClick={() => setRestoreOrderId(order.id)}
+            className="clay-btn clay-btn--matcha text-xs py-1 px-2 inline-flex items-center gap-1"
+          >
+            <RotateCcw size={12} />Khôi phục</button>
+        </>
+      )
+    }
     return (
       <>
         {detailButton}
@@ -783,7 +889,7 @@ export default function OrdersPage() {
             <input
               type="search"
               value={search}
-              onChange={(e) => { setSearch(e.target.value); setPage(1) }}
+              onChange={(e) => { setSearch(e.target.value); setPage(1); setSelectedIds(new Set()) }}
               placeholder="Tìm theo mã đơn, mã CK, khách, sản phẩm..."
               className="clay-input text-sm w-72 pl-9"
             />
@@ -793,6 +899,7 @@ export default function OrdersPage() {
             onChange={(e) => {
               setStatusFilter(e.target.value)
               setPage(1)
+              setSelectedIds(new Set())
             }}
             className="clay-input text-sm"
           >
@@ -806,14 +913,63 @@ export default function OrdersPage() {
         </div>
       </div>
 
+      <div className="flex flex-wrap items-center gap-2">
+        {[
+          { value: 'active' as const, label: 'Đang quản lý' },
+          { value: 'deleted' as const, label: 'Đã xóa' },
+        ].map((tab) => (
+          <button
+            key={tab.value}
+            type="button"
+            onClick={() => {
+              setOrderView(tab.value)
+              setPage(1)
+              setSelectedIds(new Set())
+            }}
+            className="clay-btn text-sm py-1.5 px-4"
+            style={orderView === tab.value ? { background: 'var(--color-clay-ink)', color: 'white' } : undefined}
+          >
+            {tab.label}
+          </button>
+        ))}
+      </div>
+
+      {selectedCount > 0 && (
+        <div className="flex flex-wrap items-center gap-3 p-3 rounded-2xl bg-clay-oat-light">
+          <span className="text-sm font-medium">Đã chọn {selectedCount}</span>
+          {orderView === 'deleted' ? (
+            <button
+              onClick={bulkRestoreSelected}
+              disabled={bulkRestoreMutation.isPending}
+              className="clay-btn clay-btn--matcha text-xs py-1 px-3 disabled:opacity-50 inline-flex items-center gap-1.5"
+            >
+              <RotateCcw size={14} />Khôi phục
+            </button>
+          ) : (
+            <button
+              onClick={bulkDeleteSelected}
+              disabled={bulkDeleteMutation.isPending}
+              className="clay-btn clay-btn--pomegranate text-xs py-1 px-3 disabled:opacity-50 inline-flex items-center gap-1.5"
+            >
+              <Trash2 size={14} />Xóa
+            </button>
+          )}
+          <button onClick={() => setSelectedIds(new Set())} className="clay-btn text-xs py-1 px-3">Bỏ chọn</button>
+        </div>
+      )}
+
       <ResponsiveTable
         rows={orders}
         columns={columns}
         rowKey={(o) => o.id}
         loading={isLoading}
-        emptyText="Chưa có đơn hàng nào"
+        emptyText={orderView === 'deleted' ? 'Chưa có đơn đã xóa' : 'Chưa có đơn hàng nào'}
         cardActions={rowActions}
         rowRef={refFor}
+        selectable
+        selectedIds={selectedIds}
+        onToggleRow={toggleRow}
+        onToggleAll={toggleAllRows}
       />
 
       {/* Phân trang */}
@@ -824,14 +980,14 @@ export default function OrdersPage() {
           </span>
           <div className="flex gap-2">
             <button
-              onClick={() => setPage((p) => Math.max(1, p - 1))}
+              onClick={() => { setPage((p) => Math.max(1, p - 1)); setSelectedIds(new Set()) }}
               disabled={page <= 1}
               className="clay-btn text-sm py-1.5 px-3 disabled:opacity-40"
             >
               Trước
             </button>
             <button
-              onClick={() => setPage((p) => Math.min(totalPages, p + 1))}
+              onClick={() => { setPage((p) => Math.min(totalPages, p + 1)); setSelectedIds(new Set()) }}
               disabled={page >= totalPages}
               className="clay-btn text-sm py-1.5 px-3 disabled:opacity-40"
             >
@@ -842,7 +998,7 @@ export default function OrdersPage() {
       )}
 
       {detailOrderId && (
-        <div className="fixed inset-0 z-50 bg-black/50 flex justify-end" onClick={closeDetail}>
+        <div className="fixed inset-0 z-50 bg-black/50 flex justify-end">
           <aside
             ref={detailAsideRef}
             className="bg-clay-cream w-full sm:max-w-2xl h-full overflow-y-auto shadow-2xl"
@@ -1167,8 +1323,65 @@ export default function OrdersPage() {
         </div>
       )}
 
+      {restoreOrderId && (
+        <div className="fixed inset-0 z-50 bg-black/40 backdrop-blur-sm flex items-center justify-center p-4" onClick={() => setRestoreOrderId(null)}>
+          <div
+            role="dialog"
+            aria-modal="true"
+            aria-label={`Khôi phục đơn hàng #${restoreOrderId}`}
+            onClick={(event) => event.stopPropagation()}
+            className="bg-white rounded-2xl shadow-xl w-full max-w-md p-5 space-y-4"
+          >
+            <div className="flex items-center justify-between gap-3">
+              <div>
+                <p className="text-xs uppercase tracking-wide text-clay-silver">Khôi phục đơn hàng</p>
+                <h3 className="text-lg font-semibold">Đơn #{restoreOrderId}</h3>
+              </div>
+              <button
+                type="button"
+                onClick={() => setRestoreOrderId(null)}
+                className="clay-btn p-2"
+                aria-label="Đóng hộp khôi phục"
+              >
+                <X size={16} />
+              </button>
+            </div>
+            <p className="text-sm text-clay-charcoal">
+              Chọn Đang xử lý để tiếp tục xử lý đơn, hoặc Đã giao để nhập nội dung giao hàng và gửi cho khách.
+            </p>
+            <div className="flex flex-wrap justify-end gap-2">
+              <button type="button" onClick={() => setRestoreOrderId(null)} className="clay-btn text-sm">Bỏ qua</button>
+              <button
+                type="button"
+                onClick={() => restoreMutation.mutate(restoreOrderId)}
+                disabled={restoreMutation.isPending}
+                className="clay-btn clay-btn--lemon text-sm disabled:opacity-50"
+              >Đang xử lý</button>
+              <button
+                type="button"
+                onClick={() => {
+                  setManualOrderId(restoreOrderId)
+                  setManualText('')
+                  setManualDuration('')
+                  setRestoreOrderId(null)
+                }}
+                className="clay-btn clay-btn--matcha text-sm"
+              >Đã giao</button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {changeProductOrder && (
+        <ChangeProductModal
+          orderId={changeProductOrder.id}
+          quantity={changeProductOrder.quantity}
+          onClose={() => setChangeProductOrder(null)}
+        />
+      )}
+
       {manualOrderId && (
-        <div className="fixed inset-0 z-50 bg-black/40 backdrop-blur-sm flex items-center justify-center p-4" onClick={() => setManualOrderId(null)}>
+        <div className="fixed inset-0 z-50 bg-black/40 backdrop-blur-sm flex items-center justify-center p-4">
           <div onClick={(e) => e.stopPropagation()} className="bg-white rounded-2xl shadow-xl w-full max-w-md p-5 space-y-3">
             <div className="flex items-center justify-between">
               <h3 className="text-lg font-semibold">Giao thủ công đơn #{manualOrderId}</h3>
@@ -1217,7 +1430,7 @@ export default function OrdersPage() {
       )}
 
       {editOrderId && (
-        <div className="fixed inset-0 z-50 bg-black/40 backdrop-blur-sm flex items-center justify-center p-4" onClick={() => setEditOrderId(null)}>
+        <div className="fixed inset-0 z-50 bg-black/40 backdrop-blur-sm flex items-center justify-center p-4">
           <div onClick={(e) => e.stopPropagation()} className="bg-white rounded-2xl shadow-xl w-full max-w-md p-5 space-y-3">
             <div className="flex items-center justify-between">
               <h3 className="text-lg font-semibold">Sửa key đơn #{editOrderId}</h3>

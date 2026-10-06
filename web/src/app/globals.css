@@ -206,6 +206,47 @@ body {
   .rich-text tg-spoiler { background: var(--color-clay-charcoal); color: var(--color-clay-charcoal); border-radius: 4px; cursor: pointer; transition: color .2s; }
   .rich-text tg-spoiler:hover, .rich-text tg-spoiler.revealed { color: #fff; }
 
+  .ProseMirror a {
+    color: var(--brand-gold-deep, #b88500);
+    text-decoration: underline;
+    text-underline-offset: 2px;
+    cursor: pointer;
+  }
+  .ProseMirror a:hover {
+    color: var(--brand-ink, #1c222b);
+    background: var(--brand-gold-soft, #fff1b8);
+  }
+  .ProseMirror .ProseMirror-selectednode {
+    background: var(--brand-gold-soft, #fff1b8);
+  }
+  .admin-editor-link-popover {
+    display: flex;
+    align-items: center;
+    gap: .5rem;
+    padding: .375rem .5rem;
+    border-bottom: 1px solid var(--color-clay-oat, #e7e0d2);
+    background: var(--brand-gold-soft, #fff7e0);
+    font-size: .8125rem;
+  }
+  .admin-editor-link-popover__url {
+    min-width: 0;
+    flex: 1;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    color: var(--brand-ink, #1c222b);
+  }
+  .admin-editor-link-popover button {
+    border-radius: 6px;
+    padding: .25rem .5rem;
+    background: #fff;
+    color: var(--brand-ink, #1c222b);
+    border: 1px solid color-mix(in srgb, var(--brand-ink, #1c222b) 14%, transparent);
+  }
+  .admin-editor-link-popover button:hover {
+    background: var(--brand-gold, #ffc200);
+  }
+
   .clay-pill--sakura {
     background: var(--color-sakura-100);
     color: var(--color-sakura-500);
@@ -303,6 +344,33 @@ body {
     color: var(--brand-gold-deep);
   }
   .miniapp-bottomnav a:active { transform: scale(.92); }
+  .miniapp-nav-badge-anchor {
+    position: relative;
+  }
+  .miniapp-nav-badge {
+    position: absolute;
+    top: 4px;
+    right: 22%;
+    display: inline-grid;
+    place-items: center;
+    min-width: 18px;
+    height: 18px;
+    padding: 0 4px;
+    border-radius: 999px;
+    background: var(--brand-gold, #ffc200);
+    color: var(--brand-ink);
+    border: 1px solid color-mix(in srgb, var(--tg-bg, var(--brand-cream)) 80%, transparent);
+    font-size: .6875rem;
+    font-weight: 700;
+    line-height: 1;
+    box-shadow: 0 2px 6px color-mix(in srgb, var(--brand-ink) 18%, transparent);
+    pointer-events: none;
+  }
+  .miniapp-topnav-link .miniapp-nav-badge,
+  .miniapp-header .miniapp-nav-badge {
+    top: -5px;
+    right: -5px;
+  }
 
   /* Hero card on home */
   .miniapp-hero {
@@ -662,6 +730,9 @@ body {
   .miniapp-status--delivered { background: #dcfce7; color: #166534; }
   .miniapp-status--cancelled,
   .miniapp-status--expired   { background: #f3f4f6; color: #4b5563; }
+  .miniapp-status--key-active { background: #dcfce7; color: #166534; }
+  .miniapp-status--key-soon { background: var(--brand-gold-soft); color: var(--brand-gold-deep); }
+  .miniapp-status--key-expired { background: #ffe2e5; color: #b4232e; }
 
   /* QR panel */
   .miniapp-qr {
@@ -691,7 +762,7 @@ body {
     margin-top: .75rem;
     font-family: var(--font-mono);
     font-size: 1.125rem; font-weight: 700;
-    color: var(--brand-ink);
+    color: var(--tg-text, var(--brand-ink));
     user-select: all;
   }
 
@@ -818,7 +889,7 @@ body {
     border-radius: 999px;
     border: 1px solid color-mix(in srgb, var(--brand-ink) 12%, transparent);
     background: var(--tg-bg-2, #fff);
-    color: var(--brand-ink);
+    color: var(--tg-text, var(--brand-ink));
     font-size: .8125rem; font-weight: 500;
   }
   .miniapp-pager button:disabled { opacity: .4; cursor: not-allowed; }
@@ -837,13 +908,13 @@ body {
     scrollbar-width: none;
     -ms-overflow-style: none;
     padding-bottom: .25rem;
-    touch-action: pan-x pinch-zoom;
+    touch-action: pan-x pan-y pinch-zoom;
   }
   .miniapp-hscroll-track::-webkit-scrollbar { display: none; }
   .miniapp-hscroll-track > * { scroll-snap-align: start; }
   /* Desktop / mouse: drag cursor + thin scrollbar for discoverability */
   @media (hover: hover) and (pointer: fine) {
-    .miniapp-hscroll-track {
+    .miniapp-hscroll-track--mouse-drag {
       cursor: grab;
       scrollbar-width: thin;
       scrollbar-color: color-mix(in srgb, var(--brand-ink) 28%, transparent) transparent;
@@ -858,13 +929,13 @@ body {
       background: color-mix(in srgb, var(--brand-ink) 22%, transparent);
     }
     .miniapp-hscroll-track::-webkit-scrollbar-track { background: transparent; }
-    .miniapp-hscroll-track.is-dragging {
+    .miniapp-hscroll-track--mouse-drag.is-dragging {
       cursor: grabbing;
       scroll-snap-type: none;
       scroll-behavior: auto;
       user-select: none;
     }
-    .miniapp-hscroll-track.is-dragging > * {
+    .miniapp-hscroll-track--mouse-drag.is-dragging > * {
       pointer-events: none;
     }
   }
@@ -886,11 +957,11 @@ body {
     backdrop-filter: blur(6px);
     border: 1px solid color-mix(in srgb, var(--brand-ink) 10%, transparent);
     box-shadow: 0 4px 16px color-mix(in srgb, var(--brand-ink) 18%, transparent);
-    color: var(--brand-ink);
+    color: var(--tg-text, var(--brand-ink));
     cursor: pointer;
     transition: transform .15s, background .15s, opacity .15s;
   }
-  .miniapp-hscroll-arrow:hover { transform: translateY(-50%) scale(1.06); background: var(--brand-gold-soft, #fff7e0); }
+  .miniapp-hscroll-arrow:hover { transform: translateY(-50%) scale(1.06); background: var(--brand-gold-soft, #fff7e0); color: var(--brand-ink); }
   .miniapp-hscroll-arrow:disabled { opacity: .35; pointer-events: none; }
   .miniapp-hscroll-arrow--left { left: .25rem; }
   .miniapp-hscroll-arrow--right { right: .25rem; }
@@ -979,7 +1050,7 @@ body {
     border-radius: 14px;
     background: var(--tg-bg-2, #fff);
     border: 1px solid color-mix(in srgb, var(--brand-ink) 10%, transparent);
-    color: var(--brand-ink);
+    color: var(--tg-text, var(--brand-ink));
     text-align: left;
     cursor: pointer;
     transition: border-color .15s, background .15s, transform .1s;
@@ -990,6 +1061,7 @@ body {
   .miniapp-variant-tile[aria-pressed="true"] {
     border-color: var(--brand-gold-deep, #b88500);
     background: var(--brand-gold-soft, #fff7e0);
+    color: var(--brand-ink);
     box-shadow: 0 0 0 1px var(--brand-gold-deep, #b88500) inset;
   }
   .miniapp-variant-tile:disabled,
@@ -1023,7 +1095,7 @@ body {
     font-size: .6875rem;
     padding: .125rem .375rem;
     border-radius: 999px;
-    background: color-mix(in srgb, var(--brand-ink) 8%, transparent);
+    background: color-mix(in srgb, var(--tg-text, var(--brand-ink)) 8%, transparent);
   }
   .miniapp-variant-tile .v-stock--out { color: #dc2626; }
   .miniapp-variant-tile .v-stock--in { color: #16a34a; }
@@ -1038,7 +1110,7 @@ body {
     border-radius: 14px;
     background: var(--tg-bg-2, #fff);
     border: 1px solid color-mix(in srgb, var(--brand-ink) 10%, transparent);
-    color: var(--brand-ink);
+    color: var(--tg-text, var(--brand-ink));
     text-align: left;
     cursor: pointer;
     transition: border-color .15s, background .15s;
@@ -1047,6 +1119,7 @@ body {
   .miniapp-variant-select[aria-expanded="true"] {
     border-color: var(--brand-gold-deep, #b88500);
     background: var(--brand-gold-soft, #fff7e0);
+    color: var(--brand-ink);
   }
   .miniapp-variant-select .v-select-body {
     flex: 1;
@@ -1067,7 +1140,7 @@ body {
   .miniapp-variant-select .v-price { font-size: .875rem; font-weight: 700; color: var(--brand-gold-deep, #b88500); }
   .miniapp-variant-select .v-stock {
     font-size: .6875rem; padding: .125rem .375rem; border-radius: 999px;
-    background: color-mix(in srgb, var(--brand-ink) 8%, transparent);
+    background: color-mix(in srgb, var(--tg-text, var(--brand-ink)) 8%, transparent);
   }
   .miniapp-variant-select .v-stock--out { color: #dc2626; }
   .miniapp-variant-select .v-stock--in { color: #16a34a; }
@@ -1096,16 +1169,17 @@ body {
     padding: .5rem .625rem;
     border-radius: 10px;
     background: transparent;
-    color: var(--brand-ink);
+    color: var(--tg-text, var(--brand-ink));
     text-align: left;
     cursor: pointer;
   }
-  .miniapp-variant-row:hover { background: color-mix(in srgb, var(--brand-gold-soft, #fff7e0) 100%, transparent); }
+  .miniapp-variant-row:hover { background: color-mix(in srgb, var(--brand-gold-soft, #fff7e0) 100%, transparent); color: var(--brand-ink); }
   .miniapp-variant-row.is-selected {
     background: var(--brand-gold-soft, #fff7e0);
+    color: var(--brand-ink);
     box-shadow: 0 0 0 1px var(--brand-gold-deep, #b88500) inset;
   }
-  .miniapp-variant-row.is-out { opacity: .5; cursor: not-allowed; }
+  .miniapp-variant-row.is-out { opacity: .6; }
   .miniapp-variant-row .v-name {
     flex: 1 1 100%;
     min-width: 0;
@@ -1117,7 +1191,7 @@ body {
   }
   .miniapp-variant-row .v-meta { display: inline-flex; align-items: center; flex-wrap: wrap; gap: .5rem; }
   .miniapp-variant-row .v-price { font-size: .8125rem; font-weight: 700; color: var(--brand-gold-deep, #b88500); }
-  .miniapp-variant-row .v-stock { font-size: .6875rem; padding: .125rem .375rem; border-radius: 999px; background: color-mix(in srgb, var(--brand-ink) 8%, transparent); }
+  .miniapp-variant-row .v-stock { font-size: .6875rem; padding: .125rem .375rem; border-radius: 999px; background: color-mix(in srgb, var(--tg-text, var(--brand-ink)) 8%, transparent); }
   .miniapp-variant-row .v-stock--out { color: #dc2626; }
   .miniapp-variant-row .v-stock--in { color: #16a34a; }
 
@@ -1165,7 +1239,7 @@ body {
     border-radius: 999px;
     background: var(--tg-bg-2, #fff);
     border: 1px solid color-mix(in srgb, var(--brand-ink) 12%, transparent);
-    color: var(--brand-ink);
+    color: var(--tg-text, var(--brand-ink));
     font-size: .8125rem;
     cursor: pointer;
     min-height: 34px;
@@ -1232,7 +1306,7 @@ body {
     border-radius: 999px;
     background: none;
     border: 1px solid color-mix(in srgb, var(--brand-ink) 12%, transparent);
-    color: var(--brand-ink);
+    color: var(--tg-text, var(--brand-ink));
     cursor: pointer;
   }
 
@@ -1273,10 +1347,10 @@ body {
     padding: .5rem .875rem;
     border-radius: 10px;
     font-size: .9375rem; font-weight: 500;
-    color: color-mix(in srgb, var(--brand-ink) 75%, transparent);
+    color: color-mix(in srgb, var(--tg-text, var(--brand-ink)) 75%, transparent);
     transition: background .15s, color .15s;
   }
-  .miniapp-topnav-link:hover { background: color-mix(in srgb, var(--brand-ink) 6%, transparent); color: var(--brand-ink); }
+  .miniapp-topnav-link:hover { background: color-mix(in srgb, var(--tg-text, var(--brand-ink)) 6%, transparent); color: var(--tg-text, var(--brand-ink)); }
   .miniapp-topnav-link[aria-current="page"] { color: var(--brand-gold-deep); background: var(--brand-gold-soft); }
 
   .miniapp-sheet-backdrop {
